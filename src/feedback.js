@@ -16,6 +16,8 @@ addEventListener('keydown', (e) => { if (!e.repeat && !inForm(e)) push(inputs, [
 addEventListener('keyup', (e) => { if (!inForm(e)) push(inputs, [sec(), 'u', e.code], 80); }, true);
 addEventListener('mousedown', (e) => { if (!inForm(e)) push(inputs, [sec(), 'd', 'Mouse' + e.button], 80); }, true);
 setInterval(() => { if (game) push(fps, Math.round(game.fps || 0), 180); }, 1000);
+// when the window lost and regained focus or was hidden: a long gap between frames then means "in the background", not a freeze
+const away = []; for (const ev of ['focus', 'blur']) addEventListener(ev, () => push(away, [sec(), ev], 60)); document.addEventListener('visibilitychange', () => push(away, [sec(), document.hidden ? 'hidden' : 'visible'], 60));
 // the last 30 s as a replay, 10 times a second: [t, x, y, heading, camera yaw, camera pitch, km/h, what he is in, keys held, alt, fps]
 const held = new Set(); addEventListener('keydown', (e) => { if (!inForm(e)) held.add(e.code); }, true); addEventListener('keyup', (e) => held.delete(e.code), true); addEventListener('blur', () => held.clear());
 const r2 = (x) => (typeof x === 'number' && isFinite(x) ? Math.round(x * 100) / 100 : null);
@@ -23,6 +25,9 @@ setInterval(() => { if (!game || !game.player || game.paused) return; const g = 
   push(replay, [sec(), r2(hl ? hl.pos.x : v ? v.x : pl.x), r2(hl ? -hl.pos.z : v ? v.y : pl.y), r2(hl ? hl.heading : v ? v.h : pl.h), r2(c.yaw), r2(c.pitch), v ? Math.round(Math.abs(v.vf || 0) * 3.6) : hl ? Math.round(Math.hypot(hl.vel ? hl.vel.x : 0, hl.vel ? hl.vel.z : 0) * 3.6) : r2(pl.speed), hl ? 'heli' : v ? 'car' : (g.fly && g.fly.on) ? 'fly' : 'foot', [...held].map((k) => k.replace(/^(Key|Digit|Arrow)/, '')).join('+'), hl ? r2(hl.pos.y) : null, Math.round(g.fps || 0)], 300); }, 100);
 // frame times: a histogram (ms buckets) and the 12 worst hitches of the last 3 minutes with when they happened
 { const B = [8, 12, 17, 20, 25, 33, 50, 67, 100, 200, 500]; let last = 0; const tick = (now) => { requestAnimationFrame(tick); if (last && !document.hidden) { const d = now - last; frames++; let i = 0; while (i < B.length && d > B[i]) i++; hist[i]++; if (d > 50) { hitches.push([sec(), Math.round(d)]); if (hitches.length > 60) { hitches.sort((a, b) => b[1] - a[1]); hitches.length = 12; } } } last = now; }; requestAnimationFrame(tick); window.__ftBuckets = B; }
+// long tasks: every time the page's main thread was busy for over 0.2 s (what a freeze is made of), with when and how long
+const longs = []; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) if (e.duration > 200) push(longs, [+(e.startTime / 1000).toFixed(1), Math.round(e.duration)], 80); }).observe({ type: 'longtask', buffered: true }); } catch (e) {}
+const marks = {}; window.__mark = (k) => { if (!(k in marks)) marks[k] = +(performance.now() / 1000).toFixed(1); };
 // network: requests that failed or took over 4 s (names and times only)
 try { new PerformanceObserver((l) => { for (const e of l.getEntries()) { const bad = e.responseStatus >= 400 || e.duration > 4000; if (bad) push(net, [+(e.startTime / 1000).toFixed(1), e.name.split('/').slice(-3).join('/').slice(0, 90), Math.round(e.duration), e.responseStatus || 0, Math.round((e.transferSize || 0) / 1024)], 60); } }).observe({ type: 'resource', buffered: true }); } catch (e) {}
 function caps() { try { const gl = world.renderer.getContext(), c = world.renderer.capabilities, x = gl.getExtension('WEBGL_debug_renderer_info'); return { version: gl.getParameter(gl.VERSION), vendor: x ? gl.getParameter(x.UNMASKED_VENDOR_WEBGL) : gl.getParameter(gl.VENDOR), maxTexture: c.maxTextureSize, maxCube: c.maxCubemapSize, maxArrayLayers: gl.getParameter(gl.MAX_ARRAY_TEXTURE_LAYERS), maxSamples: c.maxSamples, maxAnisotropy: c.getMaxAnisotropy(), maxVertexTextures: c.maxVertexTextures, floatTargets: !!gl.getExtension('EXT_color_buffer_float'), compressed: ['astc', 'bptc', 's3tc', 'etc'].filter((k) => gl.getExtension('WEBGL_compressed_texture_' + k) || gl.getExtension('EXT_texture_compression_' + k)), extensions: gl.getSupportedExtensions(), drawing: [gl.drawingBufferWidth, gl.drawingBufferHeight], lost: gl.isContextLost() }; } catch (e) { return { error: String(e).slice(0, 100) }; } }
@@ -36,12 +41,13 @@ export function trace() {
     tier: { scale: r1(w.liveScale || 1), aa: w.liveAA || 'msaa', ao: !!(w.gtao && w.gtao.enabled) }, fps, fpsNow: Math.round(g.fps || 0),
     player: { x: r1(pl.x), y: r1(pl.y), h: r1(pl.h), in: v ? 'car:' + ((v.def && v.def.name) || '') : (g.heli && g.heli.piloted) ? 'helicopter' : (g.fly && g.fly.on) ? 'fly' : 'foot', kmh: v ? Math.round(Math.abs(v.vf || 0) * 3.6) : null, alt: g.heli && g.heli.piloted ? r1(g.heli.f.pos.y) : null },
     camera: cam ? { p: cam.position.toArray().map(r1), fov: r1(cam.fov), near: r1(cam.near) } : null, gun: g.combat ? g.combat.slot || null : null, job: g.missions ? String(g.missions.state || '') : null, cash: g.missions ? g.missions.cash : null,
-    mouseCaptured: !!document.pointerLockElement, visible: !document.hidden, params: Object.fromEntries(new URLSearchParams(location.search)), settings: { paused: !!g.paused, muted: !!(g.sound && g.sound.muted), ktx: !!window.__ktx2list, cfg: window.__CFG || null, heli: !!g.heli, guns: !!g.combat, crowd: !!g.crowd },
+    mouseCaptured: !!document.pointerLockElement, visible: !document.hidden, focused: document.hasFocus(), away, params: Object.fromEntries(new URLSearchParams(location.search)), settings: { paused: !!g.paused, muted: !!(g.sound && g.sound.muted), ktx: !!window.__ktx2list, cfg: window.__CFG || null, heli: !!g.heli, guns: !!g.combat, crowd: !!g.crowd },
     load: window.__load ? { MB: +(window.__load.done / 1e6).toFixed(1), files: window.__load.files, failed: window.__load.failed, secs: window.__readyAt || null } : null,
     render: w.renderer ? { calls: w.renderer.info.render.calls, triangles: w.renderer.info.render.triangles, textures: w.renderer.info.memory.textures, geometries: w.renderer.info.memory.geometries, programs: (w.renderer.info.programs || []).length } : null,
     heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null,
     frames: { count: frames, bucketsMs: window.__ftBuckets, histogram: hist, worstHitches: hitches.slice().sort((a, b) => b[1] - a[1]).slice(0, 12) },
     replay: { everyMs: 100, fields: ['t', 'x', 'y', 'heading', 'camYaw', 'camPitch', 'kmh', 'in', 'keys', 'alt', 'fps'], samples: replay },
+    longTasks: longs, marks,
     webgl: caps(), network: net, inputs, errors: errs, log: logs };
 }
 export function install(g) {

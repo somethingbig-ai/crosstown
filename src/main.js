@@ -17,7 +17,7 @@ import './feedback.js';     // first: its error, console and frame-time recorder
   const ui = setInterval(() => { const bar = document.getElementById('loadbar'), txt = document.getElementById('loadtxt'); if (!bar) { if (window.__ready) clearInterval(ui); return; }
     if (window.__ready) { bar.style.width = '100%'; txt.textContent = 'Ready'; document.getElementById('loadwrap').style.opacity = 0; clearInterval(ui); return; }
     const tot = Math.max(L.total || 250e6, L.done * 1.02), pct = Math.min(99, Math.floor(L.done / tot * 100)), mb = (x) => Math.round(x / 1e6), secs = (performance.now() - L.t0) / 1000;
-    const building = (L.total && L.done >= L.total * 0.985) || (L.stage === 'game' && performance.now() - (L.last || 0) > 1500);
+    const building = (L.total && L.done >= L.total * 0.985) || (/game|compiled/.test(L.stage) && performance.now() - (L.last || 0) > 1500);
     bar.style.width = (building ? 99 : Math.max(2, pct)) + '%'; txt.textContent = building ? '99% · ' + mb(L.done) + ' MB in · building the city on your graphics card (' + Math.round(secs) + ' s)' : pct + '% · ' + mb(L.done) + ' of ' + mb(tot) + ' MB · loading ' + (L.now || 'the city') + (L.failed ? ' · ' + L.failed + ' failed' : ''); }, 150); }
 import * as THREE from 'three';
 import { World } from './world.js';
@@ -58,19 +58,24 @@ try {
     const setCam = (a) => { world.camera.position.set(a[0], a[1], -a[2]); world.camera.lookAt(a[3], a[4], -a[5]); world.camera.fov = a[6] || 55; world.camera.updateProjectionMatrix(); };
     window.shot = (a) => { setCam(a); for (let i = 0; i < 3; i++) world.render(i / 60, new THREE.Vector3(a[3], 0, -a[5])); return true; };
     window.shot(P.get('shot').split(',').map(Number));
-    document.getElementById('boot').remove(); window.__ready = true; window.__readyAt = +(performance.now() / 1000).toFixed(1);
+    document.getElementById('boot').remove(); window.__ready = true; if (window.__mark) window.__mark('ready'); window.__readyAt = +(performance.now() / 1000).toFixed(1);
   } else {
     const { Game } = await import('./game.js');
     const game = new Game(world, P); window.game = game; await game.init();
     // Start screen (Matt, Nov 11): before play, a short note that this is an early preview, how to give feedback, a Play button and a tiny credits
     // link. Skipped for films, stills, judged captures and test tools (?demo ?capture ?peds=0 ?crowd=none ?play=1, or window.__noStart set by a tool).
+    // Before Play goes live, the shaders are compiled in the background (the browser's parallel compile where it has one) while the loading bar
+    // says so. Without this the first frames after Play froze the page for many seconds (3 s on our laptops, 20 to 40 s in the first outside traces).
+    if (!P.has('nocompile')) { try { const r = renderer, old = r.getRenderTarget(); r.setRenderTarget(world.composer.readBuffer); const t0c = performance.now();
+        await Promise.race([r.compileAsync(world.scene, world.camera), new Promise((res) => setTimeout(res, 60000))]); r.setRenderTarget(old); console.log('[game] shaders compiled ahead in ' + ((performance.now() - t0c) / 1000).toFixed(1) + ' s'); } catch (e) { console.log('[game] compile ahead skipped: ' + (e && e.message)); } }
+    if (window.__load) window.__load.stage = 'compiled';
     const boot = document.getElementById('boot'), sb = document.getElementById('startbox'), pb = document.getElementById('playbtn');
     const skip = !sb || window.__noStart || navigator.webdriver || P.has('demo') || P.has('capture') || P.has('play') || P.get('crowd') === 'none' || P.get('peds') === '0' || /^(demo|pad)/.test(P.get('heli') || '');
     if (skip) { boot.style.opacity = 0; setTimeout(() => boot.remove(), 700); }
     else { boot.style.background = 'rgba(11,12,14,.86)'; boot.style.zIndex = 100; const hudEls = [document.getElementById('hud'), game.hud && game.hud.canvas].filter(Boolean); for (const h of hudEls) h.style.visibility = 'hidden'; window.__hudEls = hudEls; document.getElementById('bootmsg').style.display = 'none'; pb.disabled = false; pb.style.opacity = 1; pb.textContent = 'PLAY'; window.__startScreen = true; setTimeout(() => { if (window.__startScreen) game.paused = true; }, 400);
-      const go = () => { if (!window.__startScreen) return; window.__startScreen = false; game.paused = false; for (const h of window.__hudEls || []) h.style.visibility = ''; boot.style.opacity = 0; setTimeout(() => boot.remove(), 500); try { game.sound.unlock(); } catch (e) {} try { const pr = canvas.requestPointerLock && canvas.requestPointerLock(); if (pr && pr.catch) pr.catch(() => {}); } catch (e) {} };
+      const go = () => { if (!window.__startScreen) return; window.__startScreen = false; if (window.__mark) window.__mark('play'); game.paused = false; for (const h of window.__hudEls || []) h.style.visibility = ''; boot.style.opacity = 0; setTimeout(() => boot.remove(), 500); try { game.sound.unlock(); } catch (e) {} try { const pr = canvas.requestPointerLock && canvas.requestPointerLock(); if (pr && pr.catch) pr.catch(() => {}); } catch (e) {} };
       pb.addEventListener('click', go); addEventListener('keydown', (e) => { if (window.__startScreen && (e.code === 'Enter' || e.code === 'Space')) { e.stopPropagation(); go(); } }, true); }
     if (P.has('capture')) { const { capture } = await import('./capture.js'); window.capture = (o) => capture(game, o); }
-    window.__ready = true; window.__readyAt = +(performance.now() / 1000).toFixed(1); game.start();
+    window.__ready = true; if (window.__mark) window.__mark('ready'); window.__readyAt = +(performance.now() / 1000).toFixed(1); game.start();
   }
 } catch (e) { msg.textContent = 'error: ' + e.message; console.error(e); window.__error = String(e.stack || e); }

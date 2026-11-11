@@ -21,16 +21,10 @@
 <style>@keyframes ldstripe{from{background-position:0 0}to{background-position:28px 0}}</style>
 <div id="loadwrap" style="margin:0 auto 14px;max-width:26em;transition:opacity .5s"><div style="height:8px;border-radius:5px;background:#2a2e36;overflow:hidden"><div id="loadbar" style="height:100%;width:2%;border-radius:5px;background:repeating-linear-gradient(45deg,#ffd27a 0 10px,#f0b84e 10px 20px);background-size:28px 100%;animation:ldstripe .7s linear infinite;transition:width .2s"></div></div><div id="loadtxt" style="margin-top:6px;font-size:12px;opacity:.85;font-variant-numeric:tabular-nums">Starting…</div></div>
 <button id="playbtn" disabled style="font:700 16px system-ui,sans-serif;letter-spacing:.12em;padding:11px 44px;border-radius:8px;border:0;background:#ffd27a;color:#111;cursor:pointer;opacity:.45">LOADING</button>
-<p style="margin:14px 0 6px;font-size:12px;opacity:.7">WASD move and drive · SPACE handbrake · mouse look · F get in or out · left click fire · V fly · M sound · <a id="fslink" href="#" style="color:#ffd27a">full screen</a></p>
+<p style="margin:14px 0 6px;font-size:12px;opacity:.7">WASD move and drive · mouse look · F get in or out · left click fire · V fly · M sound</p>
 <p style="margin:0 0 8px;font-size:11px;line-height:1.45;opacity:.6">A free, non-commercial tech demo. Nothing is sold and there are no ads. Not affiliated with or endorsed by the City of New York or any building, brand or company you see. Provided as is.</p>
 <a href="credits/" target="_blank" rel="noopener" style="font-size:11px;color:#bbb;opacity:.8">credits</a>
 </div>
 <div class="sub" id="bootmsg">loading</div></div>
-<script>
-// Full screen (public feedback Nov 11: "I couldn't understand how to run this on full screen"): the link on the start screen, and the \ key in game.
-(function () { var go = function () { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch (e) {} };
-  var l = document.getElementById('fslink'); if (l) l.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); go(); });
-  addEventListener('keydown', function (e) { if (e.code === 'Backslash' && !e.repeat && !(e.target && e.target.closest && e.target.closest('#fbbox'))) go(); }); })();
-</script>
 <script type="module" src="src/main.js"></script>
 </body></html>

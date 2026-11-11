@@ -57,10 +57,6 @@ function installSunShadows() {
   const f = (x) => Number(x).toFixed(6);
   // lead: 12 + 32 taps a pixel is the still/capture quality; live play takes 6 + 14 (the noise turns per pixel, so it stays soft) to hold frame rate. ?Ltaps=32 forces a count.
   const NF = Math.round(+Q.get('Ltaps') || (Q.has('capture') || Q.has('shot') ? 32 : 14)), NB = Math.max(4, Math.round(NF * 0.4));
-  // Nov 11, Windows reports (RTX 4070 / 5070, Direct3D): every lit shader logged "X3595: gradient instruction used in a loop with varying
-  // iteration" and the page froze for 20 to 43 s while Direct3D's compiler chewed on these two loops (the second one runs after an early return,
-  // and texture2D() needs screen-space gradients, which the compiler can only give by unrolling everything). The shadow map has one level, so the
-  // lookups now name it (textureLod ..., 0.0): no gradients, nothing to unroll. Same picture.
   const pcss = `
   float lightIgn(vec2 p){ return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
   vec2 lightVogel(int i, float n, float a){ float r = sqrt((float(i) + 0.5) / n), t = float(i) * 2.3999632 + a; return r * vec2(cos(t), sin(t)); }
@@ -70,10 +66,10 @@ function installSunShadows() {
     vec2 grad = abs(det) > 1e-14 ? vec2(ay.y * ax.z - ax.y * ay.z, ax.x * ay.z - ay.x * ax.z) / det : vec2(0.0);
     grad = clamp(grad, vec2(-2.5), vec2(2.5));
     float a = lightIgn(gl_FragCoord.xy) * 6.2831853, zb = 0.0, nb = 0.0;
-    for (int i = 0; i < ${NB}; i++) { vec2 o = lightVogel(i, ${NB}.0, a) * (SEARCH / WORLD); float d = unpackRGBAToDepth(textureLod(sm, sc.xy + o, 0.0)); if (d < sc.z + dot(grad, o)) { zb += d; nb += 1.0; } }
+    for (int i = 0; i < ${NB}; i++) { vec2 o = lightVogel(i, ${NB}.0, a) * (SEARCH / WORLD); float d = unpackRGBAToDepth(texture2D(sm, sc.xy + o)); if (d < sc.z + dot(grad, o)) { zb += d; nb += 1.0; } }
     if (nb < 0.5) return 1.0;
     float pen = clamp((sc.z - zb / nb) * RANGE * SUN, MINW, SEARCH * 2.0), s = 0.0;
-    for (int i = 0; i < ${NF}; i++) { vec2 o = lightVogel(i, ${NF}.0, a + 1.7) * (0.5 * pen / WORLD); s += step(sc.z + dot(grad, o), unpackRGBAToDepth(textureLod(sm, sc.xy + o, 0.0))); }
+    for (int i = 0; i < ${NF}; i++) { vec2 o = lightVogel(i, ${NF}.0, a + 1.7) * (0.5 * pen / WORLD); s += step(sc.z + dot(grad, o), unpackRGBAToDepth(texture2D(sm, sc.xy + o))); }
     return s / ${NF}.0;
   }
   float getShadow(`;
@@ -414,15 +410,9 @@ export class World {
     const ev = this.streetEvery || 3; if (n % ev) return;          // one face every third frame (every 4th or 6th when the game has cut detail to hold frame rate)
     // one face every third frame: a face is a whole (reduced) scene draw, about 4 ms of main thread on the M2 Pro
     const f = (n / ev) % 6; if (f === 0) { cam.position.copy(this.camera.position); cam.updateMatrixWorld(true); if (cam.coordinateSystem !== r.coordinateSystem) { cam.coordinateSystem = r.coordinateSystem; cam.updateCoordinateSystem(); } }
-    // Public feedback Nov 11 ("the reflections updates are very distracting"): the six faces used to be redrawn one at a time INTO the cube that
-    // glass and paint were reading, so while driving the mirror picture jumped face by face. They are now drawn into a second, unseen cube and the
-    // two are swapped when all six are done: every reflection changes at once. (The swap exchanges the two cubes' GPU textures; nothing that
-    // holds streetRT.texture needs to know.)
-    if (!this.streetBack) { this.streetBack = new THREE.WebGLCubeRenderTarget(this.streetRT.width, { type: this.streetRT.texture.type, generateMipmaps: false, minFilter: THREE.LinearFilter }); this.streetBack.texture.colorSpace = this.streetRT.texture.colorSpace; r.initRenderTarget(this.streetBack); this.streetSwap = false; }
     const old = r.getRenderTarget(), xr = r.xr.enabled; r.xr.enabled = false; this.shared.tStreet.value = this.streetDummy.texture; sm.autoUpdate = false;
-    r.setRenderTarget(this.streetSwap ? this.streetRT : this.streetBack, f); r.render(this.scene, cam.children[f]);
+    r.setRenderTarget(this.streetRT, f); r.render(this.scene, cam.children[f]);
     r.setRenderTarget(old); r.xr.enabled = xr; sm.autoUpdate = au; this.shared.tStreet.value = this.streetRT.texture;
-    if (f === 5) { const pa = r.properties.get(this.streetRT.texture), pb = r.properties.get(this.streetBack.texture); if (pa.__webglTexture && pb.__webglTexture) { const t = pa.__webglTexture; pa.__webglTexture = pb.__webglTexture; pb.__webglTexture = t; this.streetSwap = !this.streetSwap; r.resetState(); } }
   }
 
   setLiveAA(msaa) {

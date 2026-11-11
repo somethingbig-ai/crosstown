@@ -438,10 +438,7 @@ export class Game {
           if (this._slowD >= 6 && d > 0.51) { this.setDetail(d > 0.81 ? 0.8 : d > 0.65 ? 0.64 : 0.5); this._slowD = 0; console.log('[game] detail ' + w.detail + ' to hold frame rate (' + this.fps.toFixed(0) + ' fps)'); }
           else if (this._fastD >= 16 && d < 1) { this.setDetail(d < 0.51 ? 0.64 : d < 0.65 ? 0.8 : 1); this._fastD = 0; console.log('[game] detail back up to ' + w.detail); } }
       if (this.paused) { this.hud.draw(); return; }
-      // Public feedback Nov 11 ("the update interval of objects is too low and the stuttering of animations is distracting"): the world used to
-      // advance in whole 1/60 s steps, so at 28 fps one frame moved everything 2 steps and the next 3: cars and people juddered. Each frame now
-      // advances the world by exactly the time that passed, in equal steps no longer than 1/60 s (at most 4), so motion is even at any frame rate.
-      { const n = Math.min(4, Math.max(1, Math.ceil(el / DT - 0.02))), h = Math.min(el, 4 * DT) / n; for (let i = 0; i < n; i++) this.step(h); acc = 0; }
+      acc += el; let n = 0; while (acc >= DT && n < 4) { this.step(DT); acc -= DT; n++; } if (n === 4) acc = 0;
       this.renderFrame(el);
       this.jsMs = (this.jsMs || 0) * 0.95 + (performance.now() - now0) * 0.05;     // main-thread time of a live frame (the rest of the frame interval is the GPU's)
     };

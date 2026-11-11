@@ -1,0 +1,1218 @@
+[
+{
+"file": "glass_1.jpg",
+"style": "glass",
+"bays": 2,
+"storeys": 2,
+"bay_m": 4.0,
+"storey_m": 3.7,
+"glass": [
+[
+0.0125,
+0.1475,
+0.4875,
+0.4975
+],
+[
+0.5125,
+0.1475,
+0.9875,
+0.4975
+],
+[
+0.0125,
+0.6475,
+0.4875,
+0.9975
+],
+[
+0.5125,
+0.6475,
+0.9875,
+0.9975
+]
+],
+"light": "overcast",
+"main_colour": "#bab5b2",
+"title": "500 Park Avenue Apr 2021 48.jpg",
+"author": "Epicgenius",
+"licence": "CC BY-SA 4.0",
+"licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:500_Park_Avenue_Apr_2021_48.jpg",
+"changes": "perspective-corrected crop, lighting evened",
+"building": "500 Park Avenue (Pepsi-Cola Building)"
+},
+{
+"file": "glass_2.jpg",
+"style": "glass",
+"bays": 4,
+"storeys": 3,
+"bay_m": 1.6,
+"storey_m": 3.9,
+"glass": [
+[
+0.005,
+0.0033,
+0.245,
+0.1517
+],
+[
+0.255,
+0.0033,
+0.495,
+0.1517
+],
+[
+0.505,
+0.0033,
+0.745,
+0.1517
+],
+[
+0.755,
+0.0033,
+0.995,
+0.1517
+],
+[
+0.005,
+0.3367,
+0.245,
+0.485
+],
+[
+0.255,
+0.3367,
+0.495,
+0.485
+],
+[
+0.505,
+0.3367,
+0.745,
+0.485
+],
+[
+0.755,
+0.3367,
+0.995,
+0.485
+],
+[
+0.005,
+0.67,
+0.245,
+0.8183
+],
+[
+0.255,
+0.67,
+0.495,
+0.8183
+],
+[
+0.505,
+0.67,
+0.745,
+0.8183
+],
+[
+0.755,
+0.67,
+0.995,
+0.8183
+]
+],
+"light": "clear sky, facade in shade; soft cloud reflections in the metal bands",
+"main_colour": "#838388",
+"title": "Citigroup Center Oct 2023 45.jpg",
+"author": "Epicgenius",
+"licence": "CC BY-SA 4.0",
+"licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:Citigroup_Center_Oct_2023_45.jpg",
+"changes": "perspective-corrected crop, lighting evened, one bright cloud reflection painted out",
+"building": "Citigroup Center, 601 Lexington Avenue (glass and aluminium bands)"
+},
+{
+"file": "glass_3.jpg",
+"style": "glass",
+"bays": 2,
+"storeys": 2,
+"bay_m": 1.5,
+"storey_m": 3.7,
+"glass": [
+[
+0.06,
+0.115,
+0.51,
+0.385
+],
+[
+0.57,
+0.115,
+1.0,
+0.385
+],
+[
+0.06,
+0.615,
+0.51,
+0.885
+],
+[
+0.57,
+0.615,
+1.0,
+0.885
+]
+],
+"light": "overcast",
+"main_colour": "#a4a29d",
+"title": "28 Liberty Street 018.jpg",
+"author": "Kidfly182",
+"licence": "CC BY 4.0",
+"licence_url": "https://creativecommons.org/licenses/by/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:28_Liberty_Street_018.jpg",
+"changes": "perspective-corrected crop, lighting evened",
+"building": "28 Liberty Street (aluminium and glass curtain wall)"
+},
+{
+"file": "glass_4.jpg",
+"style": "glass",
+"bays": 3,
+"storeys": 2,
+"bay_m": 1.4,
+"storey_m": 3.8,
+"glass": [
+[
+0.0133,
+0.01,
+0.3233,
+0.26
+],
+[
+0.3467,
+0.01,
+0.6567,
+0.26
+],
+[
+0.68,
+0.01,
+0.99,
+0.26
+],
+[
+0.0133,
+0.51,
+0.3233,
+0.76
+],
+[
+0.3467,
+0.51,
+0.6567,
+0.76
+],
+[
+0.68,
+0.51,
+0.99,
+0.76
+]
+],
+"light": "open shade (shaded face on a sunny day), dark reflections",
+"main_colour": "#29363b",
+"title": "Park Av May 2022 64.jpg",
+"author": "Epicgenius",
+"licence": "CC BY-SA 4.0",
+"licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:Park_Av_May_2022_64.jpg",
+"changes": "perspective-corrected crop, lighting evened, an interior lamp painted out",
+"building": "Lever House, 390 Park Avenue (green glass curtain wall)"
+},
+{
+"file": "lightbrick_1.jpg",
+"style": "lightbrick",
+"bays": 2,
+"storeys": 2,
+"bay_m": 2.27,
+"storey_m": 2.99,
+"glass": [
+[
+0.1116,
+0.0583,
+0.3235,
+0.3028
+],
+[
+0.6101,
+0.0593,
+0.8196,
+0.3033
+],
+[
+0.1067,
+0.5359,
+0.3181,
+0.8052
+],
+[
+0.6072,
+0.5359,
+0.8166,
+0.8052
+]
+],
+"sill": [
+[
+0.3403,
+0.0835,
+0.3491,
+0
+],
+[
+0.3408,
+0.5781,
+0.8545,
+0
+],
+[
+0.8384,
+0.0693,
+0.3579,
+0
+],
+[
+0.8389,
+0.5781,
+0.8584,
+0
+]
+],
+"lintel": [
+[
+0.0103,
+0.0688,
+0.3721,
+0.0479
+],
+[
+0.0103,
+0.5664,
+0.8691,
+0.0479
+],
+[
+0.4878,
+0.0625,
+0.3696,
+0.5249
+],
+[
+0.4878,
+0.562,
+0.8667,
+0.5249
+]
+],
+"light": "open shade under a clear sky, soft; warm bounce light on the underside of the sills; blue cast corrected on the white woodwork",
+"main_colour": "#76544d",
+"title": "St. Luke's School (55381213010).jpg",
+"author": "Ajay Suresh",
+"licence": "CC BY 4.0",
+"licence_url": "https://creativecommons.org/licenses/by/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:St._Luke%27s_School_(55381213010).jpg",
+"changes": "perspective-corrected crop resampled once from the original (bicubic) with a smooth vertical levelling of the brick courses (the old wall's courses sag by up to about one course); cell cut at 88 courses by 2 window bays; an overhead wire across the upper storey painted out (about 12 rows, brick rebuilt inside each course from the rows next to it, bed joints from the course above and below; plain vertical fill over the upper windows); a rain pipe left out by choosing the cell; white balance on the painted woodwork; slow lighting and blotchy tone evened on brick pixels only; top/bottom and left/right edges tone-matched over 300 px; at the side seam each brick course switches to the wrapped side at the column where the two agree best (within 56 px of the edge)",
+"building": "St. Luke's School, 487 Hudson Street, Greenwich Village, Manhattan (red brick in Flemish bond with brownstone panelled lintels and sills, six-over-six sashes); upper two storeys, two left bays",
+"glass_photo": [
+[
+0.1221,
+0.0762,
+0.311,
+0.3052
+],
+[
+0.6147,
+0.0737,
+0.8101,
+0.3052
+],
+[
+0.1094,
+0.5469,
+0.311,
+0.8096
+],
+[
+0.6055,
+0.5459,
+0.8076,
+0.8081
+]
+],
+"opening": [
+[
+0.0918,
+0.0483,
+0.3433,
+0.3179
+],
+[
+0.5903,
+0.0493,
+0.8394,
+0.3184
+],
+[
+0.0869,
+0.5259,
+0.3379,
+0.8203
+],
+[
+0.5874,
+0.5259,
+0.8364,
+0.8203
+]
+],
+"sill_rect": [
+[
+0.0835,
+0.3179,
+0.3491,
+0.3403
+],
+[
+0.5781,
+0.3184,
+0.8545,
+0.3408
+],
+[
+0.0693,
+0.8203,
+0.3579,
+0.8384
+],
+[
+0.5781,
+0.8203,
+0.8584,
+0.8389
+]
+],
+"lintel_rect": [
+[
+0.0688,
+0.0103,
+0.3721,
+0.0479
+],
+[
+0.5664,
+0.0103,
+0.8691,
+0.0479
+],
+[
+0.0625,
+0.4878,
+0.3696,
+0.5249
+],
+[
+0.562,
+0.4878,
+0.8667,
+0.5249
+]
+],
+"surround": [
+[],
+[],
+[],
+[]
+]
+},
+{
+"file": "lightbrick_2.jpg",
+"style": "lightbrick",
+"bays": 2,
+"storeys": 2,
+"bay_m": 1.9,
+"storey_m": 3.2,
+"glass": [
+[
+0.086,
+0.094,
+0.33,
+0.33
+],
+[
+0.695,
+0.093,
+0.757,
+0.232
+],
+[
+0.089,
+0.586,
+0.324,
+0.814
+],
+[
+0.698,
+0.58,
+0.762,
+0.73
+]
+],
+"light": "overcast",
+"main_colour": "#b6ada5",
+"title": "First Avenue Estate May 2026 31.jpg",
+"author": "Epicgenius",
+"licence": "CC BY-SA 4.0",
+"licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:First_Avenue_Estate_May_2026_31.jpg",
+"changes": "perspective-corrected crop, lighting evened",
+"building": "City and Suburban Homes First Avenue Estate, Manhattan"
+},
+{
+"file": "lightbrick_3.jpg",
+"style": "lightbrick",
+"bays": 2,
+"storeys": 2,
+"bay_m": 3.5,
+"storey_m": 2.9,
+"glass": [
+[
+0.049,
+0.109,
+0.164,
+0.36
+],
+[
+0.55,
+0.109,
+0.662,
+0.36
+],
+[
+0.047,
+0.6,
+0.158,
+0.848
+],
+[
+0.547,
+0.6,
+0.66,
+0.85
+]
+],
+"light": "open shade, clear sky",
+"main_colour": "#b6b0aa",
+"title": "Avenue A Estate May 2026 51.jpg",
+"author": "Epicgenius",
+"licence": "CC BY-SA 4.0",
+"licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:Avenue_A_Estate_May_2026_51.jpg",
+"changes": "perspective-corrected crop, lighting evened, tree leaves at one corner replaced with brick copied from the neighbouring bay",
+"building": "City and Suburban Homes Avenue A (York Avenue) Estate, Manhattan"
+},
+{
+"file": "lightbrick_4.jpg",
+"style": "lightbrick",
+"bays": 3,
+"storeys": 2,
+"bay_m": 2.1,
+"storey_m": 2.95,
+"glass": [
+[
+0.081,
+0.11,
+0.254,
+0.384
+],
+[
+0.456,
+0.11,
+0.537,
+0.384
+],
+[
+0.746,
+0.11,
+0.921,
+0.384
+],
+[
+0.081,
+0.617,
+0.254,
+0.885
+],
+[
+0.456,
+0.617,
+0.537,
+0.885
+],
+[
+0.746,
+0.617,
+0.921,
+0.885
+]
+],
+"light": "open shade",
+"main_colour": "#a29f9e",
+"title": "Avenue A Estate May 2026 04.jpg",
+"author": "Epicgenius",
+"licence": "CC BY-SA 4.0",
+"licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:Avenue_A_Estate_May_2026_04.jpg",
+"changes": "perspective-corrected crop, lighting evened",
+"building": "City and Suburban Homes Avenue A (York Avenue) Estate, another building, Manhattan"
+},
+{
+"file": "loft_3.jpg",
+"style": "loft",
+"bays": 1,
+"storeys": 2,
+"bay_m": 4.85,
+"storey_m": 3.87,
+"glass": [
+[
+0.2598,
+0.2529,
+0.3701,
+0.4629
+],
+[
+0.4385,
+0.2539,
+0.623,
+0.4639
+],
+[
+0.6899,
+0.2529,
+0.7979,
+0.4629
+],
+[
+0.231,
+0.6543,
+0.3403,
+0.9692
+],
+[
+0.4277,
+0.6548,
+0.6084,
+0.9692
+],
+[
+0.6968,
+0.6543,
+0.8047,
+0.9692
+]
+],
+"light": "direct late-morning sun from the upper right, fairly flat; short hard shadows under mouldings, a narrow pier shadow down the right edge of the window bay and a finial shadow on the pier",
+"main_colour": "#9e6652",
+"title": "NoHo Jun 2023 85.jpg",
+"author": "Epicgenius",
+"licence": "CC BY-SA 4.0",
+"licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:NoHo_Jun_2023_85.jpg",
+"changes": "perspective-corrected crop, lighting evened",
+"building": "Schermerhorn Building, 376-380 Lafayette Street at Great Jones Street, NoHo (1888-89)",
+"glass_transoms": [
+[
+0.2617,
+0.1836,
+0.3721,
+0.2173
+],
+[
+0.438,
+0.1846,
+0.624,
+0.2188
+],
+[
+0.6899,
+0.1846,
+0.8008,
+0.2183
+]
+]
+},
+{
+"file": "loft_4.jpg",
+"style": "loft",
+"bays": 2,
+"storeys": 2,
+"bay_m": 2.25,
+"storey_m": 4.0,
+"glass": [
+[
+0.045,
+0.165,
+0.33,
+0.385
+],
+[
+0.545,
+0.165,
+0.83,
+0.385
+],
+[
+0.045,
+0.655,
+0.335,
+0.905
+],
+[
+0.545,
+0.655,
+0.83,
+0.905
+]
+],
+"light": "open shade, even (bright sky reflected in the glass)",
+"main_colour": "#9d9e99",
+"title": "SoHo Manhattan October 2024 113.jpg",
+"author": "Kidfly182",
+"licence": "CC BY 4.0",
+"licence_url": "https://creativecommons.org/licenses/by/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:SoHo_Manhattan_October_2024_113.jpg",
+"changes": "perspective-corrected crop, lighting evened",
+"building": "painted cast-iron loft front, SoHo (address not identified)"
+},
+{
+"file": "postwar_1.jpg",
+"style": "postwar",
+"bays": 3,
+"storeys": 3,
+"bay_m": 3.3,
+"storey_m": 2.9,
+"glass": [
+[
+0.105,
+0.06,
+0.205,
+0.185
+],
+[
+0.445,
+0.06,
+0.545,
+0.185
+],
+[
+0.685,
+0.07,
+0.875,
+0.245
+],
+[
+0.105,
+0.395,
+0.205,
+0.52
+],
+[
+0.445,
+0.395,
+0.545,
+0.52
+],
+[
+0.685,
+0.4,
+0.875,
+0.575
+],
+[
+0.105,
+0.725,
+0.205,
+0.855
+],
+[
+0.445,
+0.725,
+0.545,
+0.855
+],
+[
+0.685,
+0.73,
+0.875,
+0.905
+]
+],
+"light": "open shade",
+"main_colour": "#8e8d8d",
+"title": "Manhattan House Apartments Feb 2023 42.jpg",
+"author": "Epicgenius",
+"licence": "CC BY-SA 4.0",
+"licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:Manhattan_House_Apartments_Feb_2023_42.jpg",
+"changes": "perspective-corrected crop, lighting evened, a sliver of balcony at the left edge painted out",
+"building": "Manhattan House, East 66th Street"
+},
+{
+"file": "postwar_2.jpg",
+"style": "postwar",
+"bays": 2,
+"storeys": 2,
+"bay_m": 3.5,
+"storey_m": 2.8,
+"glass": [
+[
+0.11,
+0.11,
+0.41,
+0.34
+],
+[
+0.61,
+0.11,
+0.91,
+0.34
+],
+[
+0.11,
+0.61,
+0.41,
+0.84
+],
+[
+0.61,
+0.61,
+0.91,
+0.84
+]
+],
+"light": "overcast",
+"main_colour": "#9d999a",
+"title": "Sutton House Manhattan.jpg",
+"author": "Danifel",
+"licence": "CC0",
+"licence_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+"page_url": "https://commons.wikimedia.org/wiki/File:Sutton_House_Manhattan.jpg",
+"changes": "perspective-corrected crop, lighting evened",
+"building": "Sutton House, East 52nd Street"
+},
+{
+"file": "postwar_3.jpg",
+"style": "postwar",
+"bays": 2,
+"storeys": 2,
+"bay_m": 3.4,
+"storey_m": 2.7,
+"glass": [
+[
+0.14,
+0.155,
+0.355,
+0.35
+],
+[
+0.665,
+0.15,
+0.91,
+0.35
+],
+[
+0.14,
+0.655,
+0.355,
+0.855
+],
+[
+0.665,
+0.65,
+0.91,
+0.855
+]
+],
+"light": "open shade on a clear day, even",
+"main_colour": "#605152",
+"title": "Houston St Ave D Columbia St td (2019-02-05) 14 - Baruch Houses.jpg",
+"author": "Tdorante10",
+"licence": "CC BY-SA 4.0",
+"licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:Houston_St_Ave_D_Columbia_St_td_(2019-02-05)_14_-_Baruch_Houses.jpg",
+"changes": "perspective-corrected crop, lighting evened",
+"building": "Baruch Houses (NYCHA, 1959), Columbia Street"
+},
+{
+"file": "postwar_4.jpg",
+"style": "postwar",
+"bays": 2,
+"storeys": 3,
+"bay_m": 3.2,
+"storey_m": 2.75,
+"glass": [
+[
+0.15,
+0.045,
+0.335,
+0.225
+],
+[
+0.665,
+0.045,
+0.85,
+0.225
+],
+[
+0.148,
+0.375,
+0.335,
+0.56
+],
+[
+0.662,
+0.375,
+0.85,
+0.56
+],
+[
+0.145,
+0.71,
+0.335,
+0.895
+],
+[
+0.66,
+0.71,
+0.85,
+0.895
+]
+],
+"light": "open shade under partly cloudy sky, even",
+"main_colour": "#9b735e",
+"title": "Kips Bay Court 2025.jpg",
+"author": "Transpoman",
+"licence": "CC BY-SA 4.0",
+"licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:Kips_Bay_Court_2025.jpg",
+"changes": "perspective-corrected crop, lighting evened",
+"building": "Kips Bay Court, East 29th Street (1970s)"
+},
+{
+"file": "stone_3.jpg",
+"style": "stone",
+"bays": 2,
+"storeys": 2,
+"bay_m": 6.1,
+"storey_m": 3.7,
+"glass": [
+[
+0.11,
+0.105,
+0.23,
+0.37
+],
+[
+0.275,
+0.105,
+0.39,
+0.37
+],
+[
+0.61,
+0.105,
+0.73,
+0.37
+],
+[
+0.775,
+0.105,
+0.89,
+0.37
+],
+[
+0.11,
+0.605,
+0.23,
+0.87
+],
+[
+0.275,
+0.605,
+0.39,
+0.87
+],
+[
+0.61,
+0.605,
+0.73,
+0.87
+],
+[
+0.775,
+0.605,
+0.89,
+0.87
+]
+],
+"light": "open shade",
+"main_colour": "#868685",
+"title": "Madison Av May 2023 30.jpg",
+"author": "Epicgenius",
+"licence": "CC BY-SA 4.0",
+"licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:Madison_Av_May_2023_30.jpg",
+"changes": "perspective-corrected crop, lighting evened, second bay is a mirror image of the first",
+"building": "New York Life Building, 51 Madison Avenue (limestone; each bay holds a pair of windows)"
+},
+{
+"file": "stone_4.jpg",
+"style": "stone",
+"bays": 2,
+"storeys": 2,
+"bay_m": 4.0,
+"storey_m": 3.4,
+"glass": [
+[
+0.175,
+0.205,
+0.325,
+0.3875
+],
+[
+0.675,
+0.205,
+0.825,
+0.3875
+],
+[
+0.175,
+0.705,
+0.325,
+0.8875
+],
+[
+0.675,
+0.705,
+0.825,
+0.8875
+]
+],
+"light": "overcast",
+"main_colour": "#88898a",
+"title": "Broadway Manhattan Apr 2023 29.jpg",
+"author": "Epicgenius",
+"licence": "CC BY-SA 4.0",
+"licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:Broadway_Manhattan_Apr_2023_29.jpg",
+"changes": "perspective-corrected crop, lighting evened",
+"building": "Hotel Martinique, Broadway at 32nd Street (pale brick, stone surrounds)"
+},
+{
+"file": "walkup_1.jpg",
+"style": "walkup",
+"bays": 2,
+"storeys": 2,
+"bay_m": 2.3,
+"storey_m": 3.1,
+"glass": [
+[
+0.185,
+0.115,
+0.385,
+0.405
+],
+[
+0.685,
+0.115,
+0.89,
+0.405
+],
+[
+0.2,
+0.625,
+0.41,
+0.945
+],
+[
+0.705,
+0.625,
+0.915,
+0.945
+]
+],
+"light": "overcast",
+"main_colour": "#835041",
+"title": "Horatio St W 4th St 8th Av td (2019-01-03) 15 - 48-52 8th Avenue.jpg",
+"author": "Tdorante10",
+"licence": "CC BY-SA 4.0",
+"licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:Horatio_St_W_4th_St_8th_Av_td_(2019-01-03)_15_-_48-52_8th_Avenue.jpg",
+"changes": "perspective-corrected crop, lighting evened",
+"building": "48-52 Eighth Avenue, Greenwich Village (brick row)"
+},
+{
+"file": "walkup_2.jpg",
+"style": "walkup",
+"bays": 3,
+"storeys": 2,
+"bay_m": 1.9,
+"storey_m": 3.6,
+"glass": [
+[
+0.057,
+0.096,
+0.183,
+0.347
+],
+[
+0.397,
+0.096,
+0.525,
+0.347
+],
+[
+0.74,
+0.096,
+0.865,
+0.347
+],
+[
+0.057,
+0.593,
+0.183,
+0.9
+],
+[
+0.397,
+0.593,
+0.525,
+0.9
+],
+[
+0.74,
+0.593,
+0.865,
+0.9
+]
+],
+"light": "overcast",
+"main_colour": "#9a6c62",
+"title": "12th St Hudson St td (2019-01-08) 10.jpg",
+"author": "Tdorante10",
+"licence": "CC BY-SA 4.0",
+"licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:12th_St_Hudson_St_td_(2019-01-08)_10.jpg",
+"changes": "perspective-corrected crop, lighting evened",
+"building": "brick row house, Hudson Street at West 12th Street, Manhattan"
+},
+{
+"file": "walkup_3.jpg",
+"style": "walkup",
+"bays": 2,
+"storeys": 2,
+"bay_m": 2.0,
+"storey_m": 3.3,
+"glass": [
+[
+0.125,
+0.206,
+0.362,
+0.445
+],
+[
+0.625,
+0.206,
+0.854,
+0.445
+],
+[
+0.12,
+0.7,
+0.357,
+0.969
+],
+[
+0.621,
+0.676,
+0.862,
+0.969
+]
+],
+"light": "overcast",
+"main_colour": "#76433b",
+"title": "14th St 9th Av Hudson St td (2022-02-07) 38 - Village Pointe Condominium (350 West 14th Street).jpg",
+"author": "Tdorante10",
+"licence": "CC BY-SA 4.0",
+"licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:14th_St_9th_Av_Hudson_St_td_(2022-02-07)_38_-_Village_Pointe_Condominium_(350_West_14th_Street).jpg",
+"changes": "perspective-corrected crop, lighting evened",
+"building": "350 West 14th Street (Village Pointe), Manhattan"
+},
+{
+"file": "walkup_4.jpg",
+"style": "walkup",
+"bays": 3,
+"storeys": 2,
+"bay_m": 2.1,
+"storey_m": 3.1,
+"glass": [
+[
+0.087,
+0.101,
+0.215,
+0.356
+],
+[
+0.449,
+0.105,
+0.513,
+0.28
+],
+[
+0.75,
+0.101,
+0.877,
+0.356
+],
+[
+0.087,
+0.596,
+0.215,
+0.859
+],
+[
+0.449,
+0.6,
+0.513,
+0.775
+],
+[
+0.75,
+0.596,
+0.877,
+0.859
+]
+],
+"light": "soft low sun with faint tree dapple",
+"main_colour": "#a48b7d",
+"title": "Avenue A Estate May 2026 16.jpg",
+"author": "Epicgenius",
+"licence": "CC BY-SA 4.0",
+"licence_url": "https://creativecommons.org/licenses/by-sa/4.0",
+"page_url": "https://commons.wikimedia.org/wiki/File:Avenue_A_Estate_May_2026_16.jpg",
+"changes": "perspective-corrected crop, lighting evened",
+"building": "City and Suburban Homes Avenue A (York Avenue) Estate, tan-brick building, Manhattan"
+}
+]

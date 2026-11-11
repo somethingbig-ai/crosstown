@@ -1,0 +1,595 @@
+// combat/combat.js: guns. Carry, aim over the shoulder, fire, reload, switch; recoil; what the bullets hit and how it answers
+// (walls, ground, street furniture, cars, people); the HUD for it. One call at the end of Game.init():
+//     try { this.combat = await (await import('./combat/combat.js')).addCombat(this); } catch (e) { console.log('[guns] not loaded: ' + (e && (e.stack || e.message))); }
+// New files only (src/combat/*); the game's own code is wrapped from here (step, syncVisuals, camTarget, placeCamera, playerAnim,
+// nearestCar, readInput, hud.draw), never edited.   ?guns=0 (or none)  off     ?script=<name>  a scripted player (scripts.js) for filming
+// GUNS V1 (Nov 10, for the lead's game at 1ffa163): a pistol in the hand at spawn and a rifle. People shot down fall as the lead's pedhit ragdolls.
+//   Mouse: left fire, right aim, wheel switch.  Keys: 1 pistol, 2 rifle, Q put away / take out, R reload.  ?gall=1 adds 3 SMG, 4 shotgun.
+//   Not loaded unless asked: police and health (?heat=1), the lane's own people (?gpeople=1), the player's jacket tweak (?gdress=1).
+// Sim space is the game's (x east, y north, z up); three.js space is (x, z, -y).
+import * as THREE from 'three';
+import { clamp, lerp, wrapPi } from '../geo.js';
+import { Fx } from './fx.js';
+import { AimRig, Ragdoll } from './rig.js';
+import { Script } from './scripts.js';
+import { Vehicle } from '../game.js';
+
+const D2R = Math.PI / 180;
+export const WEAPONS = {
+  pistol: { name: '9MM PISTOL', key: 'Digit2', auto: false, rpm: 400, mag: 15, reserve: 120, dmg: 34, pellets: 1, spread: 0.30, hip: 1.5, bloom: 0.55, bloomMax: 2.6, kick: 2.3, kickYaw: 0.7, back: 0.07, rise: 0.34, reload: 1.55, fov: 50, range: 140, tracer: 0.4, force: 1.0 },
+  smg: { name: 'SMG', key: 'Digit3', auto: true, rpm: 840, mag: 30, reserve: 240, dmg: 21, pellets: 1, spread: 0.55, hip: 2.0, bloom: 0.32, bloomMax: 3.0, kick: 0.8, kickYaw: 0.7, back: 0.04, rise: 0.08, reload: 1.9, fov: 50, range: 120, tracer: 0.5, force: 0.8 },
+  shotgun: { name: 'PUMP SHOTGUN', key: 'Digit4', auto: false, rpm: 66, mag: 8, reserve: 48, dmg: 15, pellets: 9, spread: 2.6, hip: 3.6, bloom: 1.2, bloomMax: 3.0, kick: 4.6, kickYaw: 1.1, back: 0.12, rise: 0.42, reload: 0.5, shells: true, fov: 50, range: 60, tracer: 0, force: 2.4 },
+  rifle: { name: 'CARBINE', key: 'Digit5', auto: true, rpm: 700, mag: 30, reserve: 210, dmg: 38, pellets: 1, spread: 0.22, hip: 1.9, bloom: 0.30, bloomMax: 2.8, kick: 1.1, kickYaw: 0.8, back: 0.05, rise: 0.07, reload: 2.2, fov: 47, range: 220, tracer: 0.6, force: 1.5 },
+};
+// what the body shows of each shot: shoulder hike, head snap, chest turn (rad), hand lift per rad of muzzle flip (m), per-shot wander (m), roll (rad)
+const KICK = { pistol: { sh: 0.2, head: 0.08, yaw: 0.07, lift: 0.2, jit: 0.006, roll: 0.06, sway: 0.05 }, smg: { sh: 0.09, head: 0.06, yaw: 0.07, lift: 0.1, jit: 0.018, roll: 0.07, sway: 0.045 }, shotgun: { sh: 0.3, head: 0.14, yaw: 0.14, lift: 0.22, jit: 0.01, roll: 0.08, sway: 0.08 }, rifle: { sh: 0.09, head: 0.06, yaw: 0.07, lift: 0.08, jit: 0.016, roll: 0.06, sway: 0.045 } };
+let ORDER = ['pistol', 'rifle', 'unarmed'];      /* v1: a pistol and a rifle, keys 1 and 2; Q puts the gun away and takes it out again. ?gall=1 adds the SMG (3) and the shotgun (4) */
+const _o = {}, _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3(), _v5 = new THREE.Vector3(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _m = new THREE.Matrix4(), _e = new THREE.Euler();
+const F = new THREE.Vector3(), R = new THREE.Vector3(), U = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
+let seed = 99991; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }, rs = (a = 1) => (rnd() * 2 - 1) * a;
+const sm = (u) => { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); };
+
+// a stand-in weapon if combat/models.js is missing or throws: the same contract, plain boxes
+function plainWeapon(kind) {
+  const g = new THREE.Group(), mat = new THREE.MeshStandardMaterial({ color: 0x1b1c1e, roughness: 0.45, metalness: 0.7 }), long = kind === 'pistol' ? 0.19 : kind === 'smg' ? 0.34 : 0.62, back = kind === 'pistol' ? 0.03 : kind === 'smg' ? 0.16 : 0.3;
+  const box = (w, h, d, x, y, z = 0) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); m.castShadow = true; g.add(m); return m; };
+  box(long + back, 0.045, 0.03, (long - back) / 2, 0.075); box(0.035, 0.11, 0.028, -0.005, 0.0); const mag = box(0.03, 0.12, 0.022, kind === 'pistol' ? -0.005 : 0.09, kind === 'pistol' ? -0.03 : -0.02), slide = box(0.12, 0.02, 0.031, 0.02, 0.105);
+  g.userData = { kind, muzzle: new THREE.Vector3(long, 0.075, 0), eject: new THREE.Vector3(0.04, 0.09, 0.02), ejectDir: new THREE.Vector3(0.1, 0.5, 0.85).normalize(), support: kind === 'pistol' ? new THREE.Vector3(0.0, -0.02, -0.02) : new THREE.Vector3(long * 0.55, 0.045, 0), stock: kind === 'pistol' ? null : new THREE.Vector3(-back, 0.06, 0), sightY: 0.11,
+    moving: { [kind === 'shotgun' ? 'pump' : kind === 'pistol' ? 'slide' : 'bolt']: { node: slide, axis: new THREE.Vector3(-1, 0, 0), travel: 0.04 }, mag: { node: mag } } };
+  return g;
+}
+
+export async function addCombat(game) {
+  { const off = game.P.get('guns'); if (off === '0' || off === 'none' || off === 'off') return null; }      /* ?guns=0 (or none): nothing is loaded, wrapped or drawn: the game as it was */
+  const C = new Combat(game); await C.init(); return C;
+}
+
+class Combat {
+  constructor(game) {
+    this.g = game; if (game.P.get('gall') === '1') ORDER = ['pistol', 'rifle', 'smg', 'shotgun', 'unarmed']; for (const k in WEAPONS) { const i = ORDER.indexOf(k); WEAPONS[k].key = i >= 0 ? 'Digit' + (i + 1) : null; } this.slot = 'unarmed'; this.last = 'pistol'; this.ammo = {}; for (const k in WEAPONS) this.ammo[k] = { mag: WEAPONS[k].mag, reserve: WEAPONS[k].reserve };
+    this.inp = { fire: false, aim: false, reload: false, want: null, wheel: 0 }; this.aimT = 0; this.stance = false; this.stanceT = 9; this.fireCd = 0; this.pressed = false; this.rel = null; this.drawT = 0; this.swap = null;
+    this.bloom = 0; this.gunBack = 0; this.gunBackV = 0; this.gunRise = 0; this.gunRiseV = 0; this.give = 0; this.slideT = 0; this.pumpT = -1; this.hitT = 0; this.killT = 0; this.shots = 0; this.kills = 0; this.t = 0;
+    this.aim = { x: 0, y: 0, z: 0, kind: 'sky', ok: false }; this.cars = new Map(); this.scared = []; this.dolls = []; this.events = []; this.legYaw = 0; this.twist = 0; this.fovPunch = 0; this.camShake = 0; this.own = false; this.stats = { fired: 0, hits: {} };
+    this.health = 100;
+    /* ?gt=key:value,key:value overrides a tuning number read through this.T (for trying variants on a laptop; game.combat.tune is live) */
+    this.tune = {}; { const q = game.P.get('gt'); if (q) for (const kv of q.split(',')) { const [k, v] = kv.split(':'); if (k && isFinite(+v)) this.tune[k] = +v; } }
+  }
+  T(k, d) { const t = this.tune; return t && k in t ? t[k] : d; }
+  async init() {
+    const g = this.g, w = g.world;
+    this.build = plainWeapon; this.casing = () => null;
+    try { const M = await import('./models.js'); if (M.loadWeapons) await M.loadWeapons(); const t = M.buildWeapon('pistol'); if (t && t.userData && t.userData.muzzle) { this.build = M.buildWeapon; this.casing = M.buildCasing || this.casing; } } catch (e) { console.log('[guns] weapon models not loaded, plain stand-ins used: ' + (e && e.message)); }
+    try { const A = await import('./audio.js'); this.audio = new A.GunAudio(g); if (this.audio.preload) this.audio.preload().catch(() => {}); } catch (e) { console.log('[guns] gun audio not loaded: ' + (e && e.message)); this.audio = null; }
+    const ground = (x, z) => (g.statics.onSidewalk(x, -z) ? 0.15 : 0);
+    this.fx = new Fx(w.scene, { ground, casing: (k) => { try { return this.casing(k); } catch (e) { return null; } }, day: 1.0, light: g.P.get('glight') !== '0' });
+    this.fx.onCasing = (k, c) => this.snd('casing', k, g.statics.onSidewalk(c.x, -c.z) ? 'concrete' : 'asphalt');
+    this.guns = {}; for (const k in WEAPONS) { let o; try { o = this.build(k); } catch (e) { console.log('[guns] ' + k + ' model failed: ' + e.message); o = plainWeapon(k); } o.visible = false; if (k === 'pistol') o.scale.multiplyScalar(+(g.P.get('gps') || 1.3)); o.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.frustumCulled = false; } });      /* the pistol is drawn over life size, as shooters draw them (?gps=1 = as modelled). The models' material is NOT copied here: it is one material whose finishes live in onBeforeCompile and vertex colours, and a clone() drops that shader (the shotgun's wood went white: out/tc-shot.jpg) */ w.scene.add(o); this.guns[k] = o; const mv = o.userData.moving || {}; for (const n in mv) if (mv[n] && mv[n].node) mv[n].home = mv[n].node.position.clone(); }
+    { const fg = g.P.get('gfig'); if (fg && fg !== 'player' && g.kit && g.kit.person) { try { const p = g.kit.person(fg), old = g.player.vis; if (p && old && old.object) { w.scene.remove(old.object); p.object.position.copy(old.object.position); p.object.rotation.copy(old.object.rotation); g.player.vis = p; w.scene.add(p.object); } } catch (e) { console.log('[guns] gfig: ' + (e && e.message)); } } }      /* ?gfig=ped_a..ped_d: another kit figure as the player (for filming) */
+    if (g.P.has('gli')) this.fx.lightK = +g.P.get('gli'); if (g.P.has('glr')) this.fx.lightR = +g.P.get('glr');
+    const vis = g.player.vis; this.rig = vis && vis.mixer ? new AimRig(vis, vis.name || 'player') : null; if (this.rig && !this.rig.ok) this.rig = null; if (this.rig && g.P.has('gcl')) this.rig.curlL = +g.P.get('gcl');
+    try { const D = await import('./dress.js'); this.cap = this.rig ? new D.Cap(w.scene, g.P) : null; if (D.dressPlayer && g.P.get('gdress') === '1') this.dressed = D.dressPlayer(vis, g.P);      /* v1 leaves the player's own materials alone unless ?gdress=1 */ } catch (e) { console.log('[guns] dress.js not loaded: ' + (e && e.message)); this.cap = null; }
+    // the effects are not part of the ambient-occlusion depth pass
+    const gt = w.gtao; if (gt && gt.renderOverride && !gt._combat) { gt._combat = true; const ro = gt.renderOverride.bind(gt), grp = this.fx.group; gt.renderOverride = function (...a) { const v = grp.visible; grp.visible = false; try { ro(...a); } finally { grp.visible = v; } }; }
+    this.bodies = null; if (g.P.get('gpeople') === '1') { try { this.bodies = new (await import('./people.js')).Bodies(g, this); } catch (e) { console.log('[guns] people.js not loaded: ' + (e && (e.stack || e.message))); this.bodies = null; } }      /* v1: people who are shot are the lead's pedhit ragdolls (kill()); the lane's own people.js only with ?gpeople=1, and only if the file is there */
+    this.hook(); this.bind();
+    const sc = g.P.get('script'); if (sc) this.script = new Script(g, this, sc);
+    if (g.P.has('gun')) this.equip(g.P.get('gun'), true); else if (!g.demo && !sc) this.equip('pistol', true);      /* given at spawn: the pistol in the hand, the rifle on key 2 (not in the demo film) */
+    if (g.P.has('at')) this.stage(...g.P.get('at').split(',').map(Number));
+    console.log('[guns] ready: rig ' + (this.rig ? 'ik' : 'none') + ', models ' + (this.build === plainWeapon ? 'plain' : 'kit') + ', audio ' + (this.audio ? 'yes' : 'no') + (sc ? ', script ' + sc : ''));
+    if (g.P.get('heat') === '1') { try { this.heat = await (await import('./heat.js')).addHeat(g, this); } catch (e) { console.log('[heat] not loaded: ' + e.message); } }      /* police and health are not part of guns v1: off unless ?heat=1 (and the files are there) */
+  }
+  snd(fn, ...a) { const A = this.audio; if (!A || !A[fn]) return; try { A[fn](...a); } catch (e) { if (!this._sndErr) { this._sndErr = true; console.log('[guns] audio.' + fn + ' failed: ' + e.message); } } }
+
+  bind() {
+    const g = this.g, I = this.inp, c = g.world.renderer.domElement;
+    addEventListener('mousedown', (e) => { if (document.pointerLockElement !== c) return; if (e.button === 0) { I.fire = true; I.tap = 0.45; } if (e.button === 2) I.aim = true; });      /* tap: a quick click still fires once the gun is up (a 50 ms click used to raise the gun and fire nothing) */
+    addEventListener('mouseup', (e) => { if (e.button === 0) I.fire = false; if (e.button === 2) I.aim = false; });
+    addEventListener('contextmenu', (e) => { if (e.target === c || document.pointerLockElement === c) e.preventDefault(); });
+    addEventListener('wheel', (e) => { if (g.fly && g.fly.on || !this.canCarry()) return; I.wheel += Math.sign(e.deltaY); }, { passive: true });
+    addEventListener('keydown', (e) => { if (e.repeat) return; if (e.code === 'KeyR') I.reload = true; if (e.code === 'KeyQ') I.want = this.slot === 'unarmed' ? this.last : 'unarmed'; for (const k in WEAPONS) if (WEAPONS[k].key && WEAPONS[k].key === e.code) I.want = k; });
+    addEventListener('blur', () => { I.fire = I.aim = false; });
+  }
+  hook() {
+    const g = this.g, self = this;
+    const step0 = g.step.bind(g); g.step = function (dt) { self.pre(dt); self.own = self.stance; try { step0(dt); } finally { self.own = false; } self.post(dt); };
+    const anim0 = (this.anim0 = g.playerAnim.bind(g)); g.playerAnim = function (n) { if (self.own) return; anim0(n); };
+    const sync0 = g.syncVisuals.bind(g); g.syncVisuals = function (dt) { sync0(dt); self.pose(dt); if (self.cap) self.cap.update(self.rig, g.player.vis.object.visible !== false); self.fx.update(dt, g.world.camera); };
+    const tgt0 = g.camTarget.bind(g); g.camTarget = function () { const t = tgt0(); if (self.armedFoot()) { const W = WEAPONS[self.slot], a = sm(self.zoomT || 0); t.auto = 0; const pc = self.slot === 'pistol'; t.dist = lerp(2.6, +(g.P.get('gcam') || (pc ? 0.72 : 0.85)), a); t.height = lerp(0.26, +(g.P.get('gcamh') || (pc ? 0.2 : 0.12)), a);      /* aimed: close above and behind the right shoulder, the figure cropped at the chest, as every reference frames it; nearer and higher for the pistol, so the one-handed gun lies below and left of the crosshair and is seen along its side */ t.fov = lerp(50, +(g.P.get('gfov') || W.fov), a) + self.fovPunch; } return t; };
+    const place0 = g.placeCamera.bind(g); g.placeCamera = function (dt) { if (self.armedFoot()) self.placeCamera(dt); else place0(dt); };
+    const near0 = g.nearestCar.bind(g); g.nearestCar = function (d) { if (self.stance) return null; const all = g.vehicles; g.vehicles = all.filter((v) => !v.wreck); try { return near0(d); } finally { g.vehicles = all; } };
+    // the walk keys are read as ever; in the firing stance they move the player from here (strafing), not from the game's own foot code
+    const ri = g.readInput.bind(g); g.readInput = function () { const I = g.input; if (self.script) { const s = self.script; I.mx = s.mx; I.my = s.my; I.run = s.run; I.steer = s.mx; I.throttle = Math.max(0, s.my); I.brake = Math.max(0, -s.my); I.handbrake = !!s.hb; I.lock = undefined; I.latLim = 0; } else ri(); self.mx = I.mx; self.my = I.my; self.run = I.run; if (self.stance) { I.mx = 0; I.my = 0; } };
+    const hud0 = g.hud.draw.bind(g.hud); g.hud.draw = function () { hud0(); try { self.hud(); } catch (e) { if (!self._hudErr) { self._hudErr = true; console.log('[guns] hud: ' + e.message); } } };
+  }
+  // put the player somewhere else (?at=x,y,heading): the street life is filled in round the new place
+  stage(x, y, h = 0) {
+    const g = this.g, pl = g.player, c0 = Math.cos(h), s0 = Math.sin(h);
+    for (let k = 0; k < 14; k++) { const tx = x + c0 * k * 1.5, ty = y + s0 * k * 1.5; let clear = true;
+      for (let i = -1; i <= 1 && clear; i++) for (let j = -1; j <= 1 && clear; j++) { const b = g.statics.circ.get(g.statics.key(Math.floor(tx / g.statics.cell) + i, Math.floor(ty / g.statics.cell) + j)); if (b) for (const o of b) { if (typeof o.tag !== 'string') continue; const dx = o.x - tx, dy = o.y - ty, f = dx * c0 + dy * s0, sd = dx * s0 - dy * c0; if (f > -4 && f < 9 && sd > -0.6 && sd < 1.9) { clear = false; break; } } }
+      if (clear) { x = tx; y = ty; break; } }
+    g.statics.resolve(x, y, 0.34, _o); pl.x = _o.x; pl.y = _o.y; pl.h = h; g.focus.x = pl.x; g.focus.y = pl.y; g.cam.yaw = h; g.cam.pitch = 0.12; g.snapCamera();
+    try { g.traffic.cars.length = 0; g.traffic.populate(pl.x, pl.y); for (const p of g.peds.list) { p.vis.used = false; p.vis.object.visible = false; } g.peds.list.length = 0; for (let i = 0; i < g.peds.target; i++) g.peds.spawn(pl.x, pl.y, true); } catch (e) { console.log('[guns] stage: ' + e.message); }
+    if (g.missions && g.missions.marker) g.missions.far = true;
+  }
+  /* may a gun be in the hand at all? Not in a car, getting in or out of one, in or boarding the helicopter, or on a roof (v1: the ray casting and the stance know street level only) */
+  canCarry() { const g = this.g, pl = g.player, h = g.heli; return !pl.vehicle && !pl.busy && !(h && (h.piloted || h.busy || h.hasCamera)) && !(pl.alt > 2); }
+  armedFoot() { const g = this.g; return this.slot !== 'unarmed' && this.canCarry() && !(g.fly && g.fly.on) && !this.dead; }
+  equip(k, now = false) { if (k !== 'unarmed' && !WEAPONS[k]) return; if (k === this.slot) return; if (now) { this.setSlot(k); return; } this.swap = { to: k, t: 0 }; this.rel = null; this.snd(k === 'unarmed' ? 'holster' : 'draw', k); }
+  setSlot(k) { for (const n in this.guns) this.guns[n].visible = false; if (this.slot !== 'unarmed') this.last = this.slot; this.slot = k; this.bloom = 0; this.pumpT = -1; this.slideT = 0; this.rel = null; }
+
+  // ------------------------------------------------------------------ before the game's own step: input
+  pre(dt) {
+    const g = this.g, I = g.input, K = this.inp, pl = g.player; this.t += dt;
+    if (this.script) this.script.drive(dt, I, K);
+    if (K.wheel) { const i = ORDER.indexOf(this.swap ? this.swap.to : this.slot); K.want = ORDER[((i < 0 ? 0 : i) + (K.wheel > 0 ? 1 : ORDER.length - 1)) % ORDER.length]; K.wheel = 0; }
+    if (K.want) { if (this.canCarry()) this.equip(K.want); K.want = null; }
+    const armed = this.armedFoot();
+    if (armed) {
+      // the look: slower through the sights, and the camera may look up as far as down
+      if (I.lookX || I.lookY) { const k = lerp(1, 0.55, sm(this.zoomT || 0)); g.cam.yaw -= I.lookX * 0.0028 * k; g.cam.pitch = clamp(g.cam.pitch + I.lookY * 0.002 * k, -1.2, 1.25); g.cam.lookT = 0; I.lookX = I.lookY = 0; }
+      this.stanceT = K.aim || K.fire || K.tap > 0 ? 0 : this.stanceT + dt;
+      this.stance = K.aim || this.stanceT < 0.9 || !!this.rel && this.stanceT < 2.5;
+    } else { this.stance = false; this.stanceT = 9; }
+    this.zoomT = clamp((this.zoomT || 0) + (armed && K.aim ? dt / 0.16 : -dt / 0.2), 0, 1);
+  }
+  // ------------------------------------------------------------------ after it: movement in stance, firing, the world's answers
+  post(dt) {
+    const g = this.g, pl = g.player, K = this.inp, C = g.cam;
+    const armed = this.armedFoot(), W = WEAPONS[this.slot];
+    if (this.swap) { const s = this.swap; s.t += dt; if (s.t > 0.22 && !s.done) { s.done = true; this.setSlot(s.to); } if (s.t > 0.5) this.swap = null; }
+    this.aimT = clamp(this.aimT + (this.stance && (K.aim || this.stanceT < 0.9) ? dt / 0.17 : -dt / 0.22), 0, 1);
+    if (this.stance) {
+      // stand square to the aim; the legs turn toward the way one is walking, the trunk stays on the target
+      const m = Math.hypot(this.mx, this.my); let sp = 0, back = false, legs = C.yaw - (this.slot === 'pistol' ? 0.12 : 0.42);
+      if (m > 0.1) {
+        const rel = Math.atan2(this.mx, this.my), a = C.yaw + rel; sp = (K.aim ? 1.75 : 2.5) * Math.min(1, m);
+        g.statics.resolve(pl.x + Math.cos(a) * sp * dt, pl.y + Math.sin(a) * sp * dt, 0.34, _o); pl.x = _o.x; pl.y = _o.y;
+        for (const c of g.traffic.cars) { const dx = pl.x - c.x, dy = pl.y - c.y, d = Math.hypot(dx, dy); if (d < 1.4 && d > 1e-3) { pl.x += (dx / d) * (1.4 - d); pl.y += (dy / d) * (1.4 - d); } }
+        for (const c of g.vehicles) { const dx = pl.x - c.x, dy = pl.y - c.y, d = Math.hypot(dx, dy); if (d < 1.3 && d > 1e-3) { pl.x += (dx / d) * (1.3 - d); pl.y += (dy / d) * (1.3 - d); } }
+        back = Math.abs(rel) > 1.75; legs = C.yaw + clamp(back ? wrapPi(rel + Math.PI) : rel, -1.05, 1.05);
+      }
+      pl.h += clamp(wrapPi(legs - pl.h), -dt * 9, dt * 9); pl.speed = sp;
+      const vis = pl.vis, wk = (vis.walks || []).find((w) => w.name === 'walk') || (vis.walks || [])[0] || { name: 'walk', speed: 1.4 };
+      this.anim0(sp > 0.2 ? wk.name : 'idle'); if (vis.mixer) vis.mixer.timeScale = sp > 0.2 ? (back ? -1 : 1) * sp / wk.speed : 1;
+    }
+    // on foot one does not walk through a parked car (the street layer's parked cars carry no collision of their own)
+    if (!pl.vehicle && !pl.busy) for (const c of g.parked.near(pl.x, pl.y, 6, (this._pk2 ||= []))) { const cs = Math.cos(c.h), sn = Math.sin(c.h), dx = pl.x - c.x, dy = pl.y - c.y, lx = dx * cs + dy * sn, ly = -dx * sn + dy * cs, hx = c.def.len / 2 + 0.3, hy = c.def.wid * 0.45 + 0.3; if (Math.abs(lx) < hx && Math.abs(ly) < hy) { const px = hx - Math.abs(lx), py = hy - Math.abs(ly); let nx = lx, ny = ly; if (px < py) nx = Math.sign(lx || 1) * hx; else ny = Math.sign(ly || 1) * hy; pl.x = c.x + nx * cs - ny * sn; pl.y = c.y + nx * sn + ny * cs; } }
+    this.twist = this.stance || this.aimT > 0 ? clamp(wrapPi(C.yaw - pl.h), -1.5, 1.5) * sm(Math.max(this.aimT, this.stance ? 1 : 0)) : 0;
+
+    // where the crosshair lies in the world (also what the gun converges on)
+    if (armed) { const cam = g.world.camera, d = cam.getWorldDirection(_v), ox = cam.position.x, oy = -cam.position.z, oz = cam.position.y, tmin = Math.max(0.5, Math.hypot(pl.x - ox, pl.y - oy) * 1.0);
+      const h = this.cast(ox, oy, oz, d.x, -d.z, d.y, tmin, 400); const A = this.aim; A.ok = true; A.kind = h.kind; A.x = h.x; A.y = h.y; A.z = h.z; A.t = h.t; A.ped = h.kind === 'ped' || h.kind === 'crowd'; }
+    else this.aim.ok = false;
+
+    // fire, reload
+    this.fireCd -= dt;
+    if (armed && W && !this.swap) {
+      const am = this.ammo[this.slot];
+      if (K.reload && !this.rel && am.mag < W.mag && am.reserve > 0) this.startReload(); K.reload = false;
+      if (this.rel) this.stepReload(dt);
+      K.tap = Math.max(0, (K.tap || 0) - dt);
+      if (K.fire || K.tap > 0) {
+        if (this.rel && W.shells && am.mag > 0 && this.rel.t > 0.2) { this.rel = null; this.fireCd = Math.max(this.fireCd, 0.25); }
+        if (!this.rel && this.fireCd <= 0 && (W.auto || !this.pressed) && this.aimT > 0.55 && this.pumpT < 0) {
+          if (am.mag > 0) this.shoot(W, am); else { if (!this.pressed) this.snd('dry'); if (am.reserve > 0) this.startReload(); }
+        }
+        if (this.aimT > 0.55) { this.pressed = true; K.tap = 0; }      /* the press counts as used only once the gun was up to fire it */
+      } else this.pressed = false;
+    } else { K.reload = false; this.pressed = K.fire; K.tap = 0; }
+    // recoil springs, bloom
+    this.bloom = Math.max(0, this.bloom - dt * (W ? W.bloomMax * 2.2 : 3));
+    { const k = 190, c = 17; this.gunBackV += (-k * this.gunBack - c * this.gunBackV) * dt; this.gunBack += this.gunBackV * dt; this.gunRiseV += (W && !W.auto ? -150 * this.gunRise - 12 * this.gunRiseV : -170 * this.gunRise - 15 * this.gunRiseV) * dt; this.gunRise += this.gunRiseV * dt; }
+    if (this.give > 0) { const r = Math.min(this.give, dt * 0.14 + this.give * dt * 5); this.give -= r; C.pitch = clamp(C.pitch + r, -1.2, 1.25); }
+    this.kickT = (this.kickT ?? 9) + dt; this.camKick = (this.camKick || 0) * Math.exp(-dt * 11); this.fovPunch *= Math.exp(-dt * 14); this.camShake = Math.max(0, this.camShake - dt * 3.5);
+    // the body's answer to each shot, as three springs of different speed (chest and shoulder, hips, head): the push travels and settles
+    { const S = (this.bs ||= { c: 0, cv: 0, h: 0, hv: 0, n: 0, nv: 0 }), d = Math.min(dt, 1 / 30); S.cv += (-400 * S.c - 18 * S.cv) * d; S.c += S.cv * d; S.hv += (-100 * S.h - 12 * S.hv) * d; S.h += S.hv * d; S.nv += (-196 * S.n - 11 * S.nv) * d; S.n += S.nv * d; }
+    /* each shot pulses the lead's lens pass (colour fringe, a touch of barrel, a little colour drained): read from its uniforms once, written back as base + pulse; nothing else writes these three */
+    { this.filmP = (this.filmP || 0) * Math.exp(-dt * 13); const fm = g.world && g.world.film && g.world.film.uniforms; if (fm && fm.uCA && fm.uDist && fm.uSat) { const B = (this._film0 ||= { ca: fm.uCA.value, di: fm.uDist.value, sa: fm.uSat.value }), p = this.filmP < 0.01 ? 0 : this.filmP * this.T('film', 1); fm.uCA.value = B.ca + 0.011 * p; fm.uDist.value = B.di + 0.016 * p; fm.uSat.value = B.sa * (1 - 0.22 * Math.min(1, p)); } }
+    if (this.slideT > 0) this.slideT -= dt;
+    if (this.pumpT >= 0) { const p0 = this.pumpT; this.pumpT += dt; if (p0 < 0.22 && this.pumpT >= 0.22) { this.snd('reload', 'shotgun', 'pump'); this.eject('shotgun'); } if (this.pumpT > 0.62) this.pumpT = -1; }
+    this.hitT = Math.max(0, this.hitT - dt); this.killT = Math.max(0, this.killT - dt);
+    for (let i = this.events.length - 1; i >= 0; i--) { const e = this.events[i]; e.t -= dt; if (e.t <= 0) { this.events.splice(i, 1); e.fn(); } }
+    this.stepCars(dt); this.stepPeople(dt);
+  }
+
+  /* QA: one shot now, whatever the script is doing (tools/tunesheet.mjs) */
+  fireNow() { const W = WEAPONS[this.slot]; if (W && this.ammo[this.slot].mag > 0) this.shoot(W, this.ammo[this.slot]); }
+
+  startReload() { const W = WEAPONS[this.slot], am = this.ammo[this.slot]; this.rel = { t: 0, dur: W.reload, empty: am.mag === 0, out: false, in: false, rack: false, n: 0 }; this.stanceT = Math.min(this.stanceT, 0.9); }
+  stepReload(dt) {
+    const W = WEAPONS[this.slot], am = this.ammo[this.slot], r = this.rel; r.t += dt;
+    if (W.shells) {      // one shell at a time
+      if (r.t >= 0.32 && !r.in) { r.in = true; am.mag++; am.reserve--; this.snd('reload', this.slot, 'shell'); }
+      if (r.t >= W.reload) { if (am.mag < W.mag && am.reserve > 0) { r.t = 0; r.in = false; r.n++; } else { this.rel = null; if (r.empty) { this.pumpT = 0.1; } } }
+      return;
+    }
+    const u = r.t / r.dur;
+    if (u > 0.16 && !r.out) { r.out = true; this.snd('reload', this.slot, 'out'); this.dropMag(); }
+    if (u > 0.62 && !r.in) { r.in = true; this.snd('reload', this.slot, 'in'); const n = Math.min(W.mag - am.mag, am.reserve); am.mag += n; am.reserve -= n; }
+    if (u > 0.82 && !r.rack && r.empty) { r.rack = true; this.snd('reload', this.slot, 'rack'); this.slideT = 0.16; }
+    if (u >= 1) this.rel = null;
+  }
+  dropMag() {
+    const gun = this.guns[this.slot], mv = gun.userData.moving, mg = mv && mv.mag && mv.mag.node; if (!mg) return;
+    const c = mg.clone(true); gun.updateMatrixWorld(true); mg.matrixWorld.decompose(c.position, c.quaternion, c.scale); const pl = this.g.player;
+    this.fx.onMag = () => this.snd('casing', 'mag', 'concrete');
+    this.fx.loosen(c, _v.set(Math.cos(pl.h) * pl.speed * 0.5, -0.6, -Math.sin(pl.h) * pl.speed * 0.5));
+  }
+  muzzleWorld(out, dirOut) {
+    const gun = this.guns[this.slot]; if (gun && gun.visible) { gun.updateMatrixWorld(true); out.copy(gun.userData.muzzle).applyMatrix4(gun.matrixWorld); if (dirOut) dirOut.set(1, 0, 0).transformDirection(gun.matrixWorld); return out; }
+    const pl = this.g.player, C = this.g.cam; out.set(pl.x + Math.cos(C.yaw) * 0.6, 1.4, -(pl.y + Math.sin(C.yaw) * 0.6)); if (dirOut) dirOut.set(Math.cos(C.yaw), 0, -Math.sin(C.yaw)); return out;
+  }
+  eject(kind) {
+    const gun = this.guns[kind]; if (!gun) return; gun.updateMatrixWorld(true); const u = gun.userData, pl = this.g.player;
+    const p = _v.copy(u.eject).applyMatrix4(gun.matrixWorld), d = _v2.copy(u.ejectDir).transformDirection(gun.matrixWorld);
+    this.fx.casing(kind, p, _v3.set(d.x * (1.7 + rnd() * 0.8) + rs(0.4), d.y * 1.8 + 1.1 + rnd() * 0.8, d.z * (1.7 + rnd() * 0.8) + rs(0.4)));
+  }
+
+  shoot(W, am) {
+    const g = this.g, C = g.cam, cam = g.world.camera, pl = g.player, kind = this.slot;
+    am.mag--; this.fireCd = 60 / W.rpm; this.shots++; this.stats.fired++; this.stanceT = 0;
+    const cd = cam.getWorldDirection(_v).clone(), cr = new THREE.Vector3().crossVectors(cd, UP).normalize(), cu = new THREE.Vector3().crossVectors(cr, cd);
+    const ox = cam.position.x, oy = -cam.position.z, oz = cam.position.y, tmin = Math.max(0.5, Math.hypot(pl.x - ox, pl.y - oy));
+    const mz = this.muzzleWorld(new THREE.Vector3(), _v5), mdir = _v5.clone(), spr = (lerp(W.hip, W.spread, sm(this.zoomT || 0)) + this.bloom + (pl.speed > 0.3 ? 0.5 : 0)) * D2R;
+    let anyPed = false, killed = false;
+    for (let i = 0; i < W.pellets; i++) {
+      const a = rnd() * 6.283, r = Math.sqrt(rnd()) * spr, sx = Math.cos(a) * r, sy = Math.sin(a) * r;
+      const dx = cd.x + cr.x * sx + cu.x * sy, dy = cd.y + cr.y * sx + cu.y * sy, dz = cd.z + cr.z * sx + cu.z * sy, L = Math.hypot(dx, dy, dz);
+      let h = this.cast(ox, oy, oz, dx / L, -dz / L, dy / L, tmin, W.range + tmin);
+      // the bullet itself leaves the muzzle: something between the gun and that point takes it instead
+      const bx = h.x - mz.x, by = h.y - -mz.z, bz = h.z - mz.y, bl = Math.hypot(bx, by, bz);
+      if (bl > 0.6) { const h2 = this.cast(mz.x, -mz.z, mz.y, bx / bl, by / bl, bz / bl, 0.05, bl - 0.25); if (h2.kind !== 'none') h = h2; h.dx = bx / bl; h.dy = by / bl; h.dz = bz / bl; } else { h.dx = dx / L; h.dy = -dz / L; h.dz = dy / L; }
+      const r2 = this.hit(h, W, i === 0); if (r2 === 'ped') anyPed = true; if (r2 === 'kill') { anyPed = true; killed = true; }
+      if (W.tracer && rnd() < W.tracer) this.fx.tracer(mz, _v2.set(h.x, h.z, -h.y));
+    }
+    if (anyPed) this.hitT = 0.16; if (killed) this.killT = 0.4;
+    this.fx.muzzle(mz, mdir, kind, cam.position);
+    if (W.shells) this.pumpT = 0; else { this.slideT = 0.085; this.eject(kind); }
+    // recoil: the view climbs and wanders, most of the climb is given back; the gun punches into the shoulder; the lens breathes
+    const k = (this.inp.aim ? 1 : 1.35) * D2R, up = W.kick * k * (0.85 + rnd() * 0.3), n = Math.min(this.burst = (this.t - (this.lastShot || -9) < 0.25 ? (this.burst || 0) + 1 : 0), 10);
+    C.pitch = clamp(C.pitch - up, -1.2, 1.25); C.yaw += (rs(W.kickYaw) + (W.auto ? Math.sin(n * 1.3 + this.shots) * W.kickYaw * 0.5 : 0)) * k; this.give += up * (W.auto ? 0.55 : 0.8);
+    this.gunBackV += W.back * 34; this.gunRiseV += W.rise * 26; this.bloom = Math.min(W.bloomMax, this.bloom + W.bloom); this.fovPunch -= W.pellets > 1 ? 3.6 : W.auto ? 1.1 : 2.6; this.camShake = Math.min(1, this.camShake + (W.pellets > 1 ? 0.8 : W.auto ? 0.42 : 0.5));
+    { const S = (this.bs ||= { c: 0, cv: 0, h: 0, hv: 0, n: 0, nv: 0 }), J = W.pellets > 1 ? 2 : W.auto ? 0.4 : 1; S.cv += J * 20; S.hv += J * 14; S.nv += J * 14; }
+    this.lastShot = this.t; this.kickT = 0; this.kickJ = [(rnd() < 0.5 ? -1 : 1) * (0.5 + 0.5 * rnd()), rs(1), rs(1)]; this.bodyJ = [(this.shots % 2 ? -1 : 1) * (0.45 + 0.55 * rnd()), rs(1)]; this.filmP = Math.min(1.5, (this.filmP || 0) + (W.pellets > 1 ? 1.3 : W.auto ? 0.55 : 1)); this.camKick = (this.camKick || 0) + (W.pellets > 1 ? 1 : W.auto ? 0.4 : 0.7);
+    this.snd('shot', kind, { dist: 0, pan: 0 });
+    this.scare(pl.x, pl.y, 55, 1);
+  }
+
+  // ------------------------------------------------------------------ what a ray meets. All in sim space; returns the nearest hit.
+  cast(ox, oy, oz, dx, dy, dz, tmin, tmax) {
+    const g = this.g, st = g.statics, H = { kind: 'none', t: tmax, x: ox + dx * tmax, y: oy + dy * tmax, z: oz + dz * tmax, nx: -dx, ny: -dy, nz: -dz };
+    const take = (t, kind, nx, ny, nz, obj, part) => { if (t < tmin || t >= H.t) return; H.t = t; H.kind = kind; H.x = ox + dx * t; H.y = oy + dy * t; H.z = oz + dz * t; H.nx = nx; H.ny = ny; H.nz = nz; H.obj = obj; H.part = part; };
+    // ground (the kerb is 15 cm up)
+    if (dz < -1e-5) { let t = -oz / dz; const px = ox + dx * t, py = oy + dy * t, walk = st.onSidewalk(px, py); if (walk) t = (0.15 - oz) / dz; take(t, 'ground', 0, 0, 1, null, walk ? 'concrete' : 'asphalt'); }
+    // walls and standing things, cell by cell along the ray on the map
+    const hl = Math.hypot(dx, dy), far = Math.min(H.t, tmax), ex = ox + dx * far, ey = oy + dy * far, c = st.cell, steps = Math.ceil((hl * far) / (c * 0.5)) + 1, seen = this._seen || (this._seen = new Set()); seen.clear();
+    const bx = g.bounds.x + 5.5, by = g.bounds.y + 5.5;
+    if (hl > 1e-4) for (let q = 0; q <= steps; q++) {
+      const fx = ox + ((ex - ox) * q) / steps, fy = oy + ((ey - oy) * q) / steps;
+      for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+        if ((di || dj) && q % 2) continue; const k = st.key(Math.floor(fx / c) + di, Math.floor(fy / c) + dj); if (seen.has(k)) continue; seen.add(k);
+        const a = st.segs.get(k);
+        if (a) for (const s of a) {
+          if ((Math.abs(s[0]) > bx && Math.abs(s[2]) > bx) || (Math.abs(s[1]) > by && Math.abs(s[3]) > by)) continue;      // the map's own edge is not a wall
+          const sx = s[2] - s[0], sy = s[3] - s[1], den = dx * sy - dy * sx; if (Math.abs(den) < 1e-9) continue;
+          const t = ((s[0] - ox) * sy - (s[1] - oy) * sx) / den, u = ((s[0] - ox) * dy - (s[1] - oy) * dx) / den; if (u < 0 || u > 1 || t < tmin || t >= H.t) continue;
+          const z = oz + dz * t; if (z < 0) continue; let nx = sy, ny = -sx; const nl = Math.hypot(nx, ny); nx /= nl; ny /= nl; if (nx * dx + ny * dy > 0) { nx = -nx; ny = -ny; }
+          take(t, 'wall', nx, ny, 0, null, 'concrete');
+        }
+        const b = st.circ.get(k);
+        if (b) for (const o of b) {
+          if (!o.on || typeof o.tag !== 'string') continue; const top = o.tag === 'light' ? 9 : o.tag === 'signal' ? 7 : o.tag === 'tree' ? 3.4 : o.tag === 'hydrant' ? 0.85 : 1.1;
+          const rx = ox - o.x, ry = oy - o.y, A = dx * dx + dy * dy, B = rx * dx + ry * dy, Cc = rx * rx + ry * ry - o.r * o.r, disc = B * B - A * Cc; if (disc < 0 || A < 1e-9) continue;
+          const t = (-B - Math.sqrt(disc)) / A; if (t < tmin || t >= H.t) continue; const z = oz + dz * t; if (z < 0 || z > top) continue;
+          take(t, 'prop', (rx + dx * t) / o.r, (ry + dy * t) / o.r, 0, o, o.tag === 'tree' ? 'wood' : 'metal');
+        }
+      }
+    }
+    // cars: a lower body and a cabin, as two boxes in the car's own frame
+    const car = (v, kind) => {
+      const ex2 = v.x - ox, ey2 = v.y - oy, along = ex2 * dx + ey2 * dy; if (along < -8 || along > H.t + 8) return; const L = v.def.len; if (Math.abs(ex2 * dy - ey2 * dx) > (L * 0.6 + 1) * Math.max(hl, 0.2) + Math.abs(dz) * 60) return;
+      const cs = Math.cos(v.h), sn = Math.sin(v.h), z0 = v.z || 0, lx = -(ex2 * cs + ey2 * sn), ly = -(-ex2 * sn + ey2 * cs), lz = oz - z0, ldx = dx * cs + dy * sn, ldy = -dx * sn + dy * cs;
+      const Wd = v.def.wid * 0.9, Ht = v.def.hgt - (v.type === 'taxi' ? 0.3 : 0), belt = Math.min(Ht * 0.58, 1.08), van = v.type === 'van' || v.type === 'bus';
+      const box = (x0, x1, y0, y1, zz0, zz1, part) => {
+        let t0 = -1e9, t1 = 1e9, ax = -1, sg = 0; const O = [lx, ly, lz], Dd = [ldx, ldy, dz], lo = [x0, y0, zz0], hi = [x1, y1, zz1];
+        for (let i = 0; i < 3; i++) { if (Math.abs(Dd[i]) < 1e-7) { if (O[i] < lo[i] || O[i] > hi[i]) return; continue; } let a = (lo[i] - O[i]) / Dd[i], b = (hi[i] - O[i]) / Dd[i], s = -1; if (a > b) { const tt = a; a = b; b = tt; s = 1; } if (a > t0) { t0 = a; ax = i; sg = s; } if (b < t1) t1 = b; if (t0 > t1) return; }
+        if (t0 < tmin || t0 >= H.t || ax < 0) return; const px = lx + ldx * t0, pz = lz + dz * t0; let pt = part;
+        if (part === 'body') { const wb = v.def.wheelbase / 2, rr = v.def.radius; pt = ax === 1 && pz < rr * 2 + 0.05 && (Math.abs(px - wb) < rr + 0.04 || Math.abs(px + wb) < rr + 0.04) ? 'tyre' : 'metal'; }
+        else pt = ax === 2 ? 'metal' : van && px < L * 0.12 ? 'metal' : 'glass';
+        const n = [0, 0, 0]; n[ax] = sg; take(t0, 'car', n[0] * cs - n[1] * sn, n[0] * sn + n[1] * cs, n[2], v, pt);
+        if (H.obj === v && H.t === t0) { H.lp = [px, ly + ldy * t0, pz]; H.ln = n; H.ck = kind; }
+      };
+      box(-L / 2, L / 2, -Wd / 2, Wd / 2, 0.16, belt, 'body');
+      if (van) box(-L * 0.48, L * 0.3, -Wd * 0.47, Wd * 0.47, belt, Ht, 'cabin'); else box(-L * 0.30, L * 0.16, -Wd * 0.42, Wd * 0.42, belt, Ht - 0.03, 'cabin');
+    };
+    for (const v of g.traffic.cars) car(v, 'traffic'); for (const v of g.vehicles) car(v, 'veh');
+    for (const s of g.parked.near(ox + dx * Math.min(far, 70) * 0.5, oy + dy * Math.min(far, 70) * 0.5, Math.min(far, 70) * 0.5 + 8, (this._pk ||= []))) car(s, 'parked');
+    // people: an upright cylinder each; the top quarter of a metre is the head
+    const person = (p, kind, hgt, zb) => {
+      const rx = ox - p.x, ry = oy - p.y, A = dx * dx + dy * dy; if (A < 1e-9) return; const B = rx * dx + ry * dy; if (-B / A < -1 || -B / A > H.t + 1) return; const r = 0.23, Cc = rx * rx + ry * ry - r * r, disc = B * B - A * Cc; if (disc < 0) return;
+      const t = (-B - Math.sqrt(disc)) / A; if (t < tmin || t >= H.t) return; const z = oz + dz * t - zb; if (z < 0 || z > hgt) return;
+      if (z > hgt - 0.27) { const tm = -B / A, cz = oz + dz * tm - zb - (hgt - 0.12), d2 = Cc + r * r - B * B / A + cz * cz; if (d2 > 0.14 * 0.14) return; }      // past the shoulders only the head itself counts
+      take(t, kind, (rx + dx * t) / r, (ry + dy * t) / r, 0, p, z > hgt - 0.27 ? 'head' : z < hgt * 0.5 ? 'legs' : 'body');
+    };
+    for (const p of g.peds.list) { if (p.state === 'down') continue; person(p, 'ped', 1.76 * (p.scale || 1), g.statics.onSidewalk(p.x, p.y) ? 0.15 : 0); }
+    const cs = g.crowd && g.crowd.on && g.crowd.sim; if (cs) for (const a of cs.agents) { if (a.gone || a.state === 'down') continue; if (Math.abs(a.x - ox) > H.t + 1 || Math.abs(a.y - oy) > H.t + 1) continue; person(a, 'crowd', (a.state === 'sit' ? 1.3 : 1.74) * (a.scale || a.tall || 1), a.z || 0); }
+    return H;
+  }
+
+  // ------------------------------------------------------------------ what a hit does
+  hit(h, W, first) {
+    const g = this.g, fx = this.fx; if (h.kind === 'none') return null;
+    const P = _v.set(h.x, h.z, -h.y), Nn = _v2.set(h.nx, h.nz, -h.ny), pl = g.player, dist = Math.hypot(h.x - pl.x, h.y - pl.y), pan = 0;
+    this.stats.hits[h.kind] = (this.stats.hits[h.kind] || 0) + 1;
+    if (h.kind === 'wall' && this.shopGlass(h)) { fx.impact(P, Nn, 'glass'); fx.decal('glass', _v3.copy(P).addScaledVector(Nn, clamp(this._sgOff || 0, -0.3, 0.6)), Nn, (0.3 + rnd() * 0.2) * (W.pellets > 1 ? 0.6 : 1));      /* the crack sits on the shop's own front line, which may stand proud of the wall segment the ray met */ if (first) this.snd('impact', 'glass', { dist, pan }); this.stats.hits.shopglass = (this.stats.hits.shopglass || 0) + 1; return 'wall'; }
+    if (h.kind === 'ground' || h.kind === 'wall') { fx.impact(P, Nn, h.part, { power: W.pellets > 1 ? 0.7 : 1 }); fx.decal('concrete', P, Nn, (h.kind === 'ground' ? 0.15 : 0.17) * (0.8 + rnd() * 0.5) * (W.pellets > 1 ? 0.7 : 1)); if (first) this.snd('impact', h.part, { dist, pan }); return h.kind; }
+    if (h.kind === 'prop') { fx.impact(P, Nn, h.part); if (first) this.snd('impact', h.part, { dist, pan }); return 'prop'; }
+    if (h.kind === 'car') {
+      let v = h.obj; const mat = h.part; fx.impact(P, Nn, mat); if (first) this.snd('impact', mat, { dist, pan });
+      // a parked car that is shot becomes one of the game's own vehicles: those are drawn with their height, roll and pitch (the street
+      // layer draws parked and traffic cars flat), so it can rock on its springs and sag onto a flat tyre
+      if (h.ck === 'parked' && !this.cars.has(v)) { try { const nv = this.mkVehicle(v); g.parked.take(v); g.vehicles.push(nv); v = nv; h.ck = 'veh'; } catch (e) {} }
+      const S = this.carState(v, h.ck);
+      { const cs = Math.cos(v.h), sn = Math.sin(v.h), lx = h.dx * cs + h.dy * sn, ly = -h.dx * sn + h.dy * cs, J = (W.force || 1) * (W.pellets > 1 ? 0.35 : 1); S.rv = (S.rv || 0) - ly * J * 0.5; S.pv = (S.pv || 0) - lx * J * 0.22; }
+      if (h.ln[0] && h.lp && (h.lp[2] < Math.min((v.def.hgt - (v.type === 'taxi' ? 0.3 : 0)) * 0.58, 1.08) || ((v.type === 'van' || v.type === 'bus') && h.ln[0] < 0))) h.lp[0] = Math.sign(h.ln[0]) * v.def.len * 0.5;
+      if (h.ln[1] && h.lp) { const vn = v.type === 'van' || v.type === 'bus', belt = Math.min((v.def.hgt - (v.type === 'taxi' ? 0.3 : 0)) * 0.58, 1.08); h.lp[1] = Math.sign(h.ln[1]) * v.def.wid * (h.lp[2] < belt ? 0.497 : vn ? 0.487 : 0.415); }
+      if (mat !== 'tyre') { const at = { matrix: (out) => { if (S.dead) return false; _e.set(v.roll || 0, v.h, v.pitch || 0, 'YZX'); out.compose(_v3.set(v.x, v.z || 0, -v.y), _q.setFromEuler(_e), _v4.set(1, 1, 1)); return true; } }; S.at = S.at || at;
+        fx.decal(mat === 'glass' ? 'glass' : 'metal', _v3.set(h.lp[0], h.lp[2], -h.lp[1]), _v4.set(h.ln[0], h.ln[2], -h.ln[1]), mat === 'glass' ? 0.42 + rnd() * 0.2 : 0.13 + rnd() * 0.04, S.at); }
+      if (mat === 'glass' && !S.glass) { S.glass = true; this.snd('glassBreak', { dist }); }
+      // the third round into the glass on one side crazes the whole pane and showers it out
+      if (mat === 'glass' && h.lp) { const k = 'g' + (h.ln[0] ? (h.ln[0] > 0 ? 'f' : 'b') : h.ln[1] > 0 ? 'l' : 'r'); S[k] = (S[k] || 0) + (W.pellets > 1 ? 0.5 : 1); if (S[k] >= 3 && !S[k + 'x']) { S[k + 'x'] = true; this.snd('glassBreak', { dist });
+        for (let i = 0; i < 4; i++) fx.impact(_v3.copy(P).addScaledVector(Nn, 0.05).add(_v4.set(rs(0.25), rs(0.15), rs(0.25))), Nn, 'glass'); fx.decal('glass', _v3.set(h.lp[0], h.lp[2], -h.lp[1]), _v4.set(h.ln[0], h.ln[2], -h.ln[1]), 1.05, S.at); } }
+      if (mat === 'tyre') { if (!S.tyre) { S.tyre = true; if (h.ck === 'traffic') { v.v0 *= 0.45; } } const k = (h.lp[0] > 0 ? 'f' : 'b') + (h.lp[1] > 0 ? 'l' : 'r'); S.flat = S.flat || {}; if (!(k in S.flat)) { S.flat[k] = 0; this.snd('impact', 'tyre', { dist, pan }); } }
+      else { S.hp -= W.dmg * (mat === 'glass' ? 0.35 : 0.8); this.carHurt(v, S, h); }
+      return 'car';
+    }
+    if (h.kind === 'ped' || h.kind === 'crowd') {
+      const p = h.obj, dmg = W.dmg * (h.part === 'head' ? 4 : h.part === 'legs' ? 0.7 : 1); p.hp = (p.hp ?? 60) - dmg;
+      const dir = _v3.set(h.dx, h.dz, -h.dy); fx.impact(P, _v4.copy(Nn).multiplyScalar(0.6).addScaledVector(dir, 0.5), 'flesh', { power: h.part === 'head' ? 1.3 : 1 }); if (first) this.snd('impact', 'flesh', { dist, pan });
+      if (p.hp <= 0) { this.kill(p, h.kind, h, W.force); return 'kill'; }
+      this.frighten(p, h.kind, pl.x, pl.y, 14); p.stagger = 0.35; return 'ped';
+    }
+    return null;
+  }
+  /* is this wall hit on a shop's window? The statics' wall segments carry no material; the street layer's list of shops (centre of the bay on the facade, outward normal, width) does: between knee and lintel height, inside the bay less its piers = glass */
+  shopGlass(h) {
+    if (h.z < 0.65 || h.z > 2.4) return false; let G = this._shops;
+    if (G === undefined) { G = this._shops = null; try { const st = this.g.streets, L = st && st.parts && st.parts.storefronts && st.parts.storefronts.shops; if (L && L.length) { G = this._shops = new Map(); for (const s of L) { const k = Math.floor(s.x / 16) + ',' + Math.floor(s.y / 16); if (!G.has(k)) G.set(k, []); G.get(k).push(s); } } } catch (e) { G = this._shops = null; } }
+    if (!G) return false; const cx = Math.floor(h.x / 16), cy = Math.floor(h.y / 16);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const L = G.get((cx + i) + ',' + (cy + j)); if (!L) continue; for (const s of L) { const dx = h.x - s.x, dy = h.y - s.y, across = dx * s.nx + dy * s.ny, along = -dx * s.ny + dy * s.nx; if (Math.abs(across) < 1.0 && Math.abs(along) < s.w / 2 - 0.45) { this._sgOff = 0.07 - across; return true; } } }
+    return false;
+  }
+  carState(v, kind) { let S = this.cars.get(v); if (!S) { S = { v, kind, hp: 900, smoke: null, fire: null, burn: 0 }; this.cars.set(v, S); } return S; }
+  carHurt(v, S, h) {
+    const fx = this.fx, g = this.g, hood = (out) => { if (S.dead) return null; const f = v.def.len * 0.33; return out.set(v.x + Math.cos(v.h) * f, (v.z || 0) + Math.min(v.def.hgt * 0.6, 1.0), -(v.y + Math.sin(v.h) * f)); };
+    if (S.kind === 'traffic' && !S.fled) { S.fled = true; v.stun = 0.5; v.v0 = Math.max(v.v0, 14) * 1.25; v.honk = 1.5; }
+    if (S.kind === 'parked' && !S.alarm) { S.alarm = true; this.snd('alarm', { dist: Math.hypot(v.x - g.player.x, v.y - g.player.y) }); }
+    if (S.hp < 420 && !S.smoke) S.smoke = fx.emitter({ pos: hood, kind: 'steam', life: 60 });
+    if (S.hp < 200 && S.smoke && S.smoke.kind === 'steam') { S.smoke.kind = 'smoke'; S.smoke.rate = 1.6; }
+    if (S.hp <= 0 && !S.fire) { S.fire = fx.emitter({ pos: hood, kind: 'fire', life: 40 }); S.burn = 2.6 + rnd() * 1.6; if (S.kind === 'traffic') { v.stun = 99; } }
+  }
+  stepCars(dt) {
+    const g = this.g;
+    for (const [v, S] of this.cars) {
+      if (S.dead) continue;
+      if (S.kind === 'traffic' && !g.traffic.cars.includes(v)) { this.forget(v, S); continue; }
+      if (S.kind === 'parked' && v.gone) { this.forget(v, S); continue; }
+      if (S.kind === 'traffic' && S.fire) v.stun = 99;
+      if (S.burn > 0) { S.burn -= dt; if (S.burn <= 0) { this.explode(v, S); continue; } }
+      // one of the game's own vehicles standing still: rock on the springs under fire, sink onto flat tyres
+      if (S.kind === 'veh' && !S.wrecked && v !== g.player.vehicle && Math.abs(v.vf || 0) < 0.5 && (S.rv || S.rk || S.pv || S.pk || S.flat)) { const d = Math.min(dt, 1 / 30);
+        S.rv = (S.rv || 0) + (-260 * (S.rk || 0) - 9 * (S.rv || 0)) * d; S.rk = (S.rk || 0) + S.rv * d; S.pv = (S.pv || 0) + (-300 * (S.pk || 0) - 10 * (S.pv || 0)) * d; S.pk = (S.pk || 0) + S.pv * d;
+        if (Math.abs(S.rk) + Math.abs(S.pk) < 1e-4 && Math.abs(S.rv) + Math.abs(S.pv) < 1e-3) S.rk = S.pk = S.rv = S.pv = 0;
+        let roll = S.rk, pitch = S.pk, z = g.statics.onSidewalk(v.x, v.y) ? 0.15 : 0; if (S.flat) for (const k in S.flat) { const u = (S.flat[k] = Math.min(1, S.flat[k] + dt / 0.7)), e = u * u * (3 - 2 * u); roll += (k[1] === 'l' ? -1 : 1) * 0.034 * e; pitch += (k[0] === 'f' ? -1 : 1) * 0.016 * e; z -= 0.022 * e; }
+        v.roll = roll; v.pitch = pitch; v.z = z; }
+    }
+  }
+  forget(v, S) { S.dead = true; if (S.smoke) S.smoke.dead = true; if (S.fire) S.fire.dead = true; if (S.at) this.fx.dropDecals(S.at); this.cars.delete(v); }
+  explode(v, S) {
+    const g = this.g, fx = this.fx, pl = g.player, x = v.x, y = v.y;
+    this.forget(v, S);
+    // what is left: a burnt shell that stays where it stood
+    let wreck = v;
+    if (S.kind === 'traffic') { g.traffic.remove(v); } else if (S.kind === 'parked') { g.parked.take(v); }
+    if (S.kind !== 'veh') { wreck = this.mkVehicle(v); if (wreck) g.vehicles.push(wreck); }
+    if (wreck) { wreck.color = 0x0a0a0a; wreck.wreck = true; wreck.vx = wreck.vy = 0; wreck.z = 0.9; wreck.pitch = rs(0.2); wreck.roll = rs(0.25); if (pl.vehicle === wreck) { /* the player's own car: thrown out happens with the health feature */ }
+      const W2 = this.carState(wreck, 'veh'); W2.hp = -1; W2.wrecked = true; W2.fire = fx.emitter({ pos: (out) => out.set(wreck.x, 0.9, -wreck.y), kind: 'fire', life: 28 }); }
+    fx.explosion(_v.set(x, 0.4, -y)); const d = Math.hypot(x - pl.x, y - pl.y); this.snd('explosion', { dist: d }); g.cam.shake = Math.min(1, g.cam.shake + clamp(1.6 - d / 22, 0, 1)); this.camShake = Math.min(1, this.camShake + clamp(1.4 - d / 25, 0, 1));
+    // the blast: people near it are thrown, the rest run; cars near it are hurt (and may go up in turn)
+    const each = (p, kind) => { const dd = Math.hypot(p.x - x, p.y - y); if (dd < 7.5) { const h = { x: p.x, y: p.y, z: 1, dx: (p.x - x) / (dd || 1), dy: (p.y - y) / (dd || 1), dz: 0.5, part: 'body' }; this.kill(p, kind, h, 5); } };
+    for (const p of g.peds.list.slice()) if (p.state !== 'down') each(p, 'ped'); const cs = g.crowd && g.crowd.on && g.crowd.sim; if (cs) for (const a of cs.agents.slice()) if (!a.gone && a.state !== 'down') each(a, 'crowd');
+    this.scare(x, y, 70, 2);
+    const near = (c, kind) => { if (c === v || c === wreck) return; const dd = Math.hypot(c.x - x, c.y - y); if (dd < 7) { const S2 = this.carState(c, kind); if (S2.wrecked) return; S2.hp -= 300 * (1 - dd / 9); this.carHurt(c, S2, null); } };
+    for (const c of g.traffic.cars) near(c, 'traffic'); for (const c of g.vehicles) near(c, 'veh'); for (const s of g.parked.near(x, y, 9, [])) near(s, 'parked');
+    if (d < 6 && !pl.vehicle) this.hurt(90 * (1 - d / 8));
+  }
+  mkVehicle(v) { const n = new Vehicle(v.def, v.x, v.y, v.h, v.color); if (v.vseed !== undefined) n.vseed = v.vseed; if (v.mission) n.mission = v.mission; return n; }
+  hurt(n) { this.health = Math.max(0, this.health - n); this.hurtT = 0.6; }
+
+  // ------------------------------------------------------------------ people
+  kill(p, kind, h, force = 1) {
+    const g = this.g; this.kills++; p.hp = 0;
+    if (this.bodies && this.bodies.kill(p, kind, h, force)) { this.scare(p.x, p.y, 30, 2); return; }
+    const cs = g.crowd && g.crowd.sim, PH = g.__pedhit && g.__pedhit.on ? g.__pedhit : null;
+    if (kind === 'ped') {
+      const sp0 = p.state === 'walk' || p.state === 'flee' ? (p.speed || 0) : 0; p.state = 'down'; p.t = 0; p.fall = 0; p.vx = 0; p.vy = 0; if (p.vis.mixer) p.vis.mixer.timeScale = 0;
+      const name = p.vis.name || p.kind; let doll = null; if (PH && this.pedhit(p, h, force)) { this.scare(p.x, p.y, 30, 2); return; } try { doll = new Ragdoll(p.vis, name, (x, z) => (g.statics.onSidewalk(x, -z) ? 0.15 : 0)); } catch (e) { doll = null; }
+      if (doll && doll.ok) { const c = Math.cos(p.h), s = Math.sin(p.h); doll.kick(_v.set(c * sp0, 0, -s * sp0), _v2.set(h.x, h.z, -h.y), _v3.set(h.dx, h.dz + 0.15, -h.dy), 2.6 * force); p.doll = doll; this.dolls.push(p); p.fall = 0; p._hold = { x: p.x, y: p.y }; }
+      else { p.vx = h.dx * 2.2 * force; p.vy = h.dy * 2.2 * force; }
+    } else if (cs) {
+      try { cs.leaveGroup(p); } catch (e) {} if (p.state === 'stand') cs.nStand--; if (p.wq) { p.wq.w.wait[p.wq.end][p.wq.n] = 0; p.wq = null; }
+      p.state = 'down'; p.t = 0; p.vx = h.dx * 1.6 * force; p.vy = h.dy * 1.6 * force; p.v = 0; cs.hits++;
+      if (PH) this.pedhit(p, h, force);
+    }
+    this.scare(p.x, p.y, 30, 2);
+  }
+  /* A person who is shot down falls as the lead's pedhit ragdoll (src/pedhit.js, the breakable lane's). pedhit has one way in: game.onPedHit(person, car),
+     which it answers only for the player's own car, taking the car's place, heading and speed as the blow. So the bullet is handed to it as a
+     stand-in 'car' at the person's back moving along the shot, for the length of that one call (the player is not in a car, so nothing else sees it).
+     The person has already been put down the way traffic.js / crowd/sim.js put down someone a car has struck. Its hit-stop and camera knock
+     belong to a car and are taken back. Returns false if pedhit did not take the person (then the game's own plain fall shows). */
+  pedhit(p, h, force = 1) {
+    const g = this.g, PH = g.__pedhit, pl = g.player; if (!PH || !PH.on || pl.vehicle) return false;
+    const hl = Math.hypot(h.dx, h.dy) || 1, ux = h.dx / hl, uy = h.dy / hl, sp = clamp(2.6 + 1.5 * force + (h.part === 'head' ? 0.6 : 0), 2.5, 16);
+    const v = { x: p.x - ux * 2.6, y: p.y - uy * 2.6, h: Math.atan2(uy, ux), vx: ux * sp, vy: uy * sp, def: { len: 4.6, wid: 1.9, hgt: 1.4 }, bullet: true };
+    const last0 = PH.list[PH.list.length - 1], shake = g.cam.shake; let ok = false;
+    pl.vehicle = v; try { g.onPedHit(p, v); ok = PH.list.length > 0 && PH.list[PH.list.length - 1] !== last0; } catch (e) { if (!this._phErr) { this._phErr = true; console.log('[guns] pedhit: ' + (e && e.message)); } } finally { pl.vehicle = null; }
+    PH.hitstop = 0; g.cam.shake = shake; return ok;
+  }
+  frighten(p, kind, x, y, secs) {
+    if (this.bodies && this.bodies.frighten(p, kind, x, y, secs)) return;
+    const g = this.g; if (p.state === 'down' || p.gone) return; const ax = p.x - x, ay = p.y - y, al = Math.hypot(ax, ay) || 1;
+    if (kind === 'ped') {
+      if (p.scared > 0) { p.scared = Math.max(p.scared, secs); return; } if (p.state !== 'walk') return;
+      const t = {}; p.loop.at(p.s, t); p.dir = (t.tx * ax + t.ty * ay) >= 0 ? 1 : -1; p._w = { speed: p.speed, walk: p.walk, walkSpeed: p.walkSpeed };
+      p.speed = 3.9 + rnd() * 1.2; if (p.vis.acts && p.vis.acts.run) { p.walk = 'run'; p.walkSpeed = p.vis.runSpeed || 4; g.peds.setAnim(p, 'run'); } p.scared = secs; this.scared.push({ p, kind });
+    } else {
+      const cs = g.crowd && g.crowd.sim; if (!cs || p.state === 'sit') return; if (p.scared > 0) { p.scared = Math.max(p.scared, secs); return; }
+      let fxx = ax / al, fyy = ay / al; const w = p.w; if (w && w.ux !== undefined && w.kind !== 'cross') { const sg = (w.ux * fxx + w.uy * fyy) >= 0 ? 1 : -1; fxx = w.ux * sg * 0.92 + fxx * 0.08; fyy = w.uy * sg * 0.92 + fyy * 0.08; const l = Math.hypot(fxx, fyy) || 1; fxx /= l; fyy /= l; }
+      try { cs.leaveGroup(p); } catch (e) {} if (p.state === 'stand') cs.nStand--; if (p.wq) { p.wq.w.wait[p.wq.end][p.wq.n] = 0; p.wq = null; }
+      p.state = 'flee'; p.t = 0; p.vx = fxx; p.vy = fyy; try { cs.setClip(p, cs.jog); } catch (e) {} p.scared = secs; this.scared.push({ p, kind });
+    }
+  }
+  scare(x, y, r, level) {
+    if (this.bodies && this.bodies.scare(x, y, r, level)) return;
+    const g = this.g, t0 = this.t; if (level < 2 && this._scT && t0 - this._scT < 0.3) return; this._scT = t0;
+    for (const p of g.peds.list) { const d = Math.hypot(p.x - x, p.y - y); if (d < r) this.frighten(p, 'ped', x, y, 7 + rnd() * 6); }
+    const cs = g.crowd && g.crowd.on && g.crowd.sim; if (cs) for (const a of cs.agents) { if (a.gone || a.scared > 0) continue; const dx = a.x - x, dy = a.y - y; if (dx * dx + dy * dy < r * r) { const d = Math.sqrt(dx * dx + dy * dy); if (d < r * 0.45 || rnd() < 0.8) this.frighten(a, 'crowd', x, y, 6 + rnd() * 8 + (r - d) * 0.1); } }
+  }
+  stepPeople(dt) {
+    if (this.bodies) this.bodies.step(dt);
+    for (let i = this.scared.length - 1; i >= 0; i--) {
+      const s = this.scared[i], p = s.p; p.scared -= dt;
+      if (p.gone || p.state === 'down' || p.scared <= 0) { p.scared = 0; if (s.kind === 'ped' && p._w && p.state !== 'down') { p.speed = p._w.speed; p.walk = p._w.walk; p.walkSpeed = p._w.walkSpeed; p._w = null; this.g.peds.setAnim(p, p.walk); } this.scared.splice(i, 1); continue; }
+      if (s.kind === 'crowd') { if (p.state === 'flee') p.t = Math.min(p.t, 1.0); else if (p.state === 'walk' || p.state === 'stand' || p.state === 'wait') p.scared = 0; }
+    }
+    for (let i = this.dolls.length - 1; i >= 0; i--) { const p = this.dolls[i]; if (!this.g.peds.list.includes(p)) { this.dolls.splice(i, 1); p.doll = null; continue; } p.doll.step(dt); p.fall = 0; if (p.doll.t < 40) p.t = Math.min(p.t, 5); }
+  }
+
+  // ------------------------------------------------------------------ camera: over the right shoulder
+  placeCamera(dt) {
+    const g = this.g, C = g.cam, cam = g.world.camera, st = g.statics, a = sm(this.zoomT || 0), pitch = C.pitch;
+    const gv = g.P.get('gview'); if (gv) { const pl = g.player, y = C.yaw + (gv === 'front' ? 0 : gv === 'side' ? -Math.PI / 2 : gv === 'left' ? Math.PI / 2 : gv === 'q' ? -0.9 : Math.PI), d = +(g.P.get('gdist') || 1.9); const gn = g.P.get('gfocus') === 'gun' && this.guns[this.slot], fx0 = gn ? gn.position.x : pl.x, fy0 = gn ? -gn.position.z : pl.y, fz0 = gn ? gn.position.y : 1.3; cam.position.set(fx0 + Math.cos(y) * d, fz0 + (gn ? 0.12 : 0.15), -(fy0 + Math.sin(y) * d)); cam.lookAt(fx0, fz0, -fy0); cam.fov = 40; cam.updateProjectionMatrix(); cam.updateMatrixWorld(); return; }
+    const fx = Math.cos(C.yaw), fy = Math.sin(C.yaw), rx = fy, ry = -fx; let sh = lerp(0.55, +(g.P.get('gcams') || (this.slot === 'pistol' ? 0.5 : 0.58)), a);
+    const hs = st.raycast(C.tx, C.ty, C.tx + rx * (sh + 0.3), C.ty + ry * (sh + 0.3)); if (hs < 1) sh = Math.max(0.05, (sh + 0.3) * hs - 0.25);
+    let px = C.tx + rx * sh, py = C.ty + ry * sh; const pz = C.tz + C.h; let d = C.dist; const hd = d * Math.cos(pitch);
+    let hit = 1; for (const sd of [0, 0.3, -0.3]) hit = Math.min(hit, st.raycast(px, py, px - fx * (hd + 0.5) - fy * sd, py - fy * (hd + 0.5) + fx * sd));
+    const want = hit < 1 ? Math.max(0.55, d * hit - 0.3) : d; if (!dt || C.clip === undefined) C.clip = want; else C.clip += (want - C.clip) * Math.min(1, dt * (want < C.clip ? 22 : 2.4)); d = Math.min(d, C.clip);
+    if (d < C.dist) { const k2 = Math.max(0.5, d / C.dist); px = C.tx + rx * sh * k2; py = C.ty + ry * sh * k2; }      /* a wall behind pushes the camera in: bring it in toward the shoulder as well, or the figure slides off the left edge */
+    // looking up, the camera sinks only a little (it stays behind the shoulder instead of diving to the pavement)
+    const hz = pitch < 0 ? Math.cos(pitch * 0.5) : Math.cos(pitch); let cx = px - fx * d * hz, cy = py - fy * d * hz, cz = pz + d * Math.sin(pitch) * (pitch < 0 ? 0.42 : 1) + Math.max(0, C.dist - d) * this.T('cwr', 0.15); if (cz < 0.3) cz = 0.3;
+    const s1 = C.shake * C.shake * 0.25, s2 = this.camShake * 0.06, n = g.frame;
+    cam.position.set(cx + Math.sin(n * 1.7) * s1 + Math.sin(n * 2.9) * s2, cz + Math.sin(n * 2.3) * s1 + Math.sin(n * 3.7) * s2, -cy + Math.cos(n * 1.3) * s1);
+    const lp = pitch - 0.08, cp = Math.cos(lp); cam.lookAt(cam.position.x + fx * cp * 10, cam.position.y - Math.sin(lp) * 10, cam.position.z - fy * cp * 10);
+    const ck = this.camKick || 0, kj = this.kickJ || [0, 0, 0]; cam.rotateZ(Math.sin(n * 2.1) * s2 * 0.5 + kj[0] * ck * this.T('croll', 0.04)); cam.rotateX(Math.sin(n * 3.3) * s2 * 0.35 + ck * 0.034); cam.position.addScaledVector(_v.set(fx, 0, -fy), -ck * 0.1).addScaledVector(_v.set(fy, 0, fx), kj[1] * ck * this.T('clat', 0.02));
+    /* the horizon tips a degree or two on the shot and the lens jumps sideways: a tilted flash frame can be read in a still, a level one that only moved up cannot (rounds 6-8: 'framing only drifts') */
+    cam.updateMatrixWorld();
+    if (Math.abs(cam.fov - C.fov) > 0.01) { cam.fov = C.fov; cam.updateProjectionMatrix(); }
+  }
+
+  // ------------------------------------------------------------------ the body and the gun, after the clip has posed the figure
+  pose(dt) {
+    const g = this.g, pl = g.player, rig = this.rig, armed = this.armedFoot(), kind = this.swap && !this.swap.done ? this.slot : this.slot;
+    if (this.bodies) this.bodies.pose(dt);
+    for (const p of this.dolls) if (p.doll) { const o = p.vis.object; o.rotation.set(0, p.h, 0); p.doll.apply(); }
+    const gun = this.guns[kind]; for (const n in this.guns) if (this.guns[n] !== gun || !armed) this.guns[n].visible = false;
+    if (!rig) { if (gun && armed) { gun.visible = true; const C = g.cam; gun.position.set(pl.x + Math.cos(C.yaw) * 0.4 + Math.sin(C.yaw) * 0.2, 1.25, -(pl.y + Math.sin(C.yaw) * 0.4 - Math.cos(C.yaw) * 0.2)); gun.rotation.set(0, C.yaw, 0); } return; }
+    if (!armed || !gun) { rig.curl('R', 0); rig.curl('L', 0); rig.stanceOff(); if (this.handMag) for (const n in this.handMag) this.handMag[n].visible = false; return; }
+    const W = WEAPONS[kind], C = g.cam, a = sm(this.aimT), U_ = gun.userData, long = kind !== 'pistol', root = rig.root; root.updateMatrixWorld(true);
+    // the aim's frame: forward from the right shoulder to the point under the crosshair
+    const lp = C.pitch - 0.08; let ap = -lp;
+    F.set(Math.cos(C.yaw) * Math.cos(ap), Math.sin(ap), -Math.sin(C.yaw) * Math.cos(ap));
+    R.set(Math.sin(C.yaw), 0, Math.cos(C.yaw));
+    // the trunk: turned from the legs to the aim, bent with the aim's pitch
+    const BS = (this.bs ||= { c: 0, cv: 0, h: 0, hv: 0, n: 0, nv: 0 });
+    // the stance: knees bent, hips sunk and back, one foot ahead when standing; each shot rocks the hips back over planted feet
+    if (a <= 0) rig.stanceOff();
+    if (a > 0 && rig.legs) { const still = 1 - sm((pl.speed - 0.1) / 0.6); this.footK = (this.footK ?? 0) + (still - (this.footK ?? 0)) * Math.min(1, (dt || 0.016) * 7);
+      const hx = Math.cos(pl.h), hz = -Math.sin(pl.h), sx = Math.sin(pl.h), sz = Math.cos(pl.h), fk = this.footK * a, ax = Math.cos(C.yaw), az = -Math.sin(C.yaw), bk = (0.02 + BS.h * 0.04 + BS.c * 0.012) * a;
+      rig.stanceLegs(_v.set(-ax * bk, -(0.032 + BS.h * 0.012) * a, -az * bk), _v2.set((hx * 0.09 - sx * 0.04) * fk, 0, (hz * 0.09 - sz * 0.04) * fk), _v3.set((-hx * 0.1 + sx * 0.05) * fk, 0, (-hz * 0.1 + sz * 0.05) * fk), _v4.set(hx, 0, hz)); }
+    rig.twist(this.twist - (long ? (kind === 'shotgun' ? 0.62 : 0.48) : this.T('ptw', 0.3)) * a, 0, R);      /* the chest stays bladed, left shoulder forward, so the left hand can reach the fore-end (pistol: so the left arm does not lie across the collar: it tore the shoulder in film c5) */
+    if (a > 0) { rig.twist(0, ap * 0.5 * a - (long ? 0.2 : this.T('plean', 0.2)) * a + Math.min(0.12, this.gunBack * (W.auto ? 0.7 : 1.6)) + Math.min(0.05, this.gunRise * 0.1) + (BS.c * (long ? 0.075 : this.T('ptk', 0.22)) + Math.sin(this.t * 1.7) * 0.008) * a, R); rig.face(wrapPi(C.yaw - pl.h) + (long ? -0.1 : 0), ap * 0.8 + (long ? this.T('hp', -0.16) : this.T('php', -0.05)), R, a * 0.9); if (long) rig.nudge('head', F, 0.26 * a); }      /* long guns: head down and tipped onto the stock */
+    const kt = this.kickT ?? 9, kenv = kt < 0.03 ? kt / 0.03 : Math.exp(-(kt - 0.03) / (W.auto ? 0.06 : 0.16)), KK = KICK[kind], kj = this.kickJ || [0, 0, 0];
+    if (a > 0) { rig.nudge('clavicle_R', UP, -KK.sh * 0.5 * BS.c * a); rig.nudge('head', R, KK.head * (long ? 1.3 : this.T('phk', 3)) * BS.n * a); rig.nudge('chest2', UP, -KK.yaw * 1.2 * BS.c * a); }
+    /* each shot rolls the trunk and the head about the aim line, a new way each time: the shoulder line and the head shift against the frame from tile to tile */
+    if (a > 0) { const BJ = this.bodyJ || [0, 0], sw = (KK.sway || 0) * kenv * a * this.T('bsw', 1); if (sw) { rig.nudge('spine', F, BJ[0] * sw); rig.nudge('head', F, BJ[1] * sw * 0.8); } }
+    if (a > 0 && !long) { const hu = this.T('hun', 0) * a; if (hu) { rig.nudge('clavicle_R', F, -hu); rig.nudge('clavicle_L', F, hu); } }      /* pistol: shoulders hunched up round the gun (hun, rad) */
+    const neck = rig.pos('neck', _v);
+    if (this.aim.ok && a > 0.5) { const tx = this.aim.x - neck.x, ty = this.aim.z - (neck.y - 0.1), tz = -this.aim.y - neck.z, L = Math.hypot(tx, ty, tz); if (L > 2.5) { _v2.set(tx / L, ty / L, tz / L); if (_v2.dot(F) > 0.9) F.lerp(_v2, 0.85).normalize(); } }
+    { const t = this.t, k = a * (this.rel ? 0.4 : 1); F.addScaledVector(R, (Math.sin(t * 0.93) + 0.5 * Math.sin(t * 2.31 + 1)) * 0.0045 * k).addScaledVector(UP, (Math.sin(t * 1.7) * 0.004 + Math.sin(t * 0.61 + 2) * 0.003) * k).normalize(); }      // the sights are never still: breath and hold
+    R.crossVectors(F, UP).normalize(); U.crossVectors(R, F).normalize();
+    // where the gun is when aimed (from the neck), and when carried
+    const aimPos = _v2.copy(neck); if (kind === 'pistol') { const one = this.T('p1h', 0);      /* the pistol in two hands, out in front of the RIGHT shoulder and a little under the eye line, so the camera above and behind sees the gun over the hands and both forearms (in front of the face two fists hid it: round 8; ?gt=p1h:1 = one hand, arm straight out, which round 9's critic called 'a straight rod, no elbow bend, no two-hand grip') */ aimPos.addScaledVector(R, this.T('pr', one ? 0.2 : 0.13)).addScaledVector(U, this.T('pu', one ? -0.08 : -0.04)).addScaledVector(F, +(g.P.get('gph') || this.T('pf', one ? 0.5 : 0.44))); } else if (U_.stock) { rig.pos('upper_arm_R', aimPos); const hd = rig.pos('head', _v5), eu = (hd.x - aimPos.x) * U.x + (hd.y - aimPos.y) * U.y + (hd.z - aimPos.z) * U.z + 0.085, lo = 0.05 - U_.stock.y, lift = clamp(eu - this.T('eye', 0.05) - (U_.sightY || 0.12), lo, lo + this.T('lmax', 0.045));      /* long guns come up until the sights are just under the eye (the butt rides high on the shoulder): at shoulder-joint height the gun sat at the chest with the head bowed over it (round 8: 'head tilted down at the gun rather than sighting') */ aimPos.addScaledVector(R, this.T('lr', -0.06) - U_.stock.z).addScaledVector(U, lift).addScaledVector(F, this.T('lf', 0.1) - U_.stock.x); } else aimPos.addScaledVector(R, 0.14).addScaledVector(U, -0.11).addScaledVector(F, 0.24);
+    const qAim = _q.setFromRotationMatrix(_m.makeBasis(F, U, R));
+    const bf = _v3.set(Math.cos(pl.h), 0, -Math.sin(pl.h)), br = _v4.set(Math.sin(pl.h), 0, Math.cos(pl.h));
+    const cPos = new THREE.Vector3(), cQ = new THREE.Quaternion();
+    if (long) { const hips = rig.pos('hips', _v5), bob = 0; cPos.copy(hips).addScaledVector(br, 0.19).addScaledVector(UP, 0.20 + bob).addScaledVector(bf, 0.20);
+      const cf = new THREE.Vector3().copy(bf).multiplyScalar(0.74).addScaledVector(br, -0.42).addScaledVector(UP, -0.52).normalize(), cr = new THREE.Vector3().crossVectors(cf, UP).normalize(), cu = new THREE.Vector3().crossVectors(cr, cf); cQ.setFromRotationMatrix(_m.makeBasis(cf, cu, cr)); }
+    else { const hf = new THREE.Vector3(), hn = new THREE.Vector3(), wp = rig.handFrame('R', hf, hn); const gx = new THREE.Vector3().copy(hf).applyAxisAngle(hn, 0.26), gy = new THREE.Vector3().crossVectors(hn, gx).normalize(); cQ.setFromRotationMatrix(_m.makeBasis(gx, gy, hn)); cPos.copy(wp).addScaledVector(hf, 0.082).addScaledVector(hn, -0.028); }
+    // draw / holster: the gun comes up from the hip
+    const sw = this.swap ? (this.swap.done ? clamp((this.swap.t - 0.22) / 0.28, 0, 1) : 1 - clamp(this.swap.t / 0.22, 0, 1)) : 1;
+    gun.visible = true; gun.position.copy(cPos).lerp(aimPos, a); gun.quaternion.copy(cQ).slerp(qAim, a);
+    if (sw < 1) { const hips = rig.pos('hips', _v5); gun.position.lerp(_v5.addScaledVector(br, 0.22).addScaledVector(UP, -0.02), 1 - sm(sw)); gun.rotateZ(-(1 - sm(sw)) * 1.1); }
+    // recoil and reload on the gun itself
+    gun.position.addScaledVector(_v5.set(1, 0, 0).applyQuaternion(gun.quaternion), -this.gunBack).addScaledVector(U, this.gunRise * (long ? KK.lift : this.T('plift', 0.42)) + kj[1] * KK.jit * kenv).addScaledVector(R, kj[0] * KK.jit * kenv).addScaledVector(F, long ? 0 : -this.gunRise * this.T('pback', 0.22));      /* the pistol's kick breaks the arm at the elbow: the hand comes up and back a hand's breadth and settles over four or five tiles (a flip of the gun alone is 10 px at the size a critic sees a tile) */ gun.rotateZ(this.gunRise); gun.rotateX(kj[2] * KK.roll * kenv);
+    const rel = this.rel && !W.shells ? this.rel.t / this.rel.dur : this.rel ? 0.5 : -1; let relW = 0; if (rel >= 0) { relW = W.shells ? 1 : sm(rel / 0.12) * (1 - sm((rel - 0.86) / 0.14)); gun.rotateZ((long ? 0.5 : 0.75) * relW); gun.rotateX(-(long ? 0.5 : 0.6) * relW); gun.position.addScaledVector(UP, -(long ? 0.06 : 0.08) * relW * a).addScaledVector(F, long ? 0 : -0.12 * relW * a); }
+    gun.updateMatrixWorld(true);
+    // moving parts
+    const mv = U_.moving || {}, cyc = mv.slide || mv.bolt; if (cyc && cyc.node && cyc.home) { const k = this.slideT > 0 ? Math.sin(Math.min(1, this.slideT / 0.085) * Math.PI) : 0, lock = !W.shells && this.ammo[kind].mag === 0 && kind === 'pistol' && !(this.rel && this.rel.rack) ? 1 : 0; cyc.node.position.copy(cyc.home).addScaledVector(cyc.axis, cyc.travel * Math.max(k, lock)); }
+    if (mv.pump && mv.pump.node && mv.pump.home) { const u = this.pumpT, k = u < 0 ? 0 : u < 0.14 ? 0 : u < 0.3 ? (u - 0.14) / 0.16 : u < 0.4 ? 1 : u < 0.56 ? 1 - (u - 0.4) / 0.16 : 0; mv.pump.node.position.copy(mv.pump.home).addScaledVector(mv.pump.axis, mv.pump.travel * k); this.pumpK = k; } else this.pumpK = 0;
+    if (mv.mag && mv.mag.node) mv.mag.node.visible = !(this.rel && !W.shells && this.rel.out && !this.rel.in);
+    // hands: the firing hand on the grip, the other on the fore-end (or wrapped round the firing hand); the reload takes the left hand away
+    const gx = _v5.set(1, 0, 0).applyQuaternion(gun.quaternion).clone(), gy = new THREE.Vector3(0, 1, 0).applyQuaternion(gun.quaternion), gz = new THREE.Vector3(0, 0, 1).applyQuaternion(gun.quaternion);
+    const wR = (long ? 1 : a) * sm(sw), fR = new THREE.Vector3().copy(gx).multiplyScalar(0.965).addScaledVector(gy, -0.26).normalize();
+    const wristR = new THREE.Vector3().copy(gun.position).addScaledVector(fR, -0.082).addScaledVector(gz, 0.028).addScaledVector(gy, long ? 0 : +(g.P.get('ghu') || 0.04));      /* the firing hand high on the pistol's grip (it held the bottom of it: close-up out/v3.jpg row 3) */
+    rig.arm('R', wristR, _v.copy(UP).multiplyScalar(-0.9).addScaledVector(R, long ? 0.6 : 0.22).addScaledVector(F, -0.2), wR); rig.handDir('R', fR, gz, wR); rig.curl('R', 1, true);
+    const sup = new THREE.Vector3().copy(U_.support); if (long && U_.stock && kind !== 'shotgun') sup.x = Math.min(sup.x, U_.stock.x + 0.47); /* no further out than an arm can hold it */ if (mv.pump && this.pumpK) sup.addScaledVector(mv.pump.axis, mv.pump.travel * this.pumpK); sup.x += this.T('sx', 0); sup.y += this.T('sy', 0); sup.z += this.T('sz', 0); sup.applyMatrix4(gun.matrixWorld);
+    /* the support hand. Long guns: under the fore-end, palm up, the fingers lying ACROSS the gun so that their curl wraps them up its right side (they lay along the barrel and curled into a fist beside it: 'open floating palm', rounds 3-8). Pistol: palm on the left of the grip, fingers forward round the firing hand's */
+    let fL, nL; if (long) { fL = new THREE.Vector3().copy(gx).multiplyScalar(this.T('lfx', 0.47)).addScaledVector(gz, this.T('lfz', 0.88)).addScaledVector(gy, this.T('lfy', 0)).normalize(); nL = new THREE.Vector3().copy(gy).addScaledVector(gz, this.T('lnz', 0)).normalize(); } else { fL = new THREE.Vector3().copy(gx).multiplyScalar(this.T('pfx', 0.95)).addScaledVector(gy, this.T('pfy', -0.25)).addScaledVector(gz, this.T('pfz', 0.15)).normalize(); nL = new THREE.Vector3().copy(gz).multiplyScalar(0.9).addScaledVector(gy, this.T('pny', 0.35)).normalize(); }
+    const lb = long ? this.T('lb', (rig.hand.L.len || 0.09) - this.T('lk', 0.032)) : this.T('pb', 0.075), lo = long ? this.T('lo', 0.028) : this.T('po', 0.03);      /* long guns: the knuckles lie under the fore-end's right edge, the fingers hook up its right side */
+    const wristL = new THREE.Vector3().copy(sup).addScaledVector(fL, -lb).addScaledVector(nL, -lo); let wL = (long ? 1 : this.T('p1h', 0) ? 0 : a) * sm(sw), curlL = long ? this.T('lc', 1) : this.T('pc', 1.1);
+    if (rel >= 0 && !W.shells) {      // off the gun, down to the belt for a fresh magazine, back up to the well
+      const magP = mv.mag && mv.mag.node ? mv.mag.node.getWorldPosition(new THREE.Vector3()).addScaledVector(gy, -0.07) : new THREE.Vector3().copy(gun.position).addScaledVector(gy, -0.12);
+      const belt = rig.pos('hips', new THREE.Vector3()).addScaledVector(br, -0.21).addScaledVector(UP, 0.07).addScaledVector(bf, 0.08);
+      const k1 = sm((rel - 0.04) / 0.12), k2 = sm((rel - 0.2) / 0.16), k3 = sm((rel - 0.44) / 0.18), k4 = sm((rel - 0.7) / 0.16);
+      wristL.lerp(magP, k1).lerp(belt, k2).lerp(magP, k3).lerp(new THREE.Vector3().copy(sup).addScaledVector(fL, -lb).addScaledVector(nL, -lo), k4); wL = Math.max(wL, relW); curlL = 0.6;
+      fL.lerp(gy, 0.6 * (k1 - k4)).normalize();
+    } else if (W.shells && this.rel) { const port = new THREE.Vector3().copy(gun.position).addScaledVector(gx, 0.12).addScaledVector(gy, -0.02); const u = this.rel.t / W.reload, k = Math.sin(clamp(u, 0, 1) * Math.PI); const belt = rig.pos('hips', new THREE.Vector3()).addScaledVector(br, -0.2).addScaledVector(UP, 0.08).addScaledVector(bf, 0.1); wristL.copy(belt).lerp(port, k); }
+    { const HM = (this.handMag ||= {}); for (const n in HM) HM[n].visible = false; const mg = mv.mag && mv.mag.node, r = this.rel;      // the fresh magazine rides in the left hand from the belt to the well
+      if (mg && r && !W.shells && r.out && !r.in && rel > 0.3) { let c = HM[kind]; if (!c) { c = HM[kind] = mg.clone(true); c.traverse((m) => { m.visible = true; m.frustumCulled = false; }); this.g.world.scene.add(c); } c.visible = true; c.quaternion.copy(gun.quaternion); mg.getWorldScale(c.scale); c.position.copy(wristL).addScaledVector(fL, 0.085).addScaledVector(gy, 0.03); } }
+    rig.arm('L', wristL, _v.copy(UP).multiplyScalar(-0.95).addScaledVector(R, long ? -0.3 : -0.12).addScaledVector(F, -0.1), wL); rig.handDir('L', fL, nL, wL); rig.curl('L', curlL * wL, false, long && !(rel >= 0) ? [this.T('h1', 1.2), this.T('h2', 1.0), this.T('h3', 0.6)] : null);
+  }
+
+  // ------------------------------------------------------------------ HUD: crosshair, hit marker, weapon and ammunition
+  hud() {
+    const g = this.g, H = g.hud, c = H.ctx, k = H.k, Wd = H.w / k, Ht = 1080, pl = g.player; if (!c || g.fly && g.fly.on) return;
+    c.setTransform(k, 0, 0, k, 0, 0); c.shadowBlur = 0;
+    const armed = this.armedFoot(), W = WEAPONS[this.slot];
+    if (armed && W) {
+      const a = sm(this.zoomT || 0), cx = Wd / 2, cy = Ht / 2, fov = g.world.camera.fov, spr = lerp(W.hip, W.spread, a) + this.bloom + (pl.speed > 0.3 ? 0.5 : 0), gap = Math.max(6, (spr * D2R) / Math.tan((fov * D2R) / 2) * (Ht / 2)) + 4, len = W.pellets > 1 ? 7 : 11;
+      const col = this.aim.ped ? '#ff5340' : '#ffffff', al = 0.45 + 0.5 * Math.max(a, this.stance ? 0.7 : 0);
+      c.globalAlpha = al; c.lineCap = 'butt';
+      const tick = (x0, y0, x1, y1) => { c.strokeStyle = 'rgba(0,0,0,0.6)'; c.lineWidth = 5; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke(); c.strokeStyle = col; c.lineWidth = 2.6; c.beginPath(); c.moveTo(x0, y0); c.lineTo(x1, y1); c.stroke(); };
+      if (W.pellets > 1) { c.strokeStyle = 'rgba(0,0,0,0.5)'; c.lineWidth = 4; for (let i = 0; i < 4; i++) { c.beginPath(); c.arc(cx, cy, gap, i * 1.5708 + 0.35, i * 1.5708 + 1.22); c.stroke(); } c.strokeStyle = col; c.lineWidth = 2; for (let i = 0; i < 4; i++) { c.beginPath(); c.arc(cx, cy, gap, i * 1.5708 + 0.35, i * 1.5708 + 1.22); c.stroke(); } }
+      else { tick(cx - gap - len, cy, cx - gap, cy); tick(cx + gap, cy, cx + gap + len, cy); tick(cx, cy + gap, cx, cy + gap + len); if (!W.auto || true) tick(cx, cy - gap - len, cx, cy - gap); }
+      c.fillStyle = 'rgba(0,0,0,0.55)'; c.beginPath(); c.arc(cx, cy, 2.6, 0, 7); c.fill(); c.fillStyle = col; c.beginPath(); c.arc(cx, cy, 1.5, 0, 7); c.fill();
+      if (this.hitT > 0 || this.killT > 0) { const kq = this.killT > 0, u = kq ? this.killT / 0.4 : this.hitT / 0.16, r0 = 9 + (1 - u) * 5, r1 = r0 + 9; c.globalAlpha = Math.min(1, u * 1.6); c.strokeStyle = kq ? '#ff3b2f' : '#fff'; c.lineWidth = kq ? 3 : 2.2; for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) { c.beginPath(); c.moveTo(cx + sx * r0, cy + sy * r0); c.lineTo(cx + sx * r1, cy + sy * r1); c.stroke(); } }
+      c.globalAlpha = 1;
+    }
+    // weapon panel, top right under the cash
+    if (this.slot !== 'unarmed' && W && !pl.vehicle) {
+      const am = this.ammo[this.slot], x = Wd - 216, y = 96, low = am.mag <= Math.ceil(W.mag * 0.2);
+      H.panel(x, y, 180, 74); c.fillStyle = '#ffb82e'; c.fillRect(x + 175, y, 5, 74);
+      H.text(W.name, x + 16, y + 22, 12, 'rgba(255,255,255,0.72)', 'left', 700, 2);
+      H.text(String(am.mag), x + 92, y + 60, 38, low ? '#ff5a45' : '#fff', 'right', 700); H.text('/ ' + am.reserve, x + 100, y + 60, 18, 'rgba(255,255,255,0.7)', 'left', 600);
+      // rounds as a row of pips
+      const n = W.mag, pw = Math.min(5, 150 / n - 1); for (let i = 0; i < n; i++) { c.fillStyle = i < am.mag ? (low ? '#ff5a45' : '#ffb82e') : 'rgba(255,255,255,0.16)'; c.fillRect(x + 16 + i * (pw + 1), y + 66, pw, 3); }
+      if (this.rel) { const u = W.shells ? this.rel.t / W.reload : this.rel.t / this.rel.dur; H.text('RELOADING', Wd / 2, Ht / 2 + 124, 12, 'rgba(255,255,255,0.85)', 'center', 700, 3); c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(Wd / 2 - 46, Ht / 2 + 132, 92, 4); c.fillStyle = '#ffb82e'; c.fillRect(Wd / 2 - 46, Ht / 2 + 132, 92 * clamp(u, 0, 1), 4); }
+      else if (am.mag === 0 && armed) H.text(am.reserve > 0 ? 'R  RELOAD' : 'NO AMMO', Wd / 2, Ht / 2 + 124, 12, '#ff5a45', 'center', 700, 3);
+    }
+    if (!g.demo && !this.script && !g.capture && this.t < 14 && this.canCarry()) { c.globalAlpha = clamp((14 - this.t) / 1.5, 0, 1); H.panel(Wd / 2 - 330, Ht - 196, 660, 34, 6); H.text('1 PISTOL    2 RIFLE    Q PUT AWAY    R RELOAD    MOUSE  LEFT FIRE   RIGHT AIM', Wd / 2, Ht - 174, 13, 'rgba(255,255,255,0.9)', 'center', 700, 1); c.globalAlpha = 1; }      /* the keys, for the first seconds */
+    // the strip of weapons while switching
+    if (this.swap || (this.t - (this._stripT || -9) < 0.7 && !this.inp.aim)) { if (this.swap) this._stripT = this.t; const u = clamp(0.7 - (this.t - this._stripT), 0, 1), sel = this.swap ? this.swap.to : this.slot; c.globalAlpha = Math.min(1, u * 3); const names = { unarmed: 'HOLSTER', pistol: 'PISTOL', smg: 'SMG', shotgun: 'SHOTGUN', rifle: 'CARBINE' }, w = 116, x0 = Wd / 2 - (ORDER.length * w) / 2, y = Ht - 250;
+      ORDER.forEach((n, i) => { const on = n === sel; H.panel(x0 + i * w + 3, y, w - 6, 40, 4); if (on) { c.fillStyle = '#ffb82e'; c.fillRect(x0 + i * w + 3, y + 36, w - 6, 4); } H.text(n === 'unarmed' ? 'Q' : String(i + 1), x0 + i * w + 14, y + 26, 13, '#ffb82e', 'left', 800); H.text(names[n], x0 + i * w + 30, y + 26, 13, on ? '#fff' : 'rgba(255,255,255,0.6)', 'left', 700, 1); }); c.globalAlpha = 1; }
+  }
+}

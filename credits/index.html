@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>CROSSTOWN: credits</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>body{margin:0;background:#0e1014;color:#e6e6e6;font:15px/1.6 system-ui,sans-serif}main{max-width:760px;margin:0 auto;padding:36px 20px 60px}h1{font-size:22px;letter-spacing:.2em;margin:0 0 4px}a{color:#ffd27a}p{margin:0 0 14px;overflow-wrap:anywhere}.sub{opacity:.6;margin-bottom:26px}.more{margin-top:28px;font-size:13px;opacity:.8}</style>
+</head><body><main>
+<h1>CROSSTOWN</h1><div class="sub">Credits and licences &nbsp;·&nbsp; <a href="../">Back to the game</a></div>
+<div id="t">Loading…</div>
+<div class="more">Full lists: <a href="../assets/panels/SOURCES.md">building wall photographs</a> · <a href="../assets/streets/vehicles/ATTRIBUTION.md">cars</a> · <a href="../assets/streets/ground/SOURCES.md">road</a> · <a href="../assets/combat/SOURCES.md">sounds</a> · <a href="../assets/ATTRIBUTION.md">this page as plain text</a></div>
+</main><script>
+// The text is assets/ATTRIBUTION.md, the same file that is served beside the model files; web and e-mail addresses in it become links.
+fetch('../assets/ATTRIBUTION.md', { cache: 'no-store' }).then(function (r) { return r.text(); }).then(function (x) {
+  var esc = function (s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };
+  var html = x.replace(/^# .*\n+/, '').trim().split(/\n\s*\n/).map(function (p) { return '<p>' + esc(p).replace(/(https?:\/\/[^\s<]*[^\s<.,;)])/g, '<a href="$1" rel="noopener">$1</a>').replace(/\b([\w.+-]+@[\w-]+\.[\w.]+)\b/g, '<a href="mailto:$1">$1</a>').replace(/\b(assets\/[\w\/.-]+\.md)\b/g, '<a href="../$1">$1</a>') + '</p>'; }).join('');
+  document.getElementById('t').innerHTML = html; }).catch(function () { document.getElementById('t').textContent = 'Could not load the credits. They are also at assets/ATTRIBUTION.md.'; });
+</script></body></html>

@@ -7,9 +7,9 @@ import './feedback.js';     // first: its error, console and frame-time recorder
   plain0('assets/loadtotal.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((j) => { if (j && j.bytes) L.total = j.bytes; }).catch(() => {});
   // Behind Cloudflare's proxy only some file types are kept at the edge (.bin, .gz, .js, .jpg, .webp ...). The public build can therefore ship
   // its models and textures with ".bin" added to the name (window.__CFG.bin, set by tools/public_build.sh); every request for such a file is sent there.
-  const BINRE = /\.(glb|ktx2|hdr|opus|wasm|p\d)(\?.*)?$/, binOn = !!(window.__CFG && window.__CFG.bin), apiAt = (window.__CFG && window.__CFG.api) || '';
-  window.fetch = async (u, o) => { if (u instanceof URL) u = u.href; let url = typeof u === 'string' ? u : (u && u.url) || '';
-    if (apiAt && typeof u === 'string' && /^api\//.test(u)) return plain0(apiAt.replace(/\/$/, '') + '/' + u, o);
+  const BINRE = /\.(glb|ktx2|hdr|opus|wasm|p\d)(\?.*)?$/, binOn = !!(window.__CFG && window.__CFG.bin);
+  window.fetch = async (u, o) => { if (u instanceof URL) u = u.href; else if (typeof Request !== 'undefined' && u instanceof Request && u.method === 'GET') { o = o || { headers: u.headers, credentials: u.credentials, signal: u.signal }; u = u.url; }     /* three's loaders pass a Request */
+    let url = typeof u === 'string' ? u : (u && u.url) || '';
     if (binOn && typeof u === 'string' && BINRE.test(u) && !/^(data|blob):/.test(u)) { u = u.replace(BINRE, '.$1.bin$2'); url = u; }
     if ((o && o.method && o.method !== 'GET') || /^(data|blob):/.test(url) || /api\/|build\.txt|loadtotal/.test(url) || window.__ready) return plain0(u, o);
     let r; try { r = await plain0(u, o); } catch (e) { L.failed++; throw e; } if (!r.ok) { if (!/\.gz(\.p\d+(\.bin)?)?$|people\.json/.test(url)) L.failed++; return r; } if (!r.body) return r; L.files++; L.now = what(url);

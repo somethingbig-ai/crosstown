@@ -93,7 +93,8 @@ async function loadGLB(url) {
     if (!self.DecompressionStream) throw new Error('no packed file');
     let r = await fetch(url + '.gz'), body = r.ok ? r.body : null;
     if (!body) {     // the public host takes no file over 25 MB: there the packed file is cut into url.gz.p0, .p1, ... (tools/public_build.sh), fetched together and joined
-      const parts = []; for (let i = 0; i < 16; i++) parts.push(fetch(url + '.gz.p' + i).then((q) => (q.ok ? q.arrayBuffer() : null)).catch(() => null));
+      let np = 16; try { const q = await fetch(url + '.gz.n.json'); if (q.ok) np = +(await q.json()).parts || 16; } catch (e) {}
+      const parts = []; for (let i = 0; i < np; i++) parts.push(fetch(url + '.gz.p' + i).then((q) => (q.ok ? q.arrayBuffer() : null)).catch(() => null));
       const got = await Promise.all(parts), n = got.findIndex((q) => !q); const use = got.slice(0, n < 0 ? got.length : n); if (!use.length) throw new Error('no packed file'); body = new Blob(use).stream(); }
     const buf = await new Response(body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
     return await new GLTFLoader().parseAsync(buf, url.replace(/[^/]*$/, ''));

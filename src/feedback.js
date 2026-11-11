@@ -56,7 +56,11 @@ export function install(g) {
   l.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); b.style.display = b.style.display === 'none' ? 'block' : 'none'; if (b.style.display === 'block') { b._shot = shot(); $('fbmsg').textContent = ''; $('fbtext').focus(); } });
   $('fbclose').addEventListener('click', (e) => { e.preventDefault(); b.style.display = 'none'; });
   $('fbsend').addEventListener('click', async () => { const text = $('fbtext').value.trim(); if (!text) { $('fbmsg').textContent = 'Write a line first.'; return; } $('fbsend').disabled = true; $('fbmsg').textContent = 'Sending...';
-    try { const r = await fetch('api/feedback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, email: $('fbmail').value.trim().slice(0, 120), trace: trace(), screenshot: b._shot || shot() }) }); if (!r.ok) throw new Error('server said ' + r.status);
+    try { const body = JSON.stringify({ text, email: $('fbmail').value.trim().slice(0, 120), trace: trace(), screenshot: b._shot || shot() }), to = (window.__CFG && window.__CFG.feedbackUrl) || 'api/feedback';
+      // the public feedback service sleeps when idle and can take most of a minute to wake: wait up to 90 s, and try once more if the first try fails
+      const post = async () => { const ac = new AbortController(), tm = setTimeout(() => ac.abort(), 90000); try { const r = await fetch(to, { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal: ac.signal }); if (!r.ok) throw new Error('server said ' + r.status); } finally { clearTimeout(tm); } };
+      const slow = setTimeout(() => { $('fbmsg').textContent = 'Sending... (waking the server, up to a minute)'; }, 4000);
+      try { try { await post(); } catch (e1) { $('fbmsg').textContent = 'Trying again...'; await post(); } } finally { clearTimeout(slow); }
       $('fbmsg').textContent = 'Sent. Thank you.'; $('fbtext').value = ''; setTimeout(() => { b.style.display = 'none'; }, 1600); } catch (e) { $('fbmsg').textContent = 'Could not send (' + e.message + '). Try again in a minute.'; } $('fbsend').disabled = false; });
   // B opens the form at any time (it frees the mouse first): the start screen tells players so
   addEventListener('keydown', (e) => { if (e.code !== 'KeyB' || e.repeat || inForm(e) || window.__startScreen) return; try { document.exitPointerLock && document.exitPointerLock(); } catch (err) {} b.style.display = 'block'; b._shot = shot(); $('fbmsg').textContent = ''; setTimeout(() => $('fbtext').focus(), 30); e.preventDefault(); });

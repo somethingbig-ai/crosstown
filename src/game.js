@@ -193,12 +193,18 @@ export class Game {
   }
   readInput() {
     const K = this.keys, I = this.input; const ax = (a, b) => (K.has(a) ? 1 : 0) - (K.has(b) ? 1 : 0);
-    const gp = navigator.getGamepads ? navigator.getGamepads()[0] : null;
+    // Controller (public feedback Nov 11, Xbox pad on Ubuntu: "the controller is not responding"): the game only ever looked at pad slot 0, which is
+    // empty on many machines (Linux and Windows hand out other slots), and read buttons that some pads do not have. It now takes the first
+    // connected pad that has sticks and triggers (the "standard" layout if there is one) and reads every button safely.
+    let gp = null; try { const all = navigator.getGamepads ? navigator.getGamepads() : []; for (const q of all) if (q && q.connected && q.axes.length >= 2 && q.buttons.length >= 4 && (!gp || (q.mapping === 'standard' && gp.mapping !== 'standard'))) gp = q; } catch (e) {}
+    if (gp) { const bt = gp.buttons, B = (i) => (bt[i] ? (typeof bt[i].value === 'number' ? Math.max(bt[i].value, bt[i].pressed ? 1 : 0) : bt[i].pressed ? 1 : 0) : 0), std = gp.mapping === 'standard' || bt.length >= 16;
+      gp = { axes: [gp.axes[0] || 0, gp.axes[1] || 0, std ? gp.axes[2] || 0 : gp.axes[3] || 0, std ? gp.axes[3] || 0 : gp.axes[4] || 0], buttons: Array.from({ length: 17 }, (_, i) => ({ value: std ? B(i) : i === 7 ? Math.max(B(7), ((gp.axes[5] ?? -1) + 1) / 2) : i === 6 ? Math.max(B(6), ((gp.axes[2] ?? -1) + 1) / 2) : B(i), pressed: B(i) > 0.5 })) };
+      if (!this._padSeen) { this._padSeen = 1; try { const d = document.createElement('div'); d.textContent = 'Controller on: left stick steer and walk · right stick look · RT gas · LT brake · A handbrake · Y get in or out'; d.style.cssText = 'position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:55;font:13px system-ui,sans-serif;color:#fff;background:rgba(14,16,20,.8);padding:7px 14px;border-radius:8px;transition:opacity 1s'; document.body.appendChild(d); setTimeout(() => { d.style.opacity = 0; }, 7000); setTimeout(() => d.remove(), 8200); } catch (e) {} } }
     I.steer = clamp(ax('KeyA', 'KeyD') + ax('ArrowLeft', 'ArrowRight') - (gp ? (Math.abs(gp.axes[0]) > 0.12 ? gp.axes[0] : 0) : 0), -1, 1);
     I.throttle = clamp((K.has('KeyW') || K.has('ArrowUp') ? 1 : 0) + (gp ? gp.buttons[7].value : 0), 0, 1); I.brake = clamp((K.has('KeyS') || K.has('ArrowDown') ? 1 : 0) + (gp ? gp.buttons[6].value : 0), 0, 1);
     I.handbrake = K.has('Space') || !!(gp && gp.buttons[0].pressed); I.run = K.has('ShiftLeft') || K.has('ShiftRight');
     I.mx = I.steer; I.my = ax('KeyW', 'KeyS') + ax('ArrowUp', 'ArrowDown');
-    if (gp) { if (Math.abs(gp.axes[1]) > 0.15) I.my = clamp(I.my - gp.axes[1], -1, 1); if (Math.abs(gp.axes[2]) > 0.12) I.lookX += gp.axes[2] * 14; if (gp.buttons[3].pressed && !this._gpUse) I.use = true; this._gpUse = gp.buttons[3].pressed; }
+    if (gp) { if (Math.abs(gp.axes[1]) > 0.15) I.my = clamp(I.my - gp.axes[1], -1, 1); if (Math.abs(gp.axes[2]) > 0.12) I.lookX += gp.axes[2] * 14; if (Math.abs(gp.axes[3]) > 0.15) I.lookY += gp.axes[3] * 9; I.run = I.run || gp.buttons[10].pressed; if (gp.buttons[3].pressed && !this._gpUse) I.use = true; this._gpUse = gp.buttons[3].pressed; }
     // Steering (Matt, Nov 10: "steering the car is so hard"; fix from nyc-breakable). A held key asked for a lock that at 70 km/h meant several g
     // sideways, so the tyres let go and the car spun. Now the lock a full press may ask for is what the tyres hold at that speed (about 0.6 g; x1.6 with
     // the handbrake), it comes on smoothly and centres quickly, and with the mouse captured the mouse steers too (the camera follows the car by itself).

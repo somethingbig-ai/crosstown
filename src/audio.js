@@ -12,7 +12,7 @@ export class Sound {
     // tyres
     const ts = a.createBufferSource(); ts.buffer = this.white; ts.loop = true; const tb = a.createBiquadFilter(); tb.type = 'bandpass'; tb.frequency.value = 1900; tb.Q.value = 5; const tg = (this.tg = a.createGain()); tg.gain.value = 0; ts.connect(tb); tb.connect(tg); tg.connect(out); ts.start();
     // city bed and road rumble
-    const cs = a.createBufferSource(); cs.buffer = noise(4, true); cs.loop = true; const cg = (this.cg = a.createGain()); cg.gain.value = 0.16; cs.connect(cg); cg.connect(out); cs.start();
+    const cs = a.createBufferSource(); cs.buffer = noise(4, true); cs.loop = true; const cg = (this.cg = a.createGain()); cg.gain.value = 0.07; const cf = a.createBiquadFilter(); cf.type = 'lowpass'; cf.frequency.value = 380; cf.Q.value = 0.5; cs.connect(cf); cf.connect(cg); cg.connect(out); cs.start();     /* public feedback Nov 11, twice ("a constant white noise sound like tv static", "low quality white noise"): the city bed was raw noise at full band, always on; it is now a low rumble (under 380 Hz) at less than half the level */
     const rs = a.createBufferSource(); rs.buffer = noise(3, true); rs.loop = true; const rf = a.createBiquadFilter(); rf.type = 'lowpass'; rf.frequency.value = 260; const rg = (this.rg = a.createGain()); rg.gain.value = 0; rs.connect(rf); rf.connect(rg); rg.connect(out); rs.start();
     this.hornT = 3;
   }

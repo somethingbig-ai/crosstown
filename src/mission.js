@@ -135,6 +135,9 @@ export class Missions {
   }
   draw() {
     const T = this.target, m = this.marker; m.visible = !!T; if (!T) return;
+    // the beam: tall enough to find the target from the street ("collect the package objective unclear", "there is no package": at 7 m nobody saw it),
+    // short when the camera is high (from the air a tall beam read as a yellow line up past the roofs)
+    { const cy = this.g.world.camera.position.y, hgt = cy > 45 ? 7 : cy > 20 ? 7 + (45 - cy) * 1.3 : 40, b = m.children[1]; if (b) { b.scale.y = hgt / 7; b.position.y = hgt / 2; } }
     m.position.set(T.x, T.car ? 1.8 : 0.3, -T.y); const s = T.car ? 0.25 : 1.3; this.ring.scale.set(s, 1, s); this.ring.material.opacity = 0.4 + 0.2 * Math.sin(this.t * 4);
   }
 }

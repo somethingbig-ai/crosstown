@@ -340,7 +340,7 @@ export class Game {
   camTarget() {
     const pl = this.player, C = this.cam;
     if (pl.vehicle) { const v = pl.vehicle, sp = Math.hypot(v.vx, v.vy); const big = v.def.len > 7 ? 1.9 : v.def.hgt > 2 ? 1.3 : 1;
-      return { x: v.x, y: v.y, z: v.z + 1.15 * big, dist: (5.6 + sp * 0.045) * big, height: 1.25 * big, fov: 56 + clamp(sp / 45, 0, 1) * 16, yaw: v.h - (Math.abs(v.vf) > 1.5 && v.vf < 0 ? Math.PI : 0) - v.yawV * 0.12, auto: 3.2 + sp * 0.12 }; }
+      return { x: v.x, y: v.y, z: v.z + 1.15 * big, dist: (5.6 + sp * 0.045) * big, height: 1.25 * big, fov: 56 + clamp(sp / 45, 0, 1) * 16, yaw: v.h - v.yawV * 0.12,     /* public feedback Nov 11: "Reversing my car should not change the camera angle": the view no longer swings round to face backwards in reverse (look back with the mouse) */ auto: 3.2 + sp * 0.12 }; }
     return { x: pl.x, y: pl.y, z: (pl.alt || (this.statics.onSidewalk(pl.x, pl.y) ? 0.15 : 0)) + 1.5, dist: 3.4, height: 0.35, fov: 52, yaw: pl.h, auto: pl.speed > 0.3 ? 1.2 : 0 };
   }
   snapCamera() { const t = this.camTarget(), C = this.cam; C.yaw = t.yaw; C.tx = t.x; C.ty = t.y; C.tz = t.z; C.dist = t.dist; C.fov = t.fov; C.h = t.height; C.clip = undefined; this.placeCamera(0); }

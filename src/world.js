@@ -91,7 +91,8 @@ async function loadHDR(url) {
 async function loadGLB(url) {
   try {
     if (!self.DecompressionStream) throw new Error('no packed file');
-    let r = await fetch(url + '.gz'), body = r.ok ? r.body : null;
+    const split = window.__CFG && window.__CFG.public && /city\.glb$/.test(url);     /* the public build ships the city only in parts: do not ask for the whole file first (a 404 in every visitor's log) */
+    let r = split ? { ok: false } : await fetch(url + '.gz'), body = r.ok ? r.body : null;
     if (!body) {     // the public host takes no file over 25 MB: there the packed file is cut into url.gz.p0, .p1, ... (tools/public_build.sh), fetched together and joined
       let np = 16; try { const q = await fetch(url + '.gz.n.json'); if (q.ok) np = +(await q.json()).parts || 16; } catch (e) {}
       const parts = []; for (let i = 0; i < np; i++) parts.push(fetch(url + '.gz.p' + i).then((q) => (q.ok ? q.arrayBuffer() : null)).catch(() => null));
@@ -406,8 +407,9 @@ export class World {
       for (const c of cam.children) c.layers.set(3);
     }
     if (n < 2) return;          // let the first frames (shadow map, materials) settle
-    if (n % 3) return;          // one face every third frame: a face is a whole (reduced) scene draw, about 4 ms of main thread on the M2 Pro
-    const f = (n / 3) % 6; if (f === 0) { cam.position.copy(this.camera.position); cam.updateMatrixWorld(true); if (cam.coordinateSystem !== r.coordinateSystem) { cam.coordinateSystem = r.coordinateSystem; cam.updateCoordinateSystem(); } }
+    const ev = this.streetEvery || 3; if (n % ev) return;          // one face every third frame (every 4th or 6th when the game has cut detail to hold frame rate)
+    // one face every third frame: a face is a whole (reduced) scene draw, about 4 ms of main thread on the M2 Pro
+    const f = (n / ev) % 6; if (f === 0) { cam.position.copy(this.camera.position); cam.updateMatrixWorld(true); if (cam.coordinateSystem !== r.coordinateSystem) { cam.coordinateSystem = r.coordinateSystem; cam.updateCoordinateSystem(); } }
     const old = r.getRenderTarget(), xr = r.xr.enabled; r.xr.enabled = false; this.shared.tStreet.value = this.streetDummy.texture; sm.autoUpdate = false;
     r.setRenderTarget(this.streetRT, f); r.render(this.scene, cam.children[f]);
     r.setRenderTarget(old); r.xr.enabled = xr; sm.autoUpdate = au; this.shared.tStreet.value = this.streetRT.texture;

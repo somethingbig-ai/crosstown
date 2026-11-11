@@ -28,7 +28,7 @@ export class Vehicle {
     const sp = this.spec, c = Math.cos(this.h), s = Math.sin(this.h);
     let vf = this.vx * c + this.vy * s, vs = this.vx * s - this.vy * c;   // forward, rightward
     const maxSteer = lerp(0.62, 0.10, clamp(Math.abs(vf) / 42, 0, 1) ** 0.7);
-    this.steer += ((inp.lock !== undefined ? inp.lock : inp.steer * maxSteer) - this.steer) * Math.min(1, dt * (inp.lock !== undefined ? 14 : 7));     // inp.lock: the player's wheel angle in radians (readInput); traffic and the autopilot still give steer -1..1
+    this.steer += ((inp.lock !== undefined ? inp.lock : inp.steer * maxSteer) - this.steer) * Math.min(1, dt * (inp.lock !== undefined ? 26 : 7));     // inp.lock: the player's wheel angle in radians (readInput); traffic and the autopilot still give steer -1..1
     let acc = 0;
     if (inp.throttle > 0) acc += vf < -0.5 ? 16 * inp.throttle : inp.throttle * sp.acc * Math.max(0, 1 - (vf / sp.top) ** 2) * (vf < 8 ? 1.15 : 1);
     if (inp.brake > 0) { if (vf > 0.6) acc -= 15 * inp.brake; else acc -= inp.brake * sp.acc * 0.6 * Math.max(0, 1 + vf / 11); }
@@ -39,10 +39,10 @@ export class Vehicle {
     vf += acc * dt; this.acc = acc; this.braking = inp.brake > 0.03 || !!inp.handbrake;
     // tyres: sideways speed bleeds off with grip; the handbrake (or too much speed in a turn) lets the tail go
     const latDemand = Math.abs(vf * vf * Math.tan(this.steer) / this.def.wheelbase);
-    let grip = sp.grip * (inp.handbrake ? 0.22 : 1); { const lim = inp.latLim || 11; if (latDemand > lim) grip *= clamp(lim / latDemand, 0.45, 1); }
+    let grip = sp.grip * (inp.handbrake ? 0.22 : inp.lock !== undefined ? 1.35 : 1);     /* the player's car holds its line a little harder (first outside feedback, Nov 11: "handling feels a bit floaty") */ { const lim = inp.latLim || 11; if (latDemand > lim) grip *= clamp(lim / latDemand, 0.45, 1); }
     const vs0 = vs; vs *= Math.exp(-grip * dt); this.slip = Math.abs(vs);
     let yaw = (vf * Math.tan(this.steer)) / this.def.wheelbase; if (inp.handbrake) yaw *= 1.45;
-    this.yawV += (yaw - this.yawV) * Math.min(1, dt * 12);
+    this.yawV += (yaw - this.yawV) * Math.min(1, dt * (inp.lock !== undefined ? 20 : 12));
     this.h = wrapPi(this.h + this.yawV * dt);
     this.vx = vf * c + vs * s; this.vy = vf * s - vs * c;
     this.x += this.vx * dt; this.y += this.vy * dt;
@@ -209,7 +209,7 @@ export class Game {
       // in town, and above that as much as the tyres hold: 20 m/s2 sideways up to 32 km/h (a 90 degree corner in one short press), easing to
       // 10.5 m/s2 above 72 km/h (steady in a weave). The car's own grip limit is raised to match (latLim), so the tight turn does not slide.
       const dt = DT; let sm = this._sSteer || 0;
-      const want = clamp(I.steer, -1, 1), rate = Math.abs(want) < Math.abs(sm) || want * sm < 0 ? 18 : 12; sm += clamp(want - sm, -rate * dt, rate * dt);
+      const want = clamp(I.steer, -1, 1), rate = Math.abs(want) < Math.abs(sm) || want * sm < 0 ? 30 : 20;     /* Nov 11: the key reaches full lock in 50 ms (was 83), the wheel and the car's turn follow about twice as fast: three smoothing stages added up to about a quarter second of "input delay" */ sm += clamp(want - sm, -rate * dt, rate * dt);
       const vf = Math.abs(v.vf || 0), wb = v.def.wheelbase || 2.7, aLat = vf < 9 ? 20 : vf > 20 ? 10.5 : 20 - 9.5 * (vf - 9) / 11;
       I.lock = sm * Math.min(0.70, Math.atan(aLat * wb / Math.max(vf * vf, 6))) * (I.handbrake ? 1.5 : 1); I.latLim = aLat + 1.5; this._sSteer = sm;
     } else { this._sSteer = 0; I.lock = undefined; I.latLim = 0; }
@@ -282,6 +282,10 @@ export class Game {
     for (const c of this.vehicles) if (c !== v && Math.abs(c.x - v.x) < 12 && Math.abs(c.y - v.y) < 12) hitOne(c, true);
   }
   onCrash(v, force) { if (v === this.player.vehicle) { this.cam.shake = Math.min(1, this.cam.shake + force * 0.06); this.sound.crash(force); this.missions.onCrash(force); } }
+  // how much is drawn (1 = everything): budget distances, crowd size, how often the street mirror is redrawn
+  setDetail(d) { const w = this.world, b = this.budget; w.detail = d; w.streetEvery = d >= 1 ? 3 : d > 0.7 ? 4 : 6;
+    if (b) { if (!b._base) b._base = { HIDE_SMALL: b.HIDE_SMALL, SHADOW_SMALL: b.SHADOW_SMALL, SHADOW_BIG: b.SHADOW_BIG, HIDE_PEOPLE: b.HIDE_PEOPLE, SHADOW_PEOPLE: b.SHADOW_PEOPLE }; for (const k in b._base) b[k] = b._base[k] * (k === 'SHADOW_BIG' ? Math.max(0.6, d) : d); }
+    try { if (this.crowd && this.crowd.setCount) { if (!this._crowd0) this._crowd0 = (this.crowd.sim && this.crowd.sim.count) || 0; if (this._crowd0) this.crowd.setCount(Math.round(this._crowd0 * (d >= 1 ? 1 : d * 0.9))); } } catch (e) {} }
   onPedHit(p, v) { if (v === this.player.vehicle) { this.sound.thud(); this.missions.onPedHit(); } }
 
   nearestCar(maxD = 3.6) {
@@ -425,6 +429,14 @@ export class Game {
         const g = this.world.gtao; if (g && g.enabled && !this.P.has('ao') && !(this.world.aoDepth && (this.world.liveScale || 1) > 0.8 && !this.P.has('px') && window.__fit && !(this.fly && this.fly.on))) {     /* with the cheap depth AO (audit item 2) the picture first gives up a little size, and AO only goes below 0.8 */ this._slow = this.fps < 48 ? (this._slow || 0) + 1 : 0; if (this._slow >= 4) { g.enabled = false; console.log('[game] ambient occlusion pass off to hold frame rate (' + this.fps.toFixed(0) + ' fps)'); } } 
         else if (!this.capture && !this.P.has('aa') && this.world.liveAA !== 'fxaa' && !(this.fly && this.fly.on)) { this._slowA = this.fps < 54 ? (this._slowA || 0) + 1 : 0; if (this._slowA >= 4) { this.world.setLiveAA(false); console.log('[game] multisampling off, FXAA on to hold frame rate (' + this.fps.toFixed(0) + ' fps)'); } }
         else if (!this.capture && !this.P.has('px') && window.__fit && !(this.fly && this.fly.on)) { const w = this.world; this._slow2 = this.fps < 54 ? (this._slow2 || 0) + 1 : 0; if (this._slow2 >= 5 && (w.liveScale || 1) > 0.64) { w.liveScale = (w.liveScale || 1) * 0.87; this._slow2 = 0; window.__fit(); console.log('[game] render scale ' + w.liveScale.toFixed(2) + ' to hold frame rate (' + this.fps.toFixed(0) + ' fps)'); } } }
+        // Nov 11, first outside report (M4 laptop, 25-30 fps while driving at the smallest picture with AO off): such a machine is held back by how much
+        // is drawn, not by pixels. Below 42 fps at the floor, the game now also draws less: small street things and shadows come in nearer, the crowd
+        // thins, the street mirror refreshes half as often. Steps 0.8 -> 0.64 -> 0.5; steps back up one at a time when 58 fps holds. ?detail=1 pins it.
+        if (this.P.has('detail') && !this._detSet && this._govT >= 2) { this._detSet = 1; this.setDetail(+this.P.get('detail') || 1); }
+        if (this._govT >= 10 && !this.capture && !this.P.has('detail') && !(this.fly && this.fly.on) && !this.paused && (this.world.liveScale || 1) <= 0.66) { const w = this.world, d = w.detail || 1;
+          this._slowD = this.fps < 42 ? (this._slowD || 0) + 1 : 0; this._fastD = this.fps >= 58 ? (this._fastD || 0) + 1 : 0;
+          if (this._slowD >= 6 && d > 0.51) { this.setDetail(d > 0.81 ? 0.8 : d > 0.65 ? 0.64 : 0.5); this._slowD = 0; console.log('[game] detail ' + w.detail + ' to hold frame rate (' + this.fps.toFixed(0) + ' fps)'); }
+          else if (this._fastD >= 16 && d < 1) { this.setDetail(d < 0.51 ? 0.64 : d < 0.65 ? 0.8 : 1); this._fastD = 0; console.log('[game] detail back up to ' + w.detail); } }
       if (this.paused) { this.hud.draw(); return; }
       acc += el; let n = 0; while (acc >= DT && n < 4) { this.step(DT); acc -= DT; n++; } if (n === 4) acc = 0;
       this.renderFrame(el);

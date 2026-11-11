@@ -262,7 +262,7 @@ export class Game {
     for (const v of this.vehicles) if (v !== pl.vehicle) { v.step(dt, { steer: 0, throttle: 0, brake: 0, handbrake: true }, this); }     // a car nobody is driving stands on its handbrake (the brake pedal is reverse at a standstill)
     this.focus.x = pl.x; this.focus.y = pl.y;
     if (this.fly.on) { this.focus.x = clamp(this.fly.x, -this.bounds.x, this.bounds.x); this.focus.y = clamp(this.fly.y, -this.bounds.y, this.bounds.y); }     // the street life follows the eye
-    this.traffic.step(dt, this.t); this.peds.step(dt); this.missions.step(dt);
+    this.traffic.step(dt, this.t); if (!pl.vehicle && !pl.busy && !(this.heli && (this.heli.piloted || this.heli.busy)) && !(this.fly && this.fly.on)) this.traffic.pushPlayer(pl); this.peds.step(dt); this.missions.step(dt);
     this.sigT -= dt; if (this.sigT <= 0) { this.sigT = 0.2; this.updateSignals(); }
     this.updateCamera(dt);
     this.sound.update(dt);

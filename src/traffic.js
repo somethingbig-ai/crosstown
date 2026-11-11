@@ -108,6 +108,9 @@ export class Traffic {
   }
 
   // is something in the way within `look` metres along the car's nose?
+  // the player on foot cannot walk through a moving or waiting car: he is put back outside its body, on the nearer side
+  pushPlayer(pl) { for (const c of this.cars) { const dx = pl.x - c.x, dy = pl.y - c.y; if (Math.abs(dx) > 6 || Math.abs(dy) > 6) continue; const fx = Math.cos(c.h), fy = Math.sin(c.h), f = dx * fx + dy * fy, sd = -dx * fy + dy * fx, hl = c.def.len / 2 + 0.3, hw = c.def.wid / 2 + 0.3;
+      if (Math.abs(f) < hl && Math.abs(sd) < hw) { const pf = hl - Math.abs(f), ps = hw - Math.abs(sd); if (ps < pf) { const k = Math.sign(sd || 1) * ps; pl.x += -fy * k; pl.y += fx * k; } else { const k = Math.sign(f || 1) * pf; pl.x += fx * k; pl.y += fy * k; } } } }
   gapAhead(c, look) {
     const fx = Math.cos(c.h), fy = Math.sin(c.h); let gap = look; const half = c.def.len / 2; this._blk = null;
     const test = (ox, oy, rad, who) => {
@@ -119,6 +122,8 @@ export class Traffic {
     for (const v of this.g.vehicles) if (v !== c.pass) { test(v.x, v.y, v.def.len * 0.42, v);
       // and never nose into one of the player's cars from an angle (a fork, a merge): bumper against its body is a full stop
       if (Math.abs(v.x - c.x) < 9 && Math.abs(v.y - c.y) < 9) { const nx = c.x + fx * (half + 0.9), ny = c.y + fy * (half + 0.9); for (const o of [0.32, 0, -0.32]) if (Math.hypot(nx - v.x - Math.cos(v.h) * v.def.len * o, ny - v.y - Math.sin(v.h) * v.def.len * o) < (v.def.wid + c.def.wid) / 2 + 0.25) { gap = 0; this._blk = v; } } }
+    // the player on foot is in the way like anyone else (public feedback Nov 11: "cars can't run me over, i phase right through them")
+    { const pl = this.g.player; if (pl && !pl.vehicle) test(pl.x, pl.y, 0.5, pl); }
     // turning through a junction the nose points away from where the car is going: look along the arc for the player's cars
     if (c.junction) { const j = c.junction; for (const v of this.g.vehicles) { if (v === c.pass || Math.abs(v.x - c.x) > 16 || Math.abs(v.y - c.y) > 16) continue;
       for (let k = 1; k <= 5; k++) { const u = j.u + (k * 2.2) / j.len; if (u > 1.15) break; const a = (1 - u) * (1 - u), b = 2 * u * (1 - u), d = u * u, qx = a * j.p0x + b * j.cx + d * j.p1x, qy = a * j.p0y + b * j.cy + d * j.p1y;
@@ -169,7 +174,7 @@ export class Traffic {
       c.v += clamp(want - c.v, -9 * dt, 2.6 * dt); if (c.v < 0.02) c.v = 0;
       c.brake = c.v < 0.4 || c.v - v0 < -1.2 * dt;
       // last resort against gridlock: a car that has sat behind something on a green for a long time pushes through
-      if (c.v < 0.3 && gap < 3 && !atLight && (c.junction || R.signal(R.endNode(c.e, c.dir), c.e, t) === 'g')) { c.wait += dt; if (c.wait > 16) { c.ghost = 2.5; c.wait = 0; } } else c.wait = 0;
+      if (c.v < 0.3 && gap < 3 && !atLight && (c.junction || R.signal(R.endNode(c.e, c.dir), c.e, t) === 'g')) { c.wait += dt; if (c.wait > 16) { const mine = blk && (blk === this.g.player || this.g.vehicles.includes(blk)); if (!mine) c.ghost = 2.5; c.wait = mine ? 10 : 0; } } else c.wait = 0;     /* a car stuck for 16 s slips through what blocks it so junctions never lock up, but never through the player or the player's cars ("cars drive through my cars") */
       const ds = c.v * dt; c.spin += ds / c.def.radius;
       const ph = c.h;
       if (c.junction) {

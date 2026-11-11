@@ -52,7 +52,7 @@ window.world = world; window.THREE = THREE;
 const W = +(P.get('w') || 0), H = +(P.get('h') || 0);
 // live play renders at most ~2.4 million pixels (about 1080p x 1.15): the facade and soft-shadow shaders are paid per pixel, and a retina window at 1.5x was twice that.
 // world.liveScale (game.js lowers it when the frame rate still sags) scales it further.
-function fit() { const w = W || innerWidth, h = H || innerHeight; world.resize(w, h, W ? 1 : Math.min(devicePixelRatio, 1.5, Math.sqrt((P.has('px') ? +P.get('px') * 1e6 : 2.4e6) / (w * h))) * (world.liveScale || 1)); }
+function fit() { const w = W || innerWidth, h = H || innerHeight; world.resize(w, h, W ? 1 : Math.min(devicePixelRatio, Math.min(devicePixelRatio, 1.5, Math.sqrt((P.has('px') ? +P.get('px') * 1e6 : 2.4e6) / (w * h))) * (world.liveScale || 1))); }
 window.__fit = fit;
 const msg = document.getElementById('bootmsg');
 try {

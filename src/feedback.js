@@ -4,6 +4,8 @@
 // The trace: build id, page address, browser and graphics card, screen and picture size, quality tier, frame rate once a second for the last
 // 3 minutes, where the player and camera are, what he is in, the last 80 game key and mouse-button events (codes and times, never typed text),
 // the last 60 errors and warnings, load time, and a small screenshot. No cookies, no ids; the server keeps no IP address.
+// every load of the page in this tab is noted (time, and how long the page before it had been up): a tab the browser killed for memory shows up as reloads
+try { const k = 'crosstown.loads', v = JSON.parse(sessionStorage.getItem(k) || '[]'), last = +sessionStorage.getItem('crosstown.alive') || 0; v.push([new Date().toISOString().slice(11, 19), last ? Math.round((Date.now() - last) / 1000) + ' s after the last sign of life' : 'first']); sessionStorage.setItem(k, JSON.stringify(v.slice(-12))); setInterval(() => { try { sessionStorage.setItem('crosstown.alive', String(Date.now())); } catch (e) {} }, 5000); } catch (e) {}
 const T0 = performance.now(), fps = [], inputs = [], errs = [], logs = [], replay = [], hitches = [], net = [], hist = new Array(12).fill(0); let game = null, world = null, frames = 0;
 const push = (a, v, n) => { a.push(v); if (a.length > n) a.shift(); }, sec = () => +((performance.now() - T0) / 1000).toFixed(1);
 const txt = (x) => { try { if (x && typeof x === 'object' && !x.stack && (x.name || x.message || x.type)) return [x.constructor && x.constructor.name, x.name, x.message, x.type, x.target && (x.target.id || x.target.tagName || x.target.src)].filter(Boolean).join(' ').slice(0, 300); return (x && x.stack) ? String(x.stack).slice(0, 1500) : typeof x === 'string' ? x.slice(0, 400) : JSON.stringify(x).slice(0, 300); } catch (e) { return String(x).slice(0, 200); } };
@@ -47,7 +49,7 @@ export function trace() {
     heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null,
     frames: { count: frames, bucketsMs: window.__ftBuckets, histogram: hist, worstHitches: hitches.slice().sort((a, b) => b[1] - a[1]).slice(0, 12) },
     replay: { everyMs: 100, fields: ['t', 'x', 'y', 'heading', 'camYaw', 'camPitch', 'kmh', 'in', 'keys', 'alt', 'fps'], samples: replay },
-    longTasks: longs, marks,
+    longTasks: longs, marks, reloads: (() => { try { const k = 'crosstown.loads', v = JSON.parse(sessionStorage.getItem(k) || '[]'); return v; } catch (e) { return null; } })(),
     webgl: caps(), network: net, inputs, errors: errs, log: logs };
 }
 export function install(g) {

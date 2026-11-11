@@ -440,6 +440,7 @@ export class Game {
         // is drawn, not by pixels. Below 42 fps at the floor, the game now also draws less: small street things and shadows come in nearer, the crowd
         // thins, the street mirror refreshes half as often. Steps 0.8 -> 0.64 -> 0.5; steps back up one at a time when 58 fps holds. ?detail=1 pins it.
         if (this.P.has('detail') && !this._detSet && this._govT >= 2) { this._detSet = 1; this.setDetail(+this.P.get('detail') || 1); }
+        if (window.__safari && !this.P.has('detail') && !this._detSet && this._govT >= 2) { this._detSet = 1; this.setDetail(0.64); console.log('[game] Safari: starting at detail 0.64 and a smaller picture'); }
         if (this._govT >= 10 && !this.capture && !this.P.has('detail') && !(this.fly && this.fly.on) && !this.paused && (this.world.liveScale || 1) <= 0.66) { const w = this.world, d = w.detail || 1;
           this._slowD = this.fps < 42 ? (this._slowD || 0) + 1 : 0; this._fastD = this.fps >= 58 ? (this._fastD || 0) + 1 : 0;
           if (this._slowD >= 6 && d > 0.51) { this.setDetail(d > 0.81 ? 0.8 : d > 0.65 ? 0.64 : 0.5); this._slowD = 0; console.log('[game] detail ' + w.detail + ' to hold frame rate (' + this.fps.toFixed(0) + ' fps)'); }

@@ -34,6 +34,11 @@ const P = new URLSearchParams(location.search);
     { const sb0 = document.getElementById('startbox'); if (sb0) sb0.style.display = 'none'; if (m) m.style.display = ''; }
     if (m) { m.style.textTransform = 'none'; m.style.letterSpacing = '0'; m.style.maxWidth = '30em'; m.style.lineHeight = '1.5'; m.innerHTML = 'CROSSTOWN runs in Chrome, Edge or Safari on a laptop or desktop with a recent graphics card. ' + why + (probe ? '<br><a href="' + location.pathname + (location.search ? location.search + '&' : '?') + 'anyway=1" style="color:#ffd27a">Try anyway</a>' : '') + ' &nbsp; <a href="credits/" style="color:#bbb">Credits</a>'; }
     window.__blocked = !probe ? 'nowebgl2' : 'phone'; await new Promise(() => {}); } }
+// Safari (public reports Nov 11, two M1 Macs: 16 to 19 fps where Chrome gets 45+, and "the game keeps crashing": Safari reloads a page that uses
+// this much memory). Until that is solved the start screen says so plainly, and the game starts Safari on a lighter setting (smaller picture,
+// less drawn) to give it its best chance.
+window.__safari = /Safari\//.test(navigator.userAgent) && !/Chrome|Chromium|CriOS|Edg\/|Firefox|FxiOS|OPR\//.test(navigator.userAgent);
+if (window.__safari) { const sb0 = document.getElementById('startbox'); if (sb0) { const d = document.createElement('p'); d.style.cssText = 'margin:0 0 12px;padding:8px 12px;border-radius:8px;background:rgba(255,210,122,.14);border:1px solid rgba(255,210,122,.5);color:#ffe2a8;font-size:14px'; d.innerHTML = '<b>Please use Chrome for now.</b> In Safari this runs at about a third of the speed and Safari may reload the page when memory runs short. It will start here on a lighter setting.'; sb0.insertBefore(d, sb0.firstChild); } }
 const canvas = document.getElementById('c');
 { const sb = document.getElementById('startbox'); if (sb && !window.__noStart && !navigator.webdriver && !/[?&](demo|capture|shot|play)\b|crowd=none|peds=0/.test(location.search)) { sb.style.display = 'block'; const bm = document.getElementById('bootmsg'); if (bm) bm.style.display = 'none'; } }     // the start text shows while the game loads
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: P.has('shot') || P.has('capture') });
@@ -52,7 +57,7 @@ window.world = world; window.THREE = THREE;
 const W = +(P.get('w') || 0), H = +(P.get('h') || 0);
 // live play renders at most ~2.4 million pixels (about 1080p x 1.15): the facade and soft-shadow shaders are paid per pixel, and a retina window at 1.5x was twice that.
 // world.liveScale (game.js lowers it when the frame rate still sags) scales it further.
-function fit() { const w = W || innerWidth, h = H || innerHeight; world.resize(w, h, W ? 1 : Math.min(devicePixelRatio, Math.min(devicePixelRatio, 1.5, Math.sqrt((P.has('px') ? +P.get('px') * 1e6 : 2.4e6) / (w * h))) * (world.liveScale || 1))); }
+function fit() { const w = W || innerWidth, h = H || innerHeight; world.resize(w, h, W ? 1 : Math.min(devicePixelRatio, Math.min(devicePixelRatio, 1.5, Math.sqrt((P.has('px') ? +P.get('px') * 1e6 : window.__safari ? 1.3e6 : 2.4e6) / (w * h))) * (world.liveScale || 1))); }
 window.__fit = fit;
 const msg = document.getElementById('bootmsg');
 try {

@@ -18,7 +18,8 @@ export class Hud {
     this.hx = hx; this.hy = hy;
   }
   fit() {
-    const main = this.g.world.renderer.domElement, w = main.width, h = main.height;
+    // the HUD is drawn at the screen's own resolution, not the 3D picture's (which the game shrinks to hold frame rate: text came out soft and blocky)
+    const main = this.g.world.renderer.domElement, dpr = Math.min(2, window.devicePixelRatio || 1), w = Math.max(2, Math.round((main.clientWidth || main.width) * dpr)), h = Math.max(2, Math.round((main.clientHeight || main.height) * dpr));
     if (this.canvas.width !== w || this.canvas.height !== h) { this.canvas.width = w; this.canvas.height = h; }
     this.w = w; this.h = h; this.k = h / 1080;
   }

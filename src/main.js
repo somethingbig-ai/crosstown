@@ -71,8 +71,13 @@ try {
     // link. Skipped for films, stills, judged captures and test tools (?demo ?capture ?peds=0 ?crowd=none ?play=1, or window.__noStart set by a tool).
     // Before Play goes live, the shaders are compiled in the background (the browser's parallel compile where it has one) while the loading bar
     // says so. Without this the first frames after Play froze the page for many seconds (3 s on our laptops, 20 to 40 s in the first outside traces).
+    // The figures a struck person turns into (pedhit.js) are part of this: they sit hidden in the scene, and compiled only on the first hit, in the
+    // wrong render state, they cost that hit a 120-150 ms hitch ("when i hit someone in a car it freezes the game", Nov 11).
+    const figs = []; try { if (game.__pedhit && game.__pedhit.warm) for (const o of game.__pedhit.warm()) { let r0 = o; while (r0.parent && r0.parent !== world.scene) r0 = r0.parent; if (!figs.includes(r0)) figs.push(r0); } for (const f of figs) f.visible = true; } catch (e) {}
     if (!P.has('nocompile')) { try { const r = renderer, old = r.getRenderTarget(); r.setRenderTarget(world.composer.readBuffer); const t0c = performance.now();
         await Promise.race([r.compileAsync(world.scene, world.camera), new Promise((res) => setTimeout(res, 60000))]); r.setRenderTarget(old); console.log('[game] shaders compiled ahead in ' + ((performance.now() - t0c) / 1000).toFixed(1) + ' s'); } catch (e) { console.log('[game] compile ahead skipped: ' + (e && e.message)); } }
+    // ... and they stay in the first drawn frames (they stand 50 m under the street), so their meshes are already on the graphics card at the first hit
+    { let n = 0; const iv = setInterval(() => { if (++n > 40 || (!game.paused && n > 8)) { for (const f of figs) f.visible = false; clearInterval(iv); } }, 100); }
     if (window.__load) window.__load.stage = 'compiled';
     const boot = document.getElementById('boot'), sb = document.getElementById('startbox'), pb = document.getElementById('playbtn');
     const skip = !sb || window.__noStart || navigator.webdriver || P.has('demo') || P.has('capture') || P.has('play') || P.get('crowd') === 'none' || P.get('peds') === '0' || /^(demo|pad)/.test(P.get('heli') || '');

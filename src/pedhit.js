@@ -151,10 +151,12 @@ export function install(game, opts = {}) {
     onHit(p, v); if (!S.on || v !== game.player.vehicle) return;
     try { const sp = Math.hypot(v.vx, v.vy), R = start(p, v); S.hits++; if (!R) return;
       thud(sp); scatter(p.x, p.y);
-      S.hitstop = sp > 5 ? Math.min(0.03, 0.012 + sp * 0.0008) : 0;     /* lead, public feedback Nov 11 ("if I hit someone with my car the car freezes before continuing"): the held frames were 30-85 ms and, with the world's step skipped, read as a freeze; now at most two frames */
-      // was: Math.min(0.085, 0.03 + sp * 0.0028)                              // a few frames held still on the hit
-      game.cam.shake = Math.min(1, (game.cam.shake || 0) + 0.3 + sp * 0.022);                      // the camera takes the knock
-      const lose = Math.min(0.1, 0.03 + sp * 0.003); v.vx *= 1 - lose; v.vy *= 1 - lose; v.pitch = (v.pitch || 0) + Math.min(0.05, sp * 0.003);    // the car feels it: a little speed gone, the nose dips
+      // lead, Nov 11, second public report on this ("when i hit someone in a car it freezes the game", trace 20261111203010-3c7536: the car ploughed
+      // into a plaza crowd, 66 -> 47 km/h in 0.2 s over three hits, each one also holding the whole world still): NO hit-stop any more, and the
+      // car gives up speed once per half second at most, so a crowd slows it like a crowd and never stops the game. (was: hitstop up to 85 ms, 3-10% a hit)
+      S.hitstop = 0;
+      game.cam.shake = Math.min(0.6, (game.cam.shake || 0) + 0.15 + sp * 0.012);                      // the camera takes the knock
+      const nowT = game.t || 0, lose = nowT - (S.lostAt || -9) > 0.5 ? Math.min(0.05, 0.02 + sp * 0.0015) : 0; if (lose) S.lostAt = nowT; v.vx *= 1 - lose; v.vy *= 1 - lose; v.pitch = (v.pitch || 0) + Math.min(0.05, sp * 0.003);    // the car feels it: a little speed gone, the nose dips
     } catch (e) { console.warn('[pedhit]', e); }
   };
   // hit-stop: the game's fixed step is skipped while it lasts

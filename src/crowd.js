@@ -89,7 +89,8 @@ export async function addCrowd(game, opts = {}) {
     const render0 = world.render.bind(world);
     world.render = function (...a) {
       if (out.on && render.group.visible) {
-        cam.getWorldDirection(dir); const cut = Math.hypot(cam.position.x - last.x, cam.position.z - last.z) > 25 || dir.x * last.fx + dir.z * last.fz < 0.3;
+        cam.getWorldDirection(dir); { const hl = Math.hypot(dir.x, dir.z); if (hl > 1e-4) { dir.x /= hl; dir.z /= hl; } else { dir.x = last.fx; dir.z = last.fz; } }      /* (gameplay/people, Nov 12, public report 075004-16a733: the HEADING is compared, not the 3D direction: looking down steeper than 57 degrees made x*x + z*z < 0.3, so every frame counted as a camera cut and ran settle(10) = 600 crowd steps a frame: 65 -> 2 fps standing over anything) */
+        const cut = Math.hypot(cam.position.x - last.x, cam.position.z - last.z) > 25 || dir.x * last.fx + dir.z * last.fz < 0.3;
         if (cut && out.autoSettle !== false) out.settle(last.x > 1e8 ? 8 : 10);      // the camera was put somewhere else: the crowd there is already going about its day
         last.x = cam.position.x; last.z = cam.position.z; last.fx = dir.x; last.fz = dir.z;
         render.update();

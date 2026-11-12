@@ -14,10 +14,11 @@ import './feedback.js';     // first: its error, console and frame-time recorder
     if ((o && o.method && o.method !== 'GET') || /^(data|blob):/.test(url) || /api\/|build\.txt|loadtotal/.test(url) || window.__ready) return plain0(u, o);
     let r; try { r = await plain0(u, o); } catch (e) { L.failed++; throw e; } if (!r.ok) { if (!/\.gz(\.p\d+(\.bin)?)?$|people\.json/.test(url)) L.failed++; return r; } if (!r.body) return r; L.files++; L.now = what(url);
     const rd = r.body.getReader(); return new Response(new ReadableStream({ async pull(c) { try { const { done, value } = await rd.read(); if (done) { c.close(); return; } L.done += value.byteLength; L.last = performance.now(); c.enqueue(value); } catch (e) { L.failed++; c.error(e); } }, cancel(why) { return rd.cancel(why); } }), { status: r.status, statusText: r.statusText, headers: r.headers }); };
-  const ui = setInterval(() => { const bar = document.getElementById('loadbar'), txt = document.getElementById('loadtxt'); if (!bar) { if (window.__ready) clearInterval(ui); return; }
-    if (window.__ready) { bar.style.width = '100%'; txt.textContent = 'Ready'; document.getElementById('loadwrap').style.opacity = 0; clearInterval(ui); return; }
+  const ui = setInterval(() => { const bar = document.getElementById('loadbar'), txt = document.getElementById('loadtxt'); if (!bar) { if (window.__ready && !window.__warming) clearInterval(ui); return; }
+    if (window.__ready && !window.__warming) { bar.style.width = '100%'; txt.textContent = 'Ready'; document.getElementById('loadwrap').style.opacity = 0; clearInterval(ui); return; }
     const tot = Math.max(L.total || 250e6, L.done * 1.02), pct = Math.min(99, Math.floor(L.done / tot * 100)), mb = (x) => Math.round(x / 1e6), secs = (performance.now() - L.t0) / 1000;
     const building = (L.total && L.done >= L.total * 0.985) || (/game|compiled/.test(L.stage) && performance.now() - (L.last || 0) > 1500);
+    if (window.__warming) { bar.style.width = '99%'; txt.textContent = 'Last step · getting the graphics card ready (' + Math.round(secs) + ' s). The first visit can pause here for up to a minute.'; return; }
     bar.style.width = (building ? 99 : Math.max(2, pct)) + '%'; txt.textContent = building ? '99% · ' + mb(L.done) + ' MB in · building the city on your graphics card (' + Math.round(secs) + ' s)' : pct + '% · ' + mb(L.done) + ' of ' + mb(tot) + ' MB · loading ' + (L.now || 'the city') + (L.failed ? ' · ' + L.failed + ' failed' : ''); }, 150); }
 import * as THREE from 'three';
 import { World } from './world.js';
@@ -41,7 +42,7 @@ const P = new URLSearchParams(location.search);
 window.__safari = /Safari\//.test(navigator.userAgent) && !/Chrome|Chromium|CriOS|Edg\/|Firefox|FxiOS|OPR\//.test(navigator.userAgent);
 if (window.__safari) { const sb0 = document.getElementById('startbox'); if (sb0) { const d = document.createElement('p'); d.style.cssText = 'margin:0 0 12px;padding:8px 12px;border-radius:8px;background:rgba(255,210,122,.14);border:1px solid rgba(255,210,122,.5);color:#ffe2a8;font-size:14px'; d.innerHTML = '<b>Please use Chrome for now.</b> In Safari this runs at about a third of the speed and Safari may reload the page when memory runs short. It will start here on a lighter setting.'; sb0.insertBefore(d, sb0.firstChild); } }
 const canvas = document.getElementById('c');
-{ const sb = document.getElementById('startbox'); if (sb && !window.__noStart && !navigator.webdriver && !/[?&](demo|capture|shot|play)\b|crowd=none|peds=0/.test(location.search)) { sb.style.display = 'block'; const bm = document.getElementById('bootmsg'); if (bm) bm.style.display = 'none'; } }     // the start text shows while the game loads
+{ const sb = document.getElementById('startbox'); if (sb && !window.__noStart && (!navigator.webdriver || /[?&]start=1/.test(location.search)) && !/[?&](demo|capture|shot|play)\b|crowd=none|peds=0/.test(location.search)) { sb.style.display = 'block'; const bm = document.getElementById('bootmsg'); if (bm) bm.style.display = 'none'; } }     // the start text shows while the game loads
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: P.has('shot') || P.has('capture') });
 // If the graphics driver resets or runs out of memory the browser takes the WebGL context away and the picture goes white (first Linux report,
 // Nov 11). Say so plainly instead of leaving a white page; the Feedback form still works and its trace records the loss.
@@ -86,12 +87,21 @@ try {
     { let n = 0; const iv = setInterval(() => { if (++n > 40 || (!game.paused && n > 8)) { for (const f of figs) f.visible = false; clearInterval(iv); } }, 100); }
     if (window.__load) window.__load.stage = 'compiled';
     const boot = document.getElementById('boot'), sb = document.getElementById('startbox'), pb = document.getElementById('playbtn');
-    const skip = !sb || window.__noStart || navigator.webdriver || P.has('demo') || P.has('capture') || P.has('play') || P.get('crowd') === 'none' || P.get('peds') === '0' || /^(demo|pad)/.test(P.get('heli') || '');
+    const skip = !sb || window.__noStart || (navigator.webdriver && P.get('start') !== '1') || P.has('demo') || P.has('capture') || P.has('play') || P.get('crowd') === 'none' || P.get('peds') === '0' || /^(demo|pad)/.test(P.get('heli') || '');
     if (skip) { boot.style.opacity = 0; setTimeout(() => boot.remove(), 700); }
-    else { boot.style.background = 'rgba(11,12,14,.86)'; boot.style.zIndex = 100; const hudEls = [document.getElementById('hud'), game.hud && game.hud.canvas].filter(Boolean); for (const h of hudEls) h.style.visibility = 'hidden'; window.__hudEls = hudEls; document.getElementById('bootmsg').style.display = 'none'; pb.disabled = false; pb.style.opacity = 1; pb.textContent = 'PLAY'; window.__startScreen = true; setTimeout(() => { if (window.__startScreen) game.paused = true; }, 400);
+    else { boot.style.background = 'rgba(11,12,14,.86)'; boot.style.zIndex = 100; const hudEls = [document.getElementById('hud'), game.hud && game.hud.canvas].filter(Boolean); for (const h of hudEls) h.style.visibility = 'hidden'; window.__hudEls = hudEls; document.getElementById('bootmsg').style.display = 'none'; window.__warming = true; if (window.__load) window.__load.stage = 'warming';
+      // Nov 12 (public traces: the page froze for 8 to 66 s right AFTER Play on a first visit, as long as the compile step itself): compiling ahead only
+      // covers the programs of one pass; the street mirror, the shadow pass and everything first seen in the second frame were built, and every
+      // texture and mesh sent to the graphics card, in the first frames of play. The game now really draws behind this screen, and Play goes live
+      // only once the frames run short and no new program has appeared for a second (at most 150 s; ?warm=0 the old way).
+      const arm = () => { window.__warming = false; game.paused = true; pb.disabled = false; pb.style.opacity = 1; pb.textContent = 'PLAY'; window.__startScreen = true; if (window.__mark) window.__mark('warm'); };
+      window.__armPlay = () => { if (P.get('warm') === '0') { setTimeout(arm, 400); return; } const t0w = performance.now(); let lastT = t0w, n = 0, okN = 0, progN = -1, progT = t0w;
+        const tick = (now) => { const dt = now - lastT; lastT = now; n++; okN = dt < 120 ? okN + 1 : 0; const pn = renderer.info.programs ? renderer.info.programs.length : 0; if (pn !== progN) { progN = pn; progT = now; }
+          if ((n >= 45 && okN >= 20 && now - progT > 1000) || now - t0w > 150000) { console.log('[game] warm-up: ' + n + ' frames in ' + ((now - t0w) / 1000).toFixed(1) + ' s, ' + pn + ' programs'); arm(); } else requestAnimationFrame(tick); };
+        requestAnimationFrame(tick); };
       const go = () => { if (!window.__startScreen) return; window.__startScreen = false; if (window.__mark) window.__mark('play'); game.paused = false; for (const h of window.__hudEls || []) h.style.visibility = ''; boot.style.opacity = 0; setTimeout(() => boot.remove(), 500); try { game.sound.unlock(); } catch (e) {} try { const pr = canvas.requestPointerLock && canvas.requestPointerLock(); if (pr && pr.catch) pr.catch(() => {}); } catch (e) {} };
       pb.addEventListener('click', go); { const pv = setInterval(() => { if (!window.__startScreen) { clearInterval(pv); return; } try { for (const q of navigator.getGamepads ? navigator.getGamepads() : []) if (q && q.connected && q.buttons.some((b, i) => (i === 0 || i === 9) && b.pressed)) { go(); break; } } catch (e) {} }, 120); }     /* a controller's A or Start presses Play */ addEventListener('keydown', (e) => { if (window.__startScreen && (e.code === 'Enter' || e.code === 'Space')) { e.stopPropagation(); go(); } }, true); }
     if (P.has('capture')) { const { capture } = await import('./capture.js'); window.capture = (o) => capture(game, o); }
-    window.__ready = true; if (window.__mark) window.__mark('ready'); window.__readyAt = +(performance.now() / 1000).toFixed(1); game.start(); memfree.start(world);
+    window.__ready = true; if (window.__mark) window.__mark('ready'); window.__readyAt = +(performance.now() / 1000).toFixed(1); game.start(); memfree.start(world); if (window.__armPlay) window.__armPlay();
   }
 } catch (e) { msg.textContent = 'error: ' + e.message; console.error(e); window.__error = String(e.stack || e); }

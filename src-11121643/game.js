@@ -126,6 +126,8 @@ export class Game {
     this.streets = this.P.get('streets') === 'none' ? null : await (await import('./streets.js')).addStreets(this);
     // the people lane's crowd (hundreds of GPU-instanced walkers); with it on, the game's own heavy skinned pedestrians (about 0.3 ms each on the M2 Pro) drop to a handful near the player
     this.crowd = this.P.get('crowd') === 'none' ? null : await (await import('./crowd.js')).addCrowd(this).catch((e) => { console.log('[crowd] not loaded: ' + (e && e.message)); return null; });
+    // people/near: standing scans of real people (assets/near). MATT'S PRIVATE LINK ONLY: never on the public build (window.__CFG.public, set by tools/public_build.sh, which also leaves near.js and assets/near out of the site). ?near=none off
+    this.near = null; if (!(window.__CFG && window.__CFG.public) && this.P.get('near') !== 'none') try { this.near = await (await import('./near.js')).addNear(this); } catch (e) { console.log('[near] not loaded: ' + (e && (e.stack || e.message))); }
     if (this.crowd && !this.P.has('peds')) { this.peds.target = 14; while (this.peds.list.length > 14) { const q = this.peds.list.pop(); q.vis.used = false; q.vis.object.visible = false; } }
     if (this.P.has('peds')) { this.peds.target = +this.P.get('peds'); while (this.peds.list.length > this.peds.target) { const q = this.peds.list.pop(); q.vis.used = false; q.vis.object.visible = false; } }     // ?peds=0: nobody, from the first frame (the scene gauntlet's no-people captures)
     this.budget = new (await import('./budget.js')).Budget(this);     // the streets lane's layer (ground, trees, furniture, storefronts, vehicles)
@@ -133,6 +135,7 @@ export class Game {
     this.heli = this.P.get('heli') === 'none' ? null : await (await import('./heli/heli.js')).addHeli(this).catch((e) => { console.log('[heli] not loaded: ' + (e && (e.stack || e.message))); return null; });
     try { (await import('./pedhit.js')).install(this); } catch (e) { console.log('[game] pedhit not loaded: ' + (e && e.message)); }     // item 14: pedestrian hits (ragdoll) from nyc-breakable; ?pedhit=0 off
     try { (await import('./props.js')).install(this); } catch (e) { console.log('[game] props not loaded: ' + (e && e.message)); }     // loose street props from nyc-breakable; ?props=0 off
+    try { (await import('./crash.js')).install(this); } catch (e) { console.log('[game] crash not loaded: ' + (e && e.message)); }     // car crash deformation v2 from nyc-breakable (crash.js 4d945bfd); ?crash=0 off
     try { await (await import('./entry/entry.js')).addEntry(this); } catch (e) { console.log('[entry] not loaded: ' + (e && (e.stack || e.message))); }     // gameplay lane: real car entry and exit (door, seat, camera); ?entry=0 off
     try { (await import('./feedback.js')).install(this); } catch (e) { console.log('[game] feedback not loaded: ' + (e && e.message)); }     // lead: Feedback link + session trace (src/feedback.js)
     if (!/^(0|none|off)$/.test(this.P.get('guns') || '')) try { this.combat = await (await import('./combat/combat.js')).addCombat(this); } catch (e) { console.log('[guns] not loaded: ' + (e && (e.stack || e.message))); }     // gameplay lane: guns v1 (src/combat/, pistol and rifle); ?guns=0 off (nothing fetched)

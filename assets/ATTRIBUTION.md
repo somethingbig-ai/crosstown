@@ -33,3 +33,11 @@ Weapons: modelled in code for this game (no third-party models; generic types, n
 Engine: three.js (MIT). Texture compression: Basis Universal / KTX-Software (Apache-2.0).
 
 Shop names, van lettering and number plates are invented. No real brand logos are used.
+
+## Near people (assets/near): private link only, needs a look before public use
+
+Standing figures near the camera are photogrammetry scans of real, consenting adults (faces included), cleared by CHIEF for Matt's private link only. They are not part of the public build: tools/public_build.sh leaves assets/near and src/near.js out and stops if either is found in the site, and the game does not load the layer when the public config is set.
+
+Credit: Human scans: HSRD-100 by Digital Reality Lab (HumanScanRepository), CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/), https://huggingface.co/datasets/digitalrealitylab/HSRD-100 ; decimated, cleaned and re-lit for this demo.
+
+Licence and consent note (from the dataset card): "This dataset is licensed under Creative Commons Attribution 4.0 International (CC BY 4.0)."; "All participants provided informed consent for data collection"; "Personal identifiers have been removed from the dataset". Changes made: scan plates cut away, textures de-lit and downsized, meshes compressed, re-lit in the game's renderer; poses with a readable brand mark or a held print are left out. The full note travels with the files: assets/near/ATTRIBUTION.md. Concerns about a person shown: hello@somethingbig.ai

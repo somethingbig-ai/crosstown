@@ -108,6 +108,9 @@ const PARK_AVE = { covered: 0.5, sedan: 16, suv: 20, crossover: 14, hatch: 5, pi
 // Kerbs lined nearly bumper to bumper. Per edge and side: start clear of the corner and the crosswalk, then car after car with
 // 0.45-1.3 m between bumpers; a space is left free now and then (more often on avenues), a longer gap stands for a driveway or a
 // loading zone, nobody parks within 4.6 m of a hydrant, and nothing stands in a travel lane or outside the map.
+export const LANE_SWEEP = 0.45;      // a lane is lw wide and a car 1.9: the band's outer 0.45 m is not swept by a car that keeps to the middle of its lane
+export const ONE_LANE_RUN = 4, ONE_LANE_GAP = 8.0, ONE_LANE_CLEAR = 6.6;      // cars between pockets, pocket length (m), least clear width from the parked row to the far kerb (m; checked by lanes/streets/items/cars/rows/check.js)
+const nameHash = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return hash(h); };
 export function buildSlots(game, opts = {}) {
   const R = game.roads, cars = game.kit.cars, P = game.parked, st = game.statics, b = game.bounds;
   const keep = P.slots.filter((s) => s.mission && !s.gone);
@@ -128,11 +131,20 @@ export function buildSlots(game, opts = {}) {
     if (around(tgrid, x, y, (p) => { const dx = p[0] - x, dy = p[1] - y; return Math.abs(dx * fx + dy * fy) < hl + 0.75 && Math.abs(-dx * fy + dy * fx) < hw + 0.75; })) return 1;
     if (around(xgrid, x, y, (p) => { const dx = p[0] - x, dy = p[1] - y; return Math.abs(dx * fx + dy * fy) < hl + 1.0 && Math.abs(-dx * fy + dy * fx) < hw + 1.6; })) return 2;
     return 0; };
-  const slots = keep.slice(), t = {}; let n = 0, skippedLane = 0, offKerb = 0;
+  const slots = keep.slice(), t = {}; let n = 0, skippedLane = 0, offKerb = 0, overlapSkip = 0; const boxGrid = new Map();
+  const boxCut = (A, B) => { for (const P of [A, B]) for (let i = 0; i < 4; i++) { const nx = P[(i + 1) % 4][1] - P[i][1], ny = -(P[(i + 1) % 4][0] - P[i][0]); let a0 = 1e9, a1 = -1e9, b0 = 1e9, b1 = -1e9; for (const q of A) { const v = q[0] * nx + q[1] * ny; if (v < a0) a0 = v; if (v > a1) a1 = v; } for (const q of B) { const v = q[0] * nx + q[1] * ny; if (v < b0) b0 = v; if (v > b1) b1 = v; } if (a1 <= b0 || b1 <= a0) return false; } return true; };
+  for (const k of keep) { const d = k.def || cars[k.type]; if (!d) continue; const ch = Math.cos(k.h), sh_ = Math.sin(k.h), bx = [[1, 1], [1, -1], [-1, -1], [-1, 1]].map(([a, c]) => [k.x + ch * d.len / 2 * a - sh_ * d.wid / 2 * c, k.y + sh_ * d.len / 2 * a + ch * d.wid / 2 * c]), gk = Math.floor(k.x / 20) + ',' + Math.floor(k.y / 20); if (!boxGrid.has(gk)) boxGrid.set(gk, []); boxGrid.get(gk).push(bx); }
   R.edges.forEach((e, ei) => {
     if (e.s0 === undefined || e.len < 30) return;
     const table = e.ave ? PARK_AVE : PARK_STREET, occ = opts.occupancy ?? (e.ave ? 0.80 : 0.93);
+    /* ONE-LANE STREETS LEAVE ROOM (Nov 12, public report 20261112132507-7e132b: a car turned across W 21st St could not get out between two parked rows 4.5-5.1 m
+       apart): a street with one traffic lane has ONE parked row, on the side its name picks (the same side all along the street), so a car has at least ONE_LANE_CLEAR
+       metres from the row to the far kerb to turn round in; after every ONE_LANE_RUN cars the row has a gap of ONE_LANE_GAP metres (a pocket to pull into, the whole
+       road width free there); a one-lane street narrower than 9 m has no parked row at all. opts.oneLaneBoth = the rows as they were. */
+    const oneLane = e.lanes === 1 && !opts.oneLaneBoth, keepSide = oneLane ? (nameHash(e.name || String(ei)) < 0.5 ? -1 : 1) : 0;
+    if (oneLane && e.width < 9) return;
     for (const side of [-1, 1]) {
+      if (oneLane && side !== keepSide) continue;
       // Plazas are fronted by delineators and planters, not parked cars: wherever a plaza lies within `plazaReach` (12 m) of this
       // edge's centre line on this side, that stretch plus 15 m either way is a no-standing zone on that side.
       let ns = null;
@@ -145,12 +157,13 @@ export function buildSlots(game, opts = {}) {
       const r = srand(ei * 2 + (side > 0 ? 1 : 0) + 7919);
       let s = e.s0 + 3 + r() * 2.5, prevColor, prev2; const end = e.s1 - 3 - r() * 2;
       // most kerb rows have a tall dark van or step van standing in them: the trades at work
-      let tallAt = r() < 0.65 ? 1 + Math.floor(r() * 4) : -1, placed = 0;
+      let tallAt = r() < 0.65 ? 1 + Math.floor(r() * 4) : -1, placed = 0, run = 0;
       while (s < end) {
-        if (r() < 0.035) { s += 8 + r() * 7; continue; }                       // driveway, loading zone, bus stop
+        if (oneLane && run >= ONE_LANE_RUN) { s += ONE_LANE_GAP; run = 0; continue; }      // the pocket
+        if (r() < 0.035) { s += 8 + r() * 7; run = 0; continue; }                       // driveway, loading zone, bus stop
         const tall = placed === tallAt, type0 = tall ? (r() < 0.7 ? 'van' : 'stepvan') : weighted(table, r()), type = game._vehOx ? realCast(game, type0, ei * 64 + placed, true) : type0, def = cars[type];     // an openx model is placed by its own length if (!def) { s += 1; continue; }
         if (s + def.len > end) { if (def.len > 5) { s += 0.5; continue; } break; }
-        if (r() > occ) { s += 5.2 + r(); continue; }                           // a free space
+        if (r() > occ) { s += 5.2 + r(); if (!oneLane) run = 0; continue; }                           // a free space
         const sc = s + def.len / 2; e.line.at(sc, t);
         const off = e.width / 2 - (def.wid > 2.2 ? 0.25 : 0.35) - def.wid / 2;
         const x = t.x + t.ty * off * side, y = t.y - t.tx * off * side;
@@ -188,17 +201,27 @@ export function buildSlots(game, opts = {}) {
         // so the draw order above is untouched)
         const jo = 0.04 + 0.26 * Math.pow(hash(seed + 11), 1.5), ja = (hash(seed + 23) - 0.5) * 0.035, sx = -t.ty * side, sy = t.tx * side;
         const sl = { x: x + sx * jo, y: y + sy * jo, h: h + ja, type: rt, def: rdef, color, gone: false, circles: [], vseed: seed };
+        /* NO PARKED CAR IN ANOTHER, NONE IN A LANE'S PATH (Nov 12): the body as it finally stands (its own kind's size, the by-eye offset and angle) is tested before it is
+           kept: its box may not cut the box of any car already placed (two rows met at a fork), and its road side may not reach into the path a car driving down the
+           middle of a lane sweeps (within LANE_SWEEP of the lane band's edge: wide vans on the narrow two-lane avenues did) */
+        { const ch = Math.cos(sl.h), sh_ = Math.sin(sl.h), hl2 = rdef.len / 2, hw2 = rdef.wid / 2, kx2 = t.ty * side, ky2 = -t.tx * side, bx = [[1, 1], [1, -1], [-1, -1], [-1, 1]].map(([a, c]) => [sl.x + ch * hl2 * a - sh_ * hw2 * c, sl.y + sh_ * hl2 * a + ch * hw2 * c]); let bad = false;
+          for (const a of [-1, -0.5, 0, 0.5, 1]) if (R.inLane(sl.x + ch * hl2 * a - kx2 * hw2, sl.y + sh_ * hl2 * a - ky2 * hw2, -LANE_SWEEP)) { bad = true; break; }
+          if (bad) { skippedLane++; s += 2; continue; }
+          const gi = Math.floor(sl.x / 20), gj = Math.floor(sl.y / 20);
+          for (let a = gi - 1; a <= gi + 1 && !bad; a++) for (let c = gj - 1; c <= gj + 1 && !bad; c++) for (const o of boxGrid.get(a + ',' + c) || []) if (boxCut(bx, o)) { bad = true; break; }
+          if (bad) { overlapSkip++; s += 1.5; continue; }
+          const gk = gi + ',' + gj; if (!boxGrid.has(gk)) boxGrid.set(gk, []); boxGrid.get(gk).push(bx); }
         const cx = Math.cos(h), cy = Math.sin(h), rad = rdef.wid * 0.5;
         const offs = def.len > 6.2 ? [-(def.len / 2 - rad), 0, def.len / 2 - rad] : [-def.len * 0.27, def.len * 0.27];
         for (const o of offs) sl.circles.push(st.addCircle(sl.x + cx * o, sl.y + cy * o, rad, sl));
-        slots.push(sl); n++;
+        slots.push(sl); n++; run++;
         s += def.len + (game._vehOx ? 0.5 + r() * 0.4 : 0.45 + r() * r() * 0.85);
       }
     }
   });
   P.slots = slots; P.grid = new Map();
   for (const s of slots) { if (s.vseed === undefined) s.vseed = Math.floor(hash(Math.round(s.x * 31 + s.y * 17)) * 1e9); const k = Math.floor(s.x / 80) + ',' + Math.floor(s.y / 80); if (!P.grid.has(k)) P.grid.set(k, []); P.grid.get(k).push(s); }
-  return { slots: n, skippedLane, offKerb, plaza, shared, atTree, onCross };
+  return { slots: n, skippedLane, offKerb, plaza, shared, atTree, onCross, overlapSkip };
 }
 
 // ---------------------------------------------------------------------------------------------------------------- traffic

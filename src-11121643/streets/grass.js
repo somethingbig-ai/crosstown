@@ -11,7 +11,7 @@ import * as THREE from 'three';
 import { BAKE_LIGHT_GLSL } from '../facade.js';
 
 const DEFAULT_ON = true;           // v1 (Nov 12 01:1x): ON by default = the flat form in its r13 look (park layout, scanned turf, paths, edging, fence with gate leaves); in-page bench on the M2 Pro +0.35 ms over the lead's grass
-                                   // no switch = v1; ?grass=3d = the walked sward (trial); ?grass=1&gcard=1&gnext=1 = + the r13 blades; ?grass=flat = the older flat look; ?grass=0 = the lead's grass
+                                   // no switch = v1; ?grass=3d = the walked sward (kept look since r22: baked blade heights walked by the view ray, no meshes, no ring); ?grass=1&gcard=1&gnext=1 = + the r13 blades; ?grass=flat = the older flat look; ?grass=0 = the lead's grass
 let NXG = false;                   // set by add(): the round's untried look (?gnext=1)
 const MASK_D = 8.0;                // metres of signed distance across the 0..1 range of a mask channel
 const PATH_W = 4.6, BED_W = 0.55, RIM_W = 1.6;       // park path width, soil strip between a path and its lawn, bed inside the park's outer fence
@@ -237,6 +237,9 @@ const FS_PARK = /* glsl */`
   vec3 cl = gn(m / 0.33 + 5.5); float tfade = uNX * (1.0 - smoothstep(0.008, 0.035, px));          // only while a 0.3 m tuft covers ten pixels or more: further out the field aliased into blotches (r12 first capture)          // the blades' own tuft field: the ground under them clumps the same way
   float wear = clamp(K.g + (n2.r - 0.5) * 0.55 * smoothstep(0.05, 0.3, K.g) + (n1.r - 0.5) * 0.12 + (0.5 - cl.r) * 0.5 * uNX * smoothstep(0.05, 0.3, K.g), 0.0, 1.0);
   vec3 col; float pomSun = 1.0, hh = 1.0;
+  #ifdef GOBL
+  wear = clamp(wear + 0.0 * smoothstep(0.60, 0.80, texture2D(tGN, m / 7.0 / 16.0 + 0.77).g * 0.7 + n1.g * 0.3), 0.0, 1.0);          // thin, dry places come anywhere on a lawn, not only where the mask has wear
+  #endif
   #ifdef GPOM
   wear = clamp(K.g + (n2.r - 0.5) * 0.22 * smoothstep(0.05, 0.3, K.g) + (n1.r - 0.5) * 0.12, 0.0, 1.0);          // the tufts themselves break the edge of a worn patch up: no noise blocks
   #endif
@@ -253,17 +256,21 @@ const FS_PARK = /* glsl */`
       float pxMin = min(length(gx), length(gy)) + 1e-5, lod0 = max(0.0, log2(pxMin / TEXEL));
       float Hm = uPom.x * (1.0 - smoothstep(uPom.z * 0.6, uPom.z, dist));
       float cut = clamp(wear * 0.9 + (1.0 - smoothstep(0.0, 0.3, dL)) * 0.25 + 0.25 * clover, 0.0, 0.96), hmul = 0.88 + 0.12 * smoothstep(0.25, 0.75, cl.r);
-      tint = mix(vec3(dot(tint, vec3(0.3, 0.5, 0.2))), tint, 0.6); tint = mix(vec3(1.0), tint, mix(0.5, 0.3, smoothstep(8.0, 35.0, cameraPosition.y - vWPos.y)));          // the sward carries its own clumps: the tint field only drifts, more faintly still from above
+      tint = mix(vec3(dot(tint, vec3(0.3, 0.5, 0.2))), tint, 0.6); float above = smoothstep(8.0, 35.0, cameraPosition.y - vWPos.y); tint = mix(vec3(1.0), tint, mix(1.0, 0.85, above));          // the sward carries its own clumps: the tint field only drifts, more faintly still from above
+      { float wob = texture2D(tGN, m / 31.0 / 16.0 + 0.27).b * 1.2 + n1.g * 0.35;          // a mower never drives dead straight or at one width
+        float q1 = smoothstep(-0.25, 0.25, sin(dot(m, vec2(0.875, -0.487)) * 3.3 + wob)) - 0.5, q2 = smoothstep(-0.25, 0.25, sin(dot(m, vec2(0.487, 0.875)) * 1.745 + 0.9 + wob * 0.7)) - 0.5;          // mowing: straight stripes 1.8 m wide, crossed by a fainter second pass (seen from above; faint at eye height)
+        float sv = 0.35 + 1.3 * texture2D(tGN, m / 23.0 / 16.0 + 0.61).r; tint *= 1.0 + ((0.02 + 0.075 * up * up) * q1 + (0.01 + 0.04 * up * up) * q2) * sv; }          // the stripes fade and return across the lawn
       #define SWH(p, l) max(0.0, (textureLod(tSwH, (p) / TILE, l).r * hmul - cut) / (1.0 - cut))
       vec2 hit = m;
       if (Hm > 0.003) {
         // exact walk over a pyramid of maxima (tSwM: level L holds the tallest blade of each 2^L texel cell): skip a whole cell while the ray is above its
         // tallest blade, go one level down when it is not; ends on a texel of level Lmin (the pixel's own size), so far grass thickens into tufts, never noise
         vec2 dm = rd.xy * (Hm / max(-rd.z, 0.02)); float runL = length(dm), sc = min(1.0, uPom.w / max(runL, 1e-5)); dm *= sc; Hm *= sc;
-        const int MAXL = 7; int Lmin = int(clamp(floor(lod0 + uPomK2.x), 0.0, 6.0)), lev = MAXL;
+        const int MAXL = 6; float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));          // the level the walk ends on changes pixel by pixel across a distance, never along a line (r21: a straight band where it stepped)
+        int Lmin = int(clamp(floor(lod0 + uPomK2.x + ign - 0.5), 0.0, 6.0)), lev = MAXL;
         vec2 ro = mod(m, TILE) / TEXEL, dv = dm / TEXEL; dv += (1.0 - step(1e-4, abs(dv))) * 1e-4; vec2 sgn = step(0.0, dv), inv = 1.0 / dv;
         float t = 0.0, eps = 0.02 / max(abs(dv.x), abs(dv.y)); bool found = false;
-        for (int i = 0; i < 44; i++) {
+        int NI = int(uPomK2.z); for (int i = 0; i < NI; i++) {
           float cs = exp2(float(lev)); vec2 cell = floor((ro + dv * t) / cs);
           float h = max(0.0, (texelFetch(tSwM, ivec2(cell) & ((2048 >> lev) - 1), lev).r * hmul - cut) / (1.0 - cut)), th = 1.0 - h;
           if (t >= th) { if (lev <= Lmin) { found = true; break; } lev--; continue; }
@@ -275,18 +282,59 @@ const FS_PARK = /* glsl */`
         vec3 Lm = vec3(uSunDir.x, -uSunDir.z, uSunDir.y); vec2 Lxy = Lm.xy / max(Lm.z, 0.2) * Hm; float sh = 1.0, lodS = max(lod0, 1.0);
         for (int k = 1; k <= 4; k++) { float hk = hh + (1.0 - hh) * (float(k) - 0.5) * 0.25; float hq = SWH(hit + Lxy * (hk - hh), lodS + float(k) * 0.5); sh = min(sh, 1.0 - clamp((hq - hk) * uPomK2.y, 0.0, 1.0)); }
         pomSun = mix(1.0, sh, uPomK.y * smoothstep(0.003, 0.02, Hm));
-        vec4 s = textureLod(tSw, hit / TILE, max(0.0, lod0 - 0.7));
+        vec4 s = textureLod(tSw, hit / TILE, max(0.0, lod0 - 0.4 + 2.4 * above));          // from above a lawn is a smooth nap: no blade speckle
         col = s.rgb * 2.0 * mix(uPomK.x, 1.0, smoothstep(0.0, 0.75, hh));
       } else {
         vec4 s = texture2D(tSw, m / TILE); hh = max(0.0, (texture2D(tSwH, m / TILE).r * hmul - cut) / (1.0 - cut));
         col = s.rgb * 2.0 * mix(uPomK.x, 1.0, smoothstep(0.0, 0.75, hh));
       }
-      col *= uLawn * tint * uPomK.z;
+      col *= uLawn * tint * uPomK.z * mix(vec3(1.45, 1.34, 1.14), vec3(1.0), above);          // at eye height the sunlit yellow-green that scored in r19; from above the deeper green that scored in r21
+    }
+    #elif defined(GOBL)
+    // the photographed sward: a strip of real lawn photographed from standing height (its blades seen from the side), laid on the ground stretched
+    // along the view ray so it shows as it was photographed; see oblique() above. From steep above: the top-down scan, toned down to a nap.
+    {
+      float above = smoothstep(8.0, 35.0, cameraPosition.y - vWPos.y);
+      tint = mix(vec3(dot(tint, vec3(0.3, 0.5, 0.2))), tint, 0.75);
+      { vec3 w0 = texture2D(tGN, m / 31.0 / 16.0 + 0.27).rgb, pn = texture2D(tGN, m / 70.0 / 16.0 + 0.53).rgb; float wob = w0.b * 1.2 + n1.g * 0.35;
+        // mowing: stripes about 1.9 m wide that wander, in panels worked in two directions, showing only in places (grown out elsewhere)
+        float dsel = step(0.5, pn.r); vec2 d1 = mix(vec2(0.875, -0.487), vec2(0.60, 0.80), dsel);
+        float q1 = smoothstep(-0.14, 0.14, sin(dot(m, d1) * 3.3 + wob * 2.5 + 6.0 * pn.b) + 0.5 * (w0.g - 0.5)) - 0.5;
+        float sv = (0.35 + 0.65 * smoothstep(0.25, 0.60, texture2D(tGN, m / 23.0 / 16.0 + 0.61).r)) * (0.5 + 1.0 * w0.r) * smoothstep(0.0, 0.05, abs(pn.r - 0.5));
+        tint *= 1.0 + (0.02 + 0.085 * up * up) * q1 * sv; }
+      vec3 Vw = normalize(vWPos - cameraPosition); float se = clamp(-Vw.y, 0.0, 1.0), wTop = smoothstep(uOb2.x, uOb2.y, se);
+      vec3 det = vec3(1.0);
+      if (wTop < 0.999) det = oblique(m, gx, gy, Vw);
+      if (wTop > 0.001) { vec3 top = textureGrad(tLawnA, m / 1.9, gx / 1.9, gy / 1.9).rgb / uMeanA;
+        if (above > 0.01) {          // from the air blades do not resolve: what shows is the mottle of tufts and thin places; the scans at a wide scale give it
+          vec3 M1 = texture2D(tLawnA, m / 9.0).rgb / uMeanA, M2 = texture2D(tLawnB, vec2(m.y, -m.x) / 23.0 + 0.3).rgb / uMeanB;
+          top = mix(top, mix(vec3(1.0), top, 0.6) * mix(vec3(1.0), M1 * mix(vec3(1.0), M2, 0.5), uObA.w), above); }
+        det = mix(det, top, wTop); }
+      det = mix(det, vec3(1.0), smoothstep(60.0, 220.0, dist) * 0.6);
+      { float dl = dot(det, vec3(0.3, 0.55, 0.15)); hh = clamp(dl * 0.45, 0.0, 1.0);
+        det *= min(1.0, (1.25 + 0.35 * (dl - 1.25)) / max(dl, 1.25));          // the brightest tips held down: a lawn does not glitter
+        det *= mix(vec3(0.84, 1.0, 0.88), vec3(1.07, 1.03, 0.90), smoothstep(0.45, 1.6, dl));          // lit tips a little yellower, the gaps between blades a deeper green
+        float eye = 1.0 - above;
+        det *= 1.0 - 0.20 * eye * smoothstep(0.55, 0.80, cl.g * 0.5 + n2.r * 0.5);          // darker, denser tufts
+        float clv = max(clover, eye * smoothstep(0.60, 0.74, n1.b * 0.65 + n2.g * 0.35));
+        if (clv > 0.01) { det = mix(det, mix(det, vec3(dl), 0.5) * vec3(0.74, 0.90, 0.84), clv * 0.75);          // clover: darker, bluer, smoother patches, with a few white heads
+          vec2 fc = m * 9.0, fi = floor(fc); vec2 fr = fract(sin(vec2(dot(fi, vec2(127.1, 311.7)), dot(fi, vec2(269.5, 183.3)))) * 43758.5453);
+          float fd = length(fc - fi - 0.2 - 0.6 * fr), fw = max(0.11, px * 9.0 * 0.7);
+          det = mix(det, vec3(3.2, 3.0, 3.3), (1.0 - smoothstep(fw * 0.6, fw, fd)) * step(0.55, fract(fr.x * 7.3 + fr.y * 3.1)) * smoothstep(0.5, 0.9, clv) * min(1.0, 0.11 / fw) * eye * 0.0); }
+        vec2 sdn = normalize(vec2(uSunDir.x, -uSunDir.z) + 1e-5);          // the ground is never a plane: slow rises catch the sun, their far sides lose a little
+        float rel = texture2D(tGN, (m + sdn * 0.9) / 3.0 / 16.0).r - n1.r + 0.6 * (texture2D(tGN, (m + sdn * 2.5) / 11.0 / 16.0 + 0.4).g - texture2D(tGN, m / 11.0 / 16.0 + 0.4).g);
+        det *= 1.0 + clamp(rel * 1.1, -0.22, 0.22) * eye; }
+      col = uLawn * tint * det * uOb.w * mix(uObE, uObA.rgb, above);
     }
     #else
     // lawn: scanned turf at two sizes (the large one takes over with distance so the small one's repeat never shows), toned by the tint field
-    #ifdef GCHEAP
-    float n0 = mix(5.0, 12.0, uNX), n9 = mix(30.0, 60.0, uNX); vec3 A1 = vec3(0.0), A2 = vec3(0.0);          // one scan where one is all that shows: the fine one near, the wide one far
+    #if defined(GCHEAP) || defined(GEXACT)
+    #ifdef GEXACT
+    float n0 = 5.0, n9 = 30.0;          // ?gcheap=2 (loop 5): exactly the blend's own limits, so the picture is the same to the bit: one scan read beyond 30 m and inside 5 m
+    #else
+    float n0 = mix(5.0, 12.0, uNX), n9 = mix(30.0, 60.0, uNX);
+    #endif
+    vec3 A1 = vec3(0.0), A2 = vec3(0.0);          // one scan where one is all that shows: the fine one near, the wide one far
     if (dist < n9) A1 = textureGrad(tLawnA, m / 1.9, gx / 1.9, gy / 1.9).rgb;
     if (dist > n0) A2 = textureGrad(tLawnA, vec2(m.y, -m.x) / 6.7 + 0.37, vec2(gx.y, -gx.x) / 6.7, vec2(gy.y, -gy.x) / 6.7).rgb;
     #else
@@ -296,13 +344,21 @@ const FS_PARK = /* glsl */`
     if (clover > 0.01) det = mix(det, textureGrad(tLawnB, m / 3.1, gx / 3.1, gy / 3.1).rgb / uMeanB * vec3(0.80, 0.93, 0.85), clover * 0.7);
     det = mix(det, vec3(1.0), smoothstep(50.0, 200.0, dist) * 0.6);
     det = mix(det, vec3(1.0), 0.7 * uNX * smoothstep(8.0, 35.0, cameraPosition.y - vWPos.y));          // from above the scan's grain reads as a tiled noise: tone only
-    col = uLawn * tint * det;
+    col = uLawn * tint * det * mix(uEyeK, vec3(1.0), smoothstep(8.0, 35.0, cameraPosition.y - vWPos.y));          // at eye height the brighter, less saturated green of the park's lawns in photographs (hue 83, saturation 0.56); from the air the deeper green as before
     col *= (1.0 - 0.22 * tfade * smoothstep(0.62, 0.30, cl.r)) * (1.0 + 0.16 * tfade * smoothstep(0.62, 0.85, cl.r));          // dark troughs between tufts, lit tuft tops
     col *= mix(uUnder, 0.80, smoothstep(uNear.x, uNear.y, dist)) * (1.0 + 0.08 * pow(1.0 - up, 3.0));          // the game's depth AO already darkens between near blades       // between near blades: shaded thatch; far off: lit blade tops
     #endif
+    #ifdef GOBL
+    col *= mix(uSwG.z, 1.0, smoothstep(uSwG.x, uSwG.y, dist));          // under the mesh sward (grass_sward.js): shaded thatch; 1 when it is off
+    #endif
     if (wear > 0.12) {
-      #ifdef GPOM
-      float wq = wear + (0.30 - hh) * 0.55;          // soil shows between the tufts first; a standing tuft stays green
+      #if defined(GPOM) || defined(GOBL)
+      float wq = wear + (0.30 - hh) * 0.55 - 0.22;          // soil shows between the tufts first, and only where wear is heavy; a standing tuft stays green
+      #ifdef GOBL
+      col *= mix(vec3(1.0), vec3(1.26, 1.13, 0.84), smoothstep(0.14, 0.30, wear + (n2.r - 0.5) * 0.30 + (cl.r - 0.5) * 0.2) * (0.55 + 0.45 * n2.b));
+      #else
+      col *= mix(vec3(1.0), vec3(1.42, 1.22, 0.80), smoothstep(0.12, 0.34, wear) * (0.55 + 0.45 * n2.b));
+      #endif          // light wear: the sward goes dry and yellow before it goes bare
       #else
       float wq = wear;
       #endif
@@ -364,7 +420,7 @@ const FS_PARK = /* glsl */`
   }
   {
     float nfade = (1.0 - smoothstep(4.0, 26.0, dist)) * (1.0 - pm) * smoothstep(-0.05, 0.1, dL);
-    #ifdef GPOM
+    #if defined(GPOM) || defined(GOBL) || defined(GNONRM)
     nfade = 0.0;
     #endif
     if (nfade > 0.01) { gNrm = textureGrad(tLawnAN, m / 1.9, gx / 1.9, gy / 1.9).xyz * 2.0 - 1.0; gNs = 1.1 * nfade; }
@@ -373,8 +429,9 @@ const FS_PARK = /* glsl */`
   diffuseColor.rgb = col; gSpec = mix(0.3, 0.3 * pm, uNX); gSun = fsh * pomSun;          // next look: no sky sheen on turf and soil (it washed the lawn pale and minty at eye height), only on paving
 `;
 
-function groundMaterial(shared, U, cheap, pom) {
-  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0 }); if (cheap) m.defines = { ...(m.defines || {}), GCHEAP: 1 }; if (pom) m.defines = { ...(m.defines || {}), GPOM: 1 };
+function groundMaterial(shared, U, cheap, pom, obl) {
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.92, metalness: 0 }); if (cheap) m.defines = { ...(m.defines || {}), ...(cheap === 2 ? { GEXACT: 1 } : { GCHEAP: 1 }) }; if (pom) m.defines = { ...(m.defines || {}), GPOM: 1 }; if (obl) m.defines = { ...(m.defines || {}), GOBL: 1 };
+  if (U.noNrm) m.defines = { ...(m.defines || {}), GNONRM: 1 };          // ?gnn=0: no relief from the scan's normal map (cost tests)
   m.polygonOffset = true; m.polygonOffsetFactor = -2; m.polygonOffsetUnits = -4;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, shared, U);
@@ -383,9 +440,33 @@ function groundMaterial(shared, U, cheap, pom) {
       .replace('#include <common>', `#include <common>
         varying vec3 vWPos; uniform sampler2D tLight; uniform vec2 uHalf; uniform vec3 uSunColor; uniform vec3 uSunDir; uniform float uShadowFar; uniform vec3 uShadowCenter;
         uniform sampler2D tLawnA; uniform sampler2D tLawnAN; uniform sampler2D tLawnB; uniform sampler2D tWorn; uniform sampler2D tDirt;
-        uniform vec3 uMeanA; uniform vec3 uMeanB; uniform vec3 uMeanW; uniform vec3 uMeanD; uniform vec3 uWorn; uniform vec3 uDirt; uniform vec3 uPave; uniform vec3 uKerb; uniform vec3 uLeaf; uniform float uUnder; uniform vec2 uNear; uniform float uFence; uniform sampler2D tLitter; uniform sampler2D tHex; uniform sampler2D tSw; uniform sampler2D tSwH; uniform highp sampler2D tSwM; uniform vec3 uPomK2; uniform vec4 uPom; uniform vec3 uPomK;
+        uniform vec3 uMeanA; uniform vec3 uMeanB; uniform vec3 uMeanW; uniform vec3 uMeanD; uniform vec3 uWorn; uniform vec3 uDirt; uniform vec3 uPave; uniform vec3 uKerb; uniform vec3 uLeaf; uniform float uUnder; uniform vec2 uNear; uniform vec3 uEyeK; uniform float uFence; uniform sampler2D tLitter; uniform sampler2D tHex; uniform sampler2D tSw; uniform sampler2D tSwH; uniform highp sampler2D tSwM; uniform vec3 uPomK2; uniform vec4 uPom; uniform vec3 uPomK;
         vec3 bakeV; vec3 bakeN; float gRough; float gSpec; vec3 gNrm; float gNs; float gSun;
-        ${LAWN_GLSL}`)
+        ${LAWN_GLSL}
+        #ifdef GOBL
+        uniform sampler2D tOb; uniform vec3 uMeanO; uniform vec4 uSwG; uniform vec4 uOb; uniform vec4 uOb2; uniform vec3 uObE; uniform vec4 uObA;
+        // one tap of the oblique photograph: level k is laid out for a view 30 / 2^k degrees above the ground (stretched 2^k along the view), sector s
+        // of N0 * 2^k fixes the direction the strip was "photographed" from; every tap is fixed in the world, only the weights follow the camera
+        vec3 obTap(vec2 m, vec2 gx, vec2 gy, float k, float s) {
+          float N = uOb2.z * exp2(k), th = s * 6.2831853 / N; vec2 d = vec2(cos(th), sin(th)), r = vec2(d.y, -d.x);
+          float U = uOb.x * exp2(uOb.y * k), V = U * 0.3828 * exp2(k), sm = mod(s, N), flip = mod(sm, 2.0) < 0.5 ? 1.0 : -1.0;          // every other sector mirrored: the blades' lean is not one way everywhere
+          vec2 o = fract(sin(vec2(sm * 12.9898 + k * 78.233, sm * 39.346 + k * 11.135)) * 43758.5453);
+          float b = exp2(uOb.z);
+          return textureGrad(tOb, vec2(flip * dot(m, r) / U, dot(m, d) / V) + o, vec2(flip * dot(gx, r) / U, dot(gx, d) / V) * b, vec2(flip * dot(gy, r) / U, dot(gy, d) / V) * b).rgb;
+        }
+        vec3 oblique(vec2 m, vec2 gx, vec2 gy, vec3 Vw) {
+          float se = clamp(-Vw.y, 0.01, 1.0), az = atan(-Vw.z, Vw.x);
+          float kf = clamp(log2(0.5 / se), 0.0, 3.0), k0 = floor(kf), fk = kf - k0;
+          vec3 acc = vec3(0.0); float ws = 0.0, ml = dot(uMeanO, vec3(0.3, 0.55, 0.15));
+          for (int i = 0; i < 2; i++) {
+            float k = k0 + float(i), wl = i == 0 ? 1.0 - fk : fk; if (wl < 0.004) continue;
+            float a = az / 6.2831853 * uOb2.z * exp2(k), s0 = floor(a), f = smoothstep(0.2, 0.8, a - s0), wa = wl * (1.0 - f), wb = wl * f;
+            if (wa > 0.002) { vec3 t = obTap(m, gx, gy, k, s0); float w = pow(wa * (0.35 + dot(t, vec3(0.3, 0.55, 0.15)) / ml), uOb2.w); acc += t * w; ws += w; }
+            if (wb > 0.002) { vec3 t = obTap(m, gx, gy, k, s0 + 1.0); float w = pow(wb * (0.35 + dot(t, vec3(0.3, 0.55, 0.15)) / ml), uOb2.w); acc += t * w; ws += w; }
+          }
+          return acc / max(ws, 1e-9) / uMeanO;          // where taps meet, the one with the brighter blade wins: blades stay whole, no cross-faded smear
+        }
+        #endif`)
       .replace('#include <map_fragment>', `#include <map_fragment>
         {
           vec2 m = vec2(vWPos.x, -vWPos.z);
@@ -399,7 +480,7 @@ function groundMaterial(shared, U, cheap, pom) {
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = clamp(gRough, 0.08, 1.0);')
       .replace('#include <aomap_fragment>', BAKE_LIGHT_GLSL + '\n reflectedLight.directSpecular *= gSpec * gSun; reflectedLight.indirectSpecular *= gSpec; reflectedLight.directDiffuse *= gSun;');
   };
-  m.customProgramCacheKey = () => 'stgrass-ground-19' + (cheap ? 'c' : '') + (pom ? 'p' : '');
+  m.customProgramCacheKey = () => 'stgrass-ground-27' + (cheap ? 'c' + cheap : '') + (pom ? 'p' : '') + (obl ? 'o' : '') + (m.defines && m.defines.GNONRM ? 'n' : '');
   return m;
 }
 
@@ -418,7 +499,7 @@ function bladeMaterial(shared, U, world) {
       #define CUBEUV_MAX_MIP ${maxMip.toFixed(1)}
       #include <cube_uv_reflection_fragment>
       attribute vec4 aO; attribute vec2 aV;
-      uniform vec4 uPatch; uniform vec2 uFadeC; uniform vec4 uBlade; uniform float uTime; uniform float uGroundY; uniform vec4 uShade; uniform float uPxK;
+      uniform vec4 uPatch; uniform vec2 uFadeC; uniform vec4 uBlade; uniform float uTime; uniform float uGroundY; uniform vec4 uShade; uniform float uPxK; uniform float uPomB;
       uniform sampler2D tLight; uniform vec2 uHalf; uniform vec3 uSunColor; uniform vec3 uSunDir; uniform float uShadowFar; uniform vec3 uShadowCenter;
       uniform sampler2D uEnv; uniform float uEnvI; uniform vec3 uSky;
       #if NUM_DIR_LIGHT_SHADOWS > 0
@@ -445,10 +526,11 @@ function bladeMaterial(shared, U, world) {
         float keep = 1.0 - smoothstep(0.30, 0.80, length(root - uFadeC) / (0.5 * S));
         float kill = step(keep, aO.z) + step(dL, 0.02 + 0.12 * aO.w) + step(1.0 - wear * 1.25, r2);
         float clover, fa; vec3 fieldTint = lawnField(m, clover, fa);
+        fieldTint = mix(fieldTint, mix(vec3(1.0), mix(vec3(dot(fieldTint, vec3(0.3, 0.5, 0.2))), fieldTint, 0.6), 0.5), uPomB);          // over the walked sward: its calmer tint
         vec3 clump = gn(m / 0.33 + 5.5);                                  // tufts: height and tone drift together over a hand's width
         float tuft = smoothstep(0.62, 0.85, clump.r);
         float H = uBlade.x * (0.6 + 0.8 * aO.w) * (0.70 + 0.45 * clump.r + 0.55 * tuft) * (1.0 - 0.35 * clover) * (1.0 - 0.5 * wear) * (0.65 + 0.35 * smoothstep(0.0, 0.5, dL)) * (1.0 + 0.9 * (1.0 - smoothstep(0.08, 0.45, dL)) * step(0.35, clump.b));
-        H *= mix(1.0, 0.62 + 0.76 * th.x, uNX);
+        H *= mix(1.0, 0.62 + 0.76 * th.x, uNX) * mix(1.0, 1.0 - 0.6 * smoothstep(0.35, 0.80, length(root - uFadeC) / (0.5 * S)), uPomB);          // over the walked sward the stragglers shorten to nothing toward the ring's edge
         float ang = aO.z * 81.68;                                         // blades lean with their neighbours (mower, wind, feet), not each its own way
         vec2 dir = normalize(mix(vec2(cos(ang), sin(ang)), vec2(cos(fa), sin(fa)), mix(0.62, 0.05, uNX)));
         dir = normalize(mix(dir, tdir, 0.55 * uNX));
@@ -624,8 +706,9 @@ export async function add(game, ctx) {
   if (sw === '0' || (!DEFAULT_ON && !sw)) return { report: { off: 1 } };
   const world = game.world, city = game.city || ctx.city, shared = world.shared, A = ctx.A + 'grass/';
   const group = new THREE.Group(); group.name = 'streets_grass';
+  const AN = Q && Q.has('gan') ? +Q.get('gan') : 8;          // ?gan=N: anisotropy of the lawn scans (cost tests)
   const L = new THREE.TextureLoader(), maxAniso = world.renderer.capabilities.getMaxAnisotropy();
-  const load = (f, srgb) => new Promise((res, rej) => L.load(A + f, (t) => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = Math.min(8, maxAniso); t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; res(t); }, undefined, () => rej(new Error('grass texture ' + f))));
+  const load = (f, srgb) => new Promise((res, rej) => L.load(A + f, (t) => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = Math.min(AN, maxAniso); t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; res(t); }, undefined, () => rej(new Error('grass texture ' + f))));
   const [tLawnA, tLawnAN, tLawnB, tWorn, tDirt, tLitter, lay, means] = await Promise.all([load('lawn_a.webp', true), load('lawn_a_n.webp', false), load('lawn_b.webp', true), load('worn.webp', true), load('dirt.webp', true), load('litter.webp', true),
     fetch(A + 'parks.json').then((r) => r.json()), fetch(A + 'means.json').then((r) => r.json())]);
   const V3 = (a) => new THREE.Vector3(a[0], a[1], a[2]);
@@ -638,10 +721,11 @@ export async function add(game, ctx) {
   world.cityRoot.updateMatrixWorld(true);
   world.cityRoot.traverse((o) => { if (o.isMesh && /^grass(_\d+)?$/.test(o.name)) { const p = o.geometry.attributes.position; if (p && p.count) gy = new THREE.Vector3().fromBufferAttribute(p, 0).applyMatrix4(o.matrixWorld).y; o.visible = false; hidden.push(o.name); } });
 
-  const POM = sw === '3d' || !!(Q && Q.get('gpom') === '1');          // ?grass=3d: the flat form with the walked sward (no blade meshes)
-  const NX = !!(Q && Q.get('gnext') === '1') || POM || (!sw && DEFAULT_ON); NXG = NX;          // the round's untried look: judged behind this switch, then promoted
+  const OBL = sw === '3d' && !(Q && Q.get('gob') === '0');          // ?grass=3d (trial, r25): the photographed sward (&gob=0: the walked sward of r24)
+  const POM = (sw === '3d' && !OBL) || !!(Q && Q.get('gpom') === '1');          // ?grass=3d: the flat form with the walked sward (no blade meshes)
+  const NX = !!(Q && Q.get('gnext') === '1') || POM || OBL || (!sw && DEFAULT_ON); NXG = NX;          // the round's untried look: judged behind this switch, then promoted
   const GN = noiseTexture(), tGN = GN.tex;
-  const common = { tGN: { value: tGN }, uNX: { value: NX ? 1 : 0 }, uLawn: { value: vec('glawn', NX ? [0.036, 0.045, 0.0150] : [0.031, 0.044, 0.014]) } };
+  const common = { tGN: { value: tGN }, uNX: { value: NX ? 1 : 0 }, uLawn: { value: vec('glawn', (POM || OBL) ? [0.031, 0.042, 0.0165] : NX ? [0.036, 0.045, 0.0150] : [0.031, 0.044, 0.014]) } };
   // the sward tile (items/grass/tools/mksward.mjs): tone as it is, height as a one-channel texture (the walk reads only this one)
   const swT0 = performance.now(); let tSw = null, tSwH = null, tSwM = null;
   if (POM) { tSw = await load('sward4_c.webp', false); const hi = (await load('sward4_h.webp', false)).image, c = document.createElement('canvas'); c.width = hi.width; c.height = hi.height; const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(hi, 0, 0);
@@ -650,10 +734,13 @@ export async function add(game, ctx) {
     const mips = [{ data: r, width: c.width, height: c.height }]; for (let w = c.width >> 1, pw = c.width, pv = r; w >= 1; pw = w, w >>= 1) { const q = new Uint8Array(w * w); for (let y = 0; y < w; y++) for (let x = 0; x < w; x++) { const i = (2 * y) * pw + 2 * x; q[y * w + x] = Math.max(pv[i], pv[i + 1], pv[i + pw], pv[i + pw + 1]); } mips.push({ data: q, width: w, height: w }); pv = q; }
     tSwM = new THREE.DataTexture(r, c.width, c.height, THREE.RedFormat, THREE.UnsignedByteType); tSwM.mipmaps = mips; tSwM.generateMipmaps = false; tSwM.wrapS = tSwM.wrapT = THREE.RepeatWrapping; tSwM.minFilter = THREE.NearestMipmapNearestFilter; tSwM.magFilter = THREE.NearestFilter; tSwM.colorSpace = THREE.NoColorSpace; tSwM.needsUpdate = true; }
   const swMs = Math.round(performance.now() - swT0);
+  const tOb = OBL ? await load('oblique_b.webp', true) : null; if (tOb) tOb.anisotropy = Math.min(Q && Q.has('goan') ? +Q.get('goan') : 2, maxAniso);          // laid out so its footprint on screen is near square: little anisotropy needed
   const gU = { tLawnA: { value: tLawnA }, tLawnAN: { value: tLawnAN }, tLawnB: { value: tLawnB }, tWorn: { value: tWorn }, tDirt: { value: tDirt },
     uMeanA: { value: V3(means['lawn_a.webp']) }, uMeanB: { value: V3(means['lawn_b.webp']) }, uMeanW: { value: V3(means['worn.webp']) }, uMeanD: { value: V3(means['dirt.webp']) },
     uWorn: { value: vec('gworn', NX ? [0.030, 0.031, 0.017] : [0.055, 0.058, 0.030]) }, uDirt: { value: vec('gdirt', NX ? [0.036, 0.029, 0.020] : [0.048, 0.039, 0.027]) }, uPave: { value: vec('gpave', NX ? [0.055, 0.054, 0.055] : [0.075, 0.075, 0.078]) }, uKerb: { value: vec('gkerb', NX ? [0.05, 0.048, 0.043] : [0.085, 0.083, 0.078]) }, uLeaf: { value: vec('gleaf', [0.36, 0.34, 0.32]) }, uFence: { value: (Q && Q.get('gfence') === '0') ? 0 : 1 }, tHex: { value: hexTexture(maxAniso) }, tLitter: { value: tLitter },
-    tSw: { value: tSw }, tSwH: { value: tSwH }, tSwM: { value: tSwM }, uPom: { value: new THREE.Vector4(num('gph', 0.065), 1, num('gpd', 55), num('gprun', 1.2)) }, uPomK: { value: new THREE.Vector3(num('gpao', 0.36), num('gpsh', 0.85), num('gpk', 1.75)) }, uPomK2: { value: new THREE.Vector3(num('gplod', 0), num('gpss', 5), 0) },
+    uSwG: { value: new THREE.Vector4(1, 2, 1, 0) }, tOb: { value: tOb }, uMeanO: { value: V3(means['oblique_b.webp'] || [0.2, 0.2, 0.1]) }, uOb: { value: new THREE.Vector4(num('gou', 1.85), num('gog', 0.0), num('gobias', -0.3), num('gok', 1.4)) }, uOb2: { value: new THREE.Vector4(num('got0', 0.55), num('got1', 0.85), num('gon', 12), num('goc', 6.0)) }, uObE: { value: vec('goe', [1.33, 1.35, 1.40]) }, uObA: { value: new THREE.Vector4(...(Q && Q.has('goa') ? Q.get('goa').split(',').map(Number) : [0.70, 0.69, 0.74]), num('gomot', 0.35)) },
+    tSw: { value: tSw }, tSwH: { value: tSwH }, tSwM: { value: tSwM }, uPom: { value: new THREE.Vector4(num('gph', 0.065), 1, num('gpd', 55), num('gprun', 1.2)) }, uPomK: { value: new THREE.Vector3(num('gpao', 0.30), num('gpsh', 0.85), num('gpk', 1.4)) }, uPomK2: { value: new THREE.Vector3(num('gplod', 0), num('gpss', 5), num('gpit', 20)) },
+    uEyeK: { value: vec('geye', (!sw && DEFAULT_ON) ? [1.36, 1.38, 1.53] : [1, 1, 1]) },
     uUnder: { value: num('gunder', NX ? 0.72 : 0.80) }, uNear: { value: new THREE.Vector2(num('gn0', 3), num('gn1', 22)) } };
 
   // per park: mask, ground mesh
@@ -673,14 +760,14 @@ export async function add(game, ctx) {
     const xs = pk.ext.map((p) => p[0]), ys = pk.ext.map((p) => p[1]), bb = [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
     const mine = trees.filter((t) => t.x > bb[0] && t.x < bb[2] && t.y > bb[1] && t.y < bb[3] && pip(t.x, t.y, pk.ext));
     const mask = parkMask(pk, lay.parks && lay.parks[i], mine, hero(pk), GN.sample);
-    const U = { ...common, ...gU, tMask: { value: mask.tex }, uRect: { value: mask.rect } };
+    const U = { ...common, ...gU, tMask: { value: mask.tex }, uRect: { value: mask.rect } }; if (Q && Q.get('gnn') === '0') Object.defineProperty(U, 'noNrm', { value: true, enumerable: false });
     const contour = pk.ext.map((p) => new THREE.Vector2(p[0], p[1])), holes = (pk.holes || []).map((h) => h.map((p) => new THREE.Vector2(p[0], p[1])));
     if (THREE.ShapeUtils.isClockWise(contour)) contour.reverse(); for (const h of holes) if (!THREE.ShapeUtils.isClockWise(h)) h.reverse();
     const faces = THREE.ShapeUtils.triangulateShape(contour, holes), all = contour.concat(...holes);
     const pos = new Float32Array(all.length * 3), nrm = new Float32Array(all.length * 3); all.forEach((p, k) => { pos[k * 3] = p.x; pos[k * 3 + 1] = gy; pos[k * 3 + 2] = -p.y; nrm[k * 3 + 1] = 1; });
     const idx = []; for (const f of faces) idx.push(f[0], f[1], f[2]);
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.setIndex(idx);
-    const mesh = new THREE.Mesh(g, groundMaterial(shared, U, !!(Q && Q.get('gcheap') === '1'), POM)); mesh.name = 'park_ground_' + i; mesh.receiveShadow = true; mesh.material.side = THREE.DoubleSide; group.add(mesh);
+    const mesh = new THREE.Mesh(g, groundMaterial(shared, U, (Q && Q.get('gcheap') === '1') ? 1 : (Q && Q.get('gcheap') === '0') ? 0 : 2, POM, OBL)          /* loop 5: the exact one-read cut is the default (gcheap=0 = both reads everywhere, as before) */); mesh.name = 'park_ground_' + i; mesh.receiveShadow = true; mesh.material.side = THREE.DoubleSide; group.add(mesh);
     tris += faces.length; lawnM2 += mask.lawnM2;
     if (mask.hasPaths && edgesOn) { const E = buildEdges(pk, mask, gy, rng(5000 + i), NX);
       if (E.kerb) { const k = new THREE.Mesh(E.kerb, kerbMat); k.receiveShadow = true; k.name = 'park_kerb_' + i; group.add(k); }
@@ -691,13 +778,13 @@ export async function add(game, ctx) {
   });
 
   // blades: two rings round the camera
-  const flat = sw === 'flat' || sw === '3d' || !sw; const rings = [];
+  const flat = sw === 'flat' || OBL || (POM && !(Q && Q.get('gblades') === '1')) || !sw; const rings = [];
   if (!flat && parks.length) {
     const sky0 = world.scene.environment ? skyUp(world.renderer, world.scene.environment) : null, uSky = { value: sky0 || new THREE.Vector3(1, 1, 1), ok: !!sky0, env: world.scene.environment };
     if (sky0) setInterval(() => { const e = world.scene.environment; if (e && e !== uSky.env) { const v = skyUp(world.renderer, e); if (v) { uSky.value.copy(v); uSky.env = e; } } }, 4000);
     const frustum = new THREE.Frustum(), pm4 = new THREE.Matrix4(), sph = new THREE.Sphere(), fwd = new THREE.Vector3(), cp = new THREE.Vector3(), sz = new THREE.Vector2();
     const mk = (n, S, H, Wd, sway, ahead, maxY, seed, tri, card) => {
-      const G = 6, cell = S / G, U = { ...common, tMask: { value: parks[0].mask.tex }, uRect: { value: parks[0].mask.rect }, uPatch: { value: new THREE.Vector4(0, 0, S, 0) }, uFadeC: { value: new THREE.Vector2() }, uBlade: { value: new THREE.Vector4(H, Wd, 0, sway) }, uGroundY: { value: gy }, uPxK: { value: 0.001 },
+      const G = 6, cell = S / G, U = { ...common, tMask: { value: parks[0].mask.tex }, uRect: { value: parks[0].mask.rect }, uPatch: { value: new THREE.Vector4(0, 0, S, 0) }, uFadeC: { value: new THREE.Vector2() }, uBlade: { value: new THREE.Vector4(H, Wd, 0, sway) }, uGroundY: { value: gy }, uPxK: { value: 0.001 }, uPomB: { value: 0 },
         tSward: { value: tSward }, uSwardK: { value: card ? V3(means['sward.webp']).set(1 / means['sward.webp'][0], 1 / means['sward.webp'][1], 1 / means['sward.webp'][2]) : new THREE.Vector3(1, 1, 1) },
         uCard: { value: new THREE.Vector4(num('gface', NX ? 0.12 : 0.5), 0.36, num('gcgain', 1.0), num('gbias', -0.5)) },
         noDepth: !(Q && Q.get('gdepth') === '1'), uEnv: { value: world.scene.environment }, uEnvI: { value: 1 }, uSky, uShade: { value: new THREE.Vector4(num('gb0', 0.55), num('gb1', 1.22), num('gbao', 0.65), num('gback', 0.25)) } };
@@ -732,7 +819,11 @@ export async function add(game, ctx) {
       rings.push(ring);
     };
     const pxw = num('gpx', 1.5), dn = num('gn', 1);
-    if (cardsOn && sky0) {
+    if (POM) {          // over the walked sward: a small ring of real blades standing on its top (the stragglers a mower leaves), same tone as the sward's tips, no dark feet
+      mk(Math.round(dn * 30000 * Math.pow(num('gring', 5) / 5, 2)), num('gring', 5), num('gh', 0.05), 0.0028, 0.10, 0.34, 6, 37, false);
+      const U = rings[0].U; U.uPomB.value = 1; U.uLawn = { value: common.uLawn.value.clone().multiplyScalar(num('gbk', 1.6)) }; U.uShade.value.set(num('gb0', 0.95), num('gb1', 1.15), num('gbao', 0.92), num('gback', 0.25));
+      rings[0].cells.forEach(() => 0); group.traverse((o) => { if (/^grass_blades_/.test(o.name)) { o.material.uniforms.uLawn = U.uLawn; o.material.uniforms.uPomB.value = 1; } });
+    } else if (cardsOn && sky0) {
       if (num('gc0', NX ? 0 : 1) > 0) mk(Math.round(dn * num('gc0', 1) * (NX ? 22000 : 16000)), 10.8, num('gh', 0.088), 0.11, 0.10, 0.34, 12, 11, false, true);
       if (num('gc1', NX ? 0 : 1) > 0) mk(Math.round(dn * num('gc1', 1) * (NX ? 13000 : 9000)), 36, num('gh', 0.088), 0.34, 0.08, 0.36, 40, 23, false, true);
       if (num('gnear', 1) > 0) mk(Math.round(dn * num('gnear', 1) * (NX ? 42000 : 46000) * Math.pow(num('gring', NX ? 9 : 6) / 6, 2)), num('gring', NX ? 9 : 6), NX ? num('gh', 0.078) : num('gh', 0.085), NX ? 0.0030 : 0.0026, 0.10, 0.34, 6, 37, false);       // real blades only where they resolve: within about 4 m
@@ -742,6 +833,8 @@ export async function add(game, ctx) {
     mk(Math.round(dn * num('gl1', 1) * 140000), 36, num('gh', 0.085), 0.0080, 0.08, 0.36, 40, 23, true);
     }
   }
+  // the mesh sward (loop 5): ?grass=3d&gsw=1
+  if (OBL && parks.length && Q && Q.get('gsw') === '1') rings.unshift((await import('./grass_sward.js')).addSward({ world, shared, common, parks, gy, group, num, Q, rng, skyUp, gU, LAWN_GLSL, BAKE_LIGHT_GLSL, MASK_D }));
   world.scene.add(group);
   // compile now and read the link status: a shader that fails would otherwise draw nothing, silently, with the lead's grass already hidden
   { const r = world.renderer, prev = r.debug.onShaderError, errs = [], log = (s) => { const m = /ERROR[^\n]*/.exec(s || ''); return m ? m[0] : ''; };
@@ -757,9 +850,9 @@ export async function add(game, ctx) {
     cam.position.set(v[0], v[1], -v[2]); cam.lookAt(v[3], v[4], -v[5]); cam.updateMatrixWorld(true);
     const lead = []; world.cityRoot.traverse((o) => { if (o.isMesh && /^grass(_\d+)?$/.test(o.name)) lead.push(o); });
     const edges = group.children.filter((o) => /^park_(kerb|fence|wire)_/.test(o.name));
-    const set = (mine, ed, l0, l1) => { group.visible = mine; for (const o of lead) o.visible = !mine; for (const o of edges) o.visible = !!ed; if (rings[0]) rings[0].mute = !l0; if (rings[1]) rings[1].mute = !l1; };
+    const set = (mine, ed, l0, l1, cap) => { if (cap !== undefined) gU.uPomK2.value.z = cap; group.visible = mine; for (const o of lead) o.visible = !mine; for (const o of edges) o.visible = !!ed; if (rings[0]) rings[0].mute = !l0; if (rings[1]) rings[1].mute = !l1; };
     // the four states interleaved over many short runs, median of the frame times: drift of the machine (3 to 8 ms within one load) cancels
-    const V = [[false, 0, 0, 0], [true, 0, 0, 0], [true, 1, 0, 0], [true, 1, 1, 0], [true, 1, 1, 1]], T = V.map(() => []);
+    const V = POM ? [[false, 0, 0, 0, 36], [true, 1, 0, 0, 36], [true, 1, 0, 0, 20], [true, 1, 0, 0, 12], [true, 1, 0, 0, 0]] : [[false, 0, 0, 0], [true, 0, 0, 0], [true, 1, 0, 0], [true, 1, 1, 0], [true, 1, 1, 1]], T = V.map(() => []);          // walked sward: the lead's grass, then mine with the walk capped at 36, 20, 12 and 0 steps
     for (let cyc = 0; cyc < 30; cyc++) for (let k = 0; k < V.length; k++) { set(...V[k]); r.render(world.scene, cam); r.render(world.scene, cam); gl.finish();
       for (let i = 0; i < 6; i++) { const t = performance.now(); r.render(world.scene, cam); gl.finish(); T[k].push(performance.now() - t); } }
     const med = (a) => { a.sort((x, y) => x - y); return (a.reduce((p, q) => p + q, 0) / a.length).toFixed(2) + 'mean ' + a[a.length >> 1].toFixed(2) + '(' + a[a.length >> 2].toFixed(1) + '-' + a[(a.length * 3) >> 2].toFixed(1) + ')'; }, out = T.map(med); for (const o of edges) o.visible = true;

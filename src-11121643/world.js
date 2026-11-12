@@ -42,10 +42,13 @@ export const LIGHT = {
            // irradiance on a face turned to the sun (scene units, same scale as the sky picture)
   envI: 1.1,                         // the sky lights the city at its own strength
   sunAz: 188, sunEl: 48,             // used when the build was baked for another sun (override); the bake should use the same
-  fog: 0.00028, shadowR: 150, shadowMap: 4096, shadowNear: 500, shadowFar: 2100,
+  fog: 0.00014, /* light L11: was .00028; critics read the haze a block away as a grey veil */ shadowR: 150, shadowMap: 4096, shadowNear: 500, shadowFar: 2100,
   sunSize: 0.015,                    // tangent of the sun's width as shadows see it (disc plus a little aureole): penumbra = distance to the caster x this
   key: 0.215, hi: 0.70, aoR: 1.5, aoS: 3.2, aoT: 1.5,   /* contact shade: reach (m), strength, thickness */
   expMin: 0.45, expMax: 4.0,
+  pk: 0.75, pkMin: 0.6, pkLo: 0.6, /* light L19 (a lower floor, pkLo .35, where over a fifth of the street half is sunlit) did NOT hold when re-judged on several frames (L21: 5 of 12): pkLo = pkMin leaves it switched off */               /* light L11: highlight guard. The brightest part of the street half of the frame (8th-power mean) may not land above pk after exposure, so sunlit paving keeps its joints; the guard closes down at most to pkMin of the metered exposure. 0 = off */
+  gnd: 1.0, sunK: 1.0, con: 0.55, /* light: trial knobs, all neutral at these numbers. gnd = how bright the city floor is to the image-based light; sunK scales the sun; con = film contrast (L11: .55, was .40) */
+  wbR: 1.0, wbB: 1.01, skyGain: 1.35, shSearch: 0.8, bloomS: 0.10, bloomT: 2.5,
 };
 const Q = new URLSearchParams(location.search);
 for (const k of Object.keys(LIGHT)) if (Q.has('L' + k)) LIGHT[k] = isNaN(+Q.get('L' + k)) ? Q.get('L' + k) : +Q.get('L' + k);
@@ -65,7 +68,7 @@ function installSunShadows() {
   float lightIgn(vec2 p){ return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
   vec2 lightVogel(int i, float n, float a){ float r = sqrt((float(i) + 0.5) / n), t = float(i) * 2.3999632 + a; return r * vec2(cos(t), sin(t)); }
   float pcssShadow(sampler2D sm, vec4 sc){
-    const float WORLD = ${f(2 * LIGHT.shadowR)}, RANGE = ${f(LIGHT.shadowFar - LIGHT.shadowNear)}, SUN = ${f(LIGHT.sunSize)}, SEARCH = 0.8, MINW = ${f(1.6 * 2 * LIGHT.shadowR / LIGHT.shadowMap)};
+    const float WORLD = ${f(2 * LIGHT.shadowR)}, RANGE = ${f(LIGHT.shadowFar - LIGHT.shadowNear)}, SUN = ${f(LIGHT.sunSize)}, SEARCH = ${f(LIGHT.shSearch)}, MINW = ${f(1.6 * 2 * LIGHT.shadowR / LIGHT.shadowMap)};
     vec3 ax = dFdx(sc.xyz), ay = dFdy(sc.xyz); float det = ax.x * ay.y - ax.y * ay.x;
     vec2 grad = abs(det) > 1e-14 ? vec2(ay.y * ax.z - ax.y * ay.z, ax.x * ay.z - ay.x * ax.z) / det : vec2(0.0);
     grad = clamp(grad, vec2(-2.5), vec2(2.5));
@@ -194,9 +197,9 @@ export class World {
           vec3 c = textureLod(tSky, vec2(fract(uv.x), clamp(uv.y, 0.001, 0.999)), 0.0).rgb;
           vec3 horizon = textureLod(tSky, vec2(fract(uv.x), 0.505), 0.0).rgb;
           // below the horizon: the city floor as the light sees it (dim, warm-grey), a soft blend up to the real sky
-          vec3 ground = vec3(0.075, 0.07, 0.065) * (uEnv > 0.5 ? 1.0 : 0.0) + (uEnv > 0.5 ? vec3(0.0) : horizon * 0.9);
+          vec3 ground = vec3(0.075, 0.07, 0.065) * ${Number(LIGHT.gnd).toFixed(4)} * (uEnv > 0.5 ? 1.0 : 0.0) + (uEnv > 0.5 ? vec3(0.0) : horizon * 0.9);
           if (uEnv < 0.5) c = mix(c, vec3(0.62, 0.68, 0.80) * 1.05, 0.65 * exp(-max(d.y, 0.0) * 5.0));     // the air near the horizon, as the street haze has it
-          if (uEnv < 0.5) { float sl = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = mix(c, sl * vec3(0.80, 1.0, 1.16), 0.22) * 1.35; }   // as a phone renders it beside a sunlit street: lighter and a touch more cyan than the HDR's cobalt
+          if (uEnv < 0.5) { float sl = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = mix(c, sl * vec3(0.80, 1.0, 1.16), 0.22) * ${Number(LIGHT.skyGain).toFixed(4)}; }   // as a phone renders it beside a sunlit street: lighter and a touch more cyan than the HDR's cobalt
           c = mix(ground, c, smoothstep(-0.02, 0.03, d.y));
           c = min(c, vec3(uEnv > 0.5 ? 60.0 : 14.0));           // the sun disc itself is the DirectionalLight's job
           gl_FragColor = vec4(c * uGain, 1.0);
@@ -215,7 +218,7 @@ export class World {
   }
 
   setupLights() {
-    const I = Math.max(...LIGHT.sunE), sunCol = new THREE.Color(LIGHT.sunE[0] / I, LIGHT.sunE[1] / I, LIGHT.sunE[2] / I);
+    const I = Math.max(...LIGHT.sunE) * LIGHT.sunK, sunCol = new THREE.Color(LIGHT.sunE[0] * LIGHT.sunK / I, LIGHT.sunE[1] * LIGHT.sunK / I, LIGHT.sunE[2] * LIGHT.sunK / I);
     const sun = new THREE.DirectionalLight(sunCol, I);
     sun.castShadow = true; sun.shadow.mapSize.set(this.q.shadow, this.q.shadow);
     const R = this.shared.uShadowFar.value;
@@ -333,16 +336,16 @@ export class World {
       g.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, radiusExponent: 1.5, rings: 2, samples: 12 });
       comp.addPass(g); this.gtao = g;
     }
-    if (this.q.bloom) { const b = new UnrealBloomPass(size.clone().multiplyScalar(0.5), 0.10, 1.0, 2.5); comp.addPass(b); this.bloom = b; }
+    if (this.q.bloom) { const b = new UnrealBloomPass(size.clone().multiplyScalar(0.5), LIGHT.bloomS, 1.0, LIGHT.bloomT); comp.addPass(b); this.bloom = b; }
     // the "camera": a small-sensor phone/compact. Lens first (slight barrel, softness that grows to the corners, colour fringe, vignette),
     // then the sensor (shot noise in linear light, part colour, part blotchy as denoised phone noise is), then the camera's own picture
     // processing (exposure, a curve that runs straight and clips highlights the way a JPEG does, saturation, contrast, sharpening halo).
     const film = new ShaderPass({
       uniforms: { tDiffuse: { value: null }, uExposure: { value: 0.80 }, tExp: { value: null }, uExpTex: { value: 0 }, uTime: { value: 0 }, uRes: { value: size.clone() },
         uGrain: { value: 0.11 }, uVig: { value: 0.12 }, uSoft: { value: 0.3 }, uSharp: { value: 0.32 }, uDist: { value: 0.014 }, uCA: { value: 0.0008 },
-        uSat: { value: 1.27 }, uCon: { value: 0.40 }, uKnee: { value: 0.36 }, uBlack: { value: 0.008 }, uWB: { value: new THREE.Vector3(1.0, 1.0, 1.01) } },
+        uSat: { value: 1.27 }, uCon: { value: LIGHT.con } /* light L11: was .40; shade goes properly dark */, uKnee: { value: 0.36 }, uBlack: { value: 0.008 }, uShoulder: { value: 0.35 }, uWB: { value: new THREE.Vector3(LIGHT.wbR, 1.0, LIGHT.wbB) } },
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: `uniform sampler2D tDiffuse; uniform sampler2D tExp; uniform float uExpTex; uniform float uExposure, uTime, uGrain, uVig, uSoft, uSharp, uDist, uCA, uSat, uCon, uKnee, uBlack; uniform vec3 uWB; uniform vec2 uRes; varying vec2 vUv;
+      fragmentShader: `uniform sampler2D tDiffuse; uniform sampler2D tExp; uniform float uExpTex; uniform float uExposure, uTime, uGrain, uVig, uSoft, uSharp, uDist, uCA, uSat, uCon, uKnee, uBlack, uShoulder; uniform vec3 uWB; uniform vec2 uRes; varying vec2 vUv;
         float h(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
         vec3 h3(vec2 p){ return vec3(h(p), h(p + 17.13), h(p + 41.71)); }
         // one lens read: centre plus a small ring (the blur spot), and a wider ring for the camera's sharpening
@@ -354,7 +357,7 @@ export class World {
                 + texture2D(tDiffuse, uv + vec2(-2.2, -0.9) * px).rgb + texture2D(tDiffuse, uv + vec2(0.9, -2.2) * px).rgb) * 0.25;
           return c0 * 0.36 + n * 0.16;
         }
-        vec3 curve(vec3 x){ vec3 t = max(x - uKnee, 0.0) / (1.0 - uKnee); vec3 hi = uKnee + (1.0 - uKnee) * mix(1.0 - exp(-t), t / (1.0 + t), 0.35); return mix(x, hi, step(uKnee, x)); }   // light L4: half of the shoulder is the slower t/(1+t), so pale paving and sunlit leaves keep tone instead of clipping
+        vec3 curve(vec3 x){ vec3 t = max(x - uKnee, 0.0) / (1.0 - uKnee); vec3 hi = uKnee + (1.0 - uKnee) * mix(1.0 - exp(-t), t / (1.0 + t), uShoulder); return mix(x, hi, step(uKnee, x)); }   // light L4: half of the shoulder is the slower t/(1+t), so pale paving and sunlit leaves keep tone instead of clipping
         void main(){
           vec2 d = vUv - 0.5; vec2 da = d * vec2(uRes.x / uRes.y, 1.0); float rc = 0.25 * (uRes.x * uRes.x) / (uRes.y * uRes.y) + 0.25; float r2 = dot(da, da) / rc;   // 0 centre, 1 corner
           vec2 uv = 0.5 + d * (1.0 + uDist * (r2 - 1.0));
@@ -391,15 +394,15 @@ export class World {
     this.meterRT = new THREE.WebGLRenderTarget(32, 18, { type: THREE.FloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
     this.meterMat = new THREE.ShaderMaterial({ uniforms: { t: { value: null } }, depthTest: false, depthWrite: false,
       vertexShader: 'varying vec2 v; void main(){ v = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-      fragmentShader: 'uniform sampler2D t; varying vec2 v; void main(){ vec3 a = vec3(0.0); for (int i = 0; i < 4; i++) for (int j = 0; j < 4; j++) a += texture2D(t, v + (vec2(float(i), float(j)) - 1.5) / vec2(128.0, 72.0)).rgb; a /= 16.0; float l = dot(a, vec3(0.2126, 0.7152, 0.0722)); gl_FragColor = vec4(log(clamp(l, 1e-3, 1.6)), 0.0, 0.0, 1.0); }' });
+      fragmentShader: 'uniform sampler2D t; varying vec2 v; void main(){ vec3 a = vec3(0.0); for (int i = 0; i < 4; i++) for (int j = 0; j < 4; j++) a += texture2D(t, v + (vec2(float(i), float(j)) - 1.5) / vec2(128.0, 72.0)).rgb; a /= 16.0; float l = dot(a, vec3(0.2126, 0.7152, 0.0722)); gl_FragColor = vec4(log(clamp(l, 1e-3, 1.6)), log(clamp(l, 1e-3, 8.0)), 0.0, 1.0); }' });
     this.meterScene = new THREE.Scene(); this.meterScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.meterMat)); this.meterCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
     this.meterBuf = new Float32Array(32 * 18 * 4); this.exposure = 0.8; this.meterN = 0;
     // audit item 5: live play keeps the exposure on the GPU. The 32x18 log-luminance picture is weighed (centre and street count more, as in meter()
     // below), turned into the wanted exposure and eased, all in a 1x1 target the film pass samples. No pixels come back to the page, so no stall.
     this.expRT = [0, 1].map(() => new THREE.WebGLRenderTarget(1, 1, { type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false }));
-    this.expMat = new THREE.ShaderMaterial({ uniforms: { t: { value: null }, prev: { value: null }, uFirst: { value: 1 }, uKey: { value: LIGHT.key }, uMin: { value: LIGHT.expMin }, uMax: { value: LIGHT.expMax }, uEase: { value: 0.12 }, uHi: { value: LIGHT.hi } }, depthTest: false, depthWrite: false,
+    this.expMat = new THREE.ShaderMaterial({ uniforms: { t: { value: null }, prev: { value: null }, uFirst: { value: 1 }, uKey: { value: LIGHT.key }, uMin: { value: LIGHT.expMin }, uMax: { value: LIGHT.expMax }, uEase: { value: 0.12 }, uHi: { value: LIGHT.hi }, uPk: { value: LIGHT.pk }, uPkMin: { value: LIGHT.pkMin }, uPkLo: { value: LIGHT.pkLo } }, depthTest: false, depthWrite: false,
       vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }',
-      fragmentShader: 'uniform sampler2D t; uniform sampler2D prev; uniform float uFirst, uKey, uMin, uMax, uEase, uHi; void main(){ float s = 0.0, w = 0.0, h = 0.0; for (int y = 0; y < 18; y++) for (int x = 0; x < 32; x++) { float k = (1.0 - 0.4 * length(vec2((float(x) - 15.5) / 16.0, (float(y) - 7.5) / 9.0))) * (y < 10 ? 1.0 : 0.35); float L = texelFetch(t, ivec2(x, y), 0).r; s += L * k; h += exp(4.0 * L) * k; w += k; } float want = uKey / exp(s / w); float hi = pow(h / w, 0.25) * want; want = clamp(want * clamp(pow(uHi / max(hi, 1e-4), 0.7), 0.88, 1.24), uMin, uMax);   /* light L5: the bright part of the frame (4th-power mean) is steered toward uHi, so a frame full of sunlit paving closes down and a frame with no brights opens up */ float p = texelFetch(prev, ivec2(0), 0).r; gl_FragColor = vec4(uFirst > 0.5 ? want : p + (want - p) * uEase, 0.0, 0.0, 1.0); }' });
+      fragmentShader: 'uniform sampler2D t; uniform sampler2D prev; uniform float uFirst, uKey, uMin, uMax, uEase, uHi, uPk, uPkMin, uPkLo; void main(){ float s = 0.0, w = 0.0, h = 0.0, ps = 0.0, pw = 0.0; for (int y = 0; y < 18; y++) for (int x = 0; x < 32; x++) { float k = (1.0 - 0.4 * length(vec2((float(x) - 15.5) / 16.0, (float(y) - 7.5) / 9.0))) * (y < 10 ? 1.0 : 0.35); vec2 LL = texelFetch(t, ivec2(x, y), 0).rg; float L = LL.r; s += L * k; h += exp(4.0 * L) * k; w += k; if (y < 10) { ps += exp(8.0 * LL.g) * k; pw += k; } } float want = uKey / exp(s / w); float hi = pow(h / w, 0.25) * want; want = clamp(want * clamp(pow(uHi / max(hi, 1e-4), 0.7), 0.88, 1.24), uMin, uMax); if (uPk > 0.0) { float pk = pow(ps / pw, 0.125), fr = 0.0; for (int y = 0; y < 10; y++) for (int x = 0; x < 32; x++) { float k = 1.0 - 0.4 * length(vec2((float(x) - 15.5) / 16.0, (float(y) - 7.5) / 9.0)); fr += step(uPk, exp(texelFetch(t, ivec2(x, y), 0).g) * want) * k; } want = max(min(want, uPk / max(pk, 1e-4)), want * mix(uPkMin, uPkLo, smoothstep(0.10, 0.20, fr / pw))); }   /* light L5: the bright part of the frame (4th-power mean) is steered toward uHi, so a frame full of sunlit paving closes down and a frame with no brights opens up */ float p = texelFetch(prev, ivec2(0), 0).r; gl_FragColor = vec4(uFirst > 0.5 ? want : p + (want - p) * uEase, 0.0, 0.0, 1.0); }' });
     this.expScene = new THREE.Scene(); this.expScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.expMat)); this.expI = 0; this.expGPU = !Q.has('capture') && !Q.has('shot') && Q.get('meter') !== 'cpu';
   }
 
@@ -465,8 +468,8 @@ export class World {
       // lead: a plain readPixels stalls the page until the GPU has drawn everything queued (about 9 ms a frame on the M2 Pro); live play reads the
       // meter back through a fence a frame or two later. Capture and stills keep the blocking read so every film frame is exact.
       const meter = () => {
-        let s = 0, w = 0, hs = 0; for (let y = 0; y < 18; y++) for (let x = 0; x < 32; x++) { const k = (1.0 - 0.4 * Math.hypot((x - 15.5) / 16, (y - 7.5) / 9)) * (y < 10 ? 1.0 : 0.35); /* rows count up from the bottom: the street weighs more than the sky */ const L = this.meterBuf[(y * 32 + x) * 4]; s += L * k; hs += Math.exp(4 * L) * k; w += k; }
-        const avg = Math.exp(s / w), w0 = LIGHT.key / avg, hi = Math.pow(hs / w, 0.25) * w0, want = Math.min(LIGHT.expMax, Math.max(LIGHT.expMin, w0 * Math.min(1.24, Math.max(0.88, Math.pow(LIGHT.hi / Math.max(hi, 1e-4), 0.7))))), first = !this.meterDone; this.meterDone = true;
+        let s = 0, w = 0, hs = 0, ps = 0, pw = 0; for (let y = 0; y < 18; y++) for (let x = 0; x < 32; x++) { const k = (1.0 - 0.4 * Math.hypot((x - 15.5) / 16, (y - 7.5) / 9)) * (y < 10 ? 1.0 : 0.35); /* rows count up from the bottom: the street weighs more than the sky */ const L = this.meterBuf[(y * 32 + x) * 4]; s += L * k; hs += Math.exp(4 * L) * k; w += k; if (y < 10) { ps += Math.exp(8 * this.meterBuf[(y * 32 + x) * 4 + 1]) * k; pw += k; } }
+        const avg = Math.exp(s / w), w0 = LIGHT.key / avg, hi = Math.pow(hs / w, 0.25) * w0; let want = Math.min(LIGHT.expMax, Math.max(LIGHT.expMin, w0 * Math.min(1.24, Math.max(0.88, Math.pow(LIGHT.hi / Math.max(hi, 1e-4), 0.7))))); if (LIGHT.pk > 0) { let fr = 0; for (let y = 0; y < 10; y++) for (let x = 0; x < 32; x++) if (Math.exp(this.meterBuf[(y * 32 + x) * 4 + 1]) * want >= LIGHT.pk) fr += 1.0 - 0.4 * Math.hypot((x - 15.5) / 16, (y - 7.5) / 9); const e = Math.min(1, Math.max(0, (fr / pw - 0.10) / 0.10)); want = Math.max(Math.min(want, LIGHT.pk / Math.max(Math.pow(ps / pw, 0.125), 1e-4)), want * (LIGHT.pkMin + (LIGHT.pkLo - LIGHT.pkMin) * e * e * (3 - 2 * e))); } const first = !this.meterDone; this.meterDone = true;
         this.lastAvg = avg; this.exposure = first ? want : this.exposure + (want - this.exposure) * 0.12; this.film.uniforms.uExposure.value = this.exposure;
       };
       if (this.expGPU) { const dst = this.expRT[this.expI ^= 1], src = this.expRT[this.expI ^ 1], u = this.expMat.uniforms; u.t.value = this.meterRT.texture; u.prev.value = src.texture; u.uKey.value = LIGHT.key; u.uHi.value = LIGHT.hi; u.uMin.value = LIGHT.expMin; u.uMax.value = LIGHT.expMax;

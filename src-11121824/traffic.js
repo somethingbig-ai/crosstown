@@ -11,7 +11,7 @@ const pick = (a, r) => a[Math.floor(r * a.length) % a.length];
 
 export class Traffic {
   constructor(game) {
-    this.g = game; this.cars = []; this.rand = rng(1234); this.target = 90; this.spawnT = 0; this.busT = 0; this.near = []; this.nearT = 0;
+    this.g = game; this.cars = []; this.rand = rng(1234); this.target = 90; this.room = game.P && game.P.get('unstick') === '0' ? 0 : 3.2; this.spawnT = 0; this.busT = 0; this.near = []; this.nearT = 0;
   }
   pickType() { const r = this.rand(); if (r < 0.035 && this.g.kit.cars.bus) return 'bus'; return TYPE_MIX[Math.floor(this.rand() * TYPE_MIX.length)]; }
   colorFor(type) {
@@ -120,6 +120,9 @@ export class Traffic {
     for (const o of this.cars) { if (o === c || o === c.pass) continue; if (Math.abs(o.x - c.x) > look + 12 || Math.abs(o.y - c.y) > look + 12) continue; const r = o.def.len * 0.42; test(o.x, o.y, r, o);
       if (o.def.len > 7) { const ox = Math.cos(o.h) * 3.6, oy = Math.sin(o.h) * 3.6; test(o.x + ox, o.y + oy, 1.6, o); test(o.x - ox, o.y - oy, 1.6, o); } }
     for (const v of this.g.vehicles) if (v !== c.pass) { test(v.x, v.y, v.def.len * 0.42, v);
+      // motion lane (stuck report 7e132b): a player's car standing ACROSS the lane was seen only at its middle, so traffic closed right up on its nose
+      // and tail; its two ends count too, and traffic stops a car length short of it so the player has room to turn (?unstick=0 = as before)
+      if (this.room && Math.abs(v.x - c.x) < look + 12 && Math.abs(v.y - c.y) < look + 12) { const g0 = gap, ex = Math.cos(v.h) * v.def.len * 0.32, ey = Math.sin(v.h) * v.def.len * 0.32; test(v.x + ex, v.y + ey, v.def.wid * 0.5, v); test(v.x - ex, v.y - ey, v.def.wid * 0.5, v); if (this._blk === v) gap = Math.max(0, Math.min(g0, gap) - this.room); }
       // and never nose into one of the player's cars from an angle (a fork, a merge): bumper against its body is a full stop
       if (Math.abs(v.x - c.x) < 9 && Math.abs(v.y - c.y) < 9) { const nx = c.x + fx * (half + 0.9), ny = c.y + fy * (half + 0.9); for (const o of [0.32, 0, -0.32]) if (Math.hypot(nx - v.x - Math.cos(v.h) * v.def.len * o, ny - v.y - Math.sin(v.h) * v.def.len * o) < (v.def.wid + c.def.wid) / 2 + 0.25) { gap = 0; this._blk = v; } } }
     // the player on foot is in the way like anyone else (public feedback Nov 11: "cars can't run me over, i phase right through them")
@@ -174,7 +177,8 @@ export class Traffic {
       c.v += clamp(want - c.v, -9 * dt, 2.6 * dt); if (c.v < 0.02) c.v = 0;
       c.brake = c.v < 0.4 || c.v - v0 < -1.2 * dt;
       // last resort against gridlock: a car that has sat behind something on a green for a long time pushes through
-      if (c.v < 0.3 && gap < 3 && !atLight && (c.junction || R.signal(R.endNode(c.e, c.dir), c.e, t) === 'g')) { c.wait += dt; if (c.wait > 16) { const mine = blk && (blk === this.g.player || this.g.vehicles.includes(blk)); if (!mine) c.ghost = 2.5; c.wait = mine ? 10 : 0; } } else c.wait = 0;     /* a car stuck for 16 s slips through what blocks it so junctions never lock up, but never through the player or the player's cars ("cars drive through my cars") */
+      if (c.v < 0.3 && gap < 3 && !atLight && (c.junction || R.signal(R.endNode(c.e, c.dir), c.e, t) === 'g')) { c.wait += dt; if (c.wait > 16) { const mine = blk && (blk === this.g.player || this.g.vehicles.includes(blk) || (this.room && blk.heldByPlayer > 0)); if (!mine) c.ghost = 2.5; c.wait = mine ? 10 : 0; } } else c.wait = 0;
+      { const mine = blk && (blk === this.g.player || this.g.vehicles.includes(blk) || blk.heldByPlayer > 0); c.heldByPlayer = mine && c.v < 0.5 ? 0.6 : Math.max(0, (c.heldByPlayer || 0) - dt); }     /* motion lane: held up by the player, directly or down the queue */     /* a car stuck for 16 s slips through what blocks it so junctions never lock up, but never through the player or the player's cars ("cars drive through my cars") */
       const ds = c.v * dt; c.spin += ds / c.def.radius;
       const ph = c.h;
       if (c.junction) {

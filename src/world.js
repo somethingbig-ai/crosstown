@@ -418,11 +418,11 @@ export class World {
     // glass and paint were reading, so while driving the mirror picture jumped face by face. They are now drawn into a second, unseen cube and the
     // two are swapped when all six are done: every reflection changes at once. (The swap exchanges the two cubes' GPU textures; nothing that
     // holds streetRT.texture needs to know.)
-    if (!this.streetBack) { this.streetBack = new THREE.WebGLCubeRenderTarget(this.streetRT.width, { type: this.streetRT.texture.type, generateMipmaps: false, minFilter: THREE.LinearFilter }); this.streetBack.texture.colorSpace = this.streetRT.texture.colorSpace; r.initRenderTarget(this.streetBack); this.streetSwap = false; }
+    if (!this.streetBack) { this.streetBack = new THREE.WebGLCubeRenderTarget(this.streetRT.width, { type: this.streetRT.texture.type, generateMipmaps: false, minFilter: THREE.LinearFilter }); this.streetBack.texture.colorSpace = this.streetRT.texture.colorSpace; r.initRenderTarget(this.streetBack); r.initRenderTarget(this.streetRT);     /* both must exist on the GPU or the swap below never happens and the shown cube stays blank */ }
     const old = r.getRenderTarget(), xr = r.xr.enabled; r.xr.enabled = false; this.shared.tStreet.value = this.streetDummy.texture; sm.autoUpdate = false;
-    r.setRenderTarget(this.streetSwap ? this.streetRT : this.streetBack, f); r.render(this.scene, cam.children[f]);
+    r.setRenderTarget(this.streetBack, f);     /* always the back cube: the swap below exchanges the GPU textures, so 'back' is always the unseen one (alternating targets as well drew into the shown cube and swapped in a blank one: glasskit, Nov 11) */ r.render(this.scene, cam.children[f]);
     r.setRenderTarget(old); r.xr.enabled = xr; sm.autoUpdate = au; this.shared.tStreet.value = this.streetRT.texture;
-    if (f === 5) { const pa = r.properties.get(this.streetRT.texture), pb = r.properties.get(this.streetBack.texture); if (pa.__webglTexture && pb.__webglTexture) { const t = pa.__webglTexture; pa.__webglTexture = pb.__webglTexture; pb.__webglTexture = t; this.streetSwap = !this.streetSwap; r.resetState(); } }
+    if (f === 5) { const pa = r.properties.get(this.streetRT.texture), pb = r.properties.get(this.streetBack.texture); if (pa.__webglTexture && pb.__webglTexture) { const t = pa.__webglTexture; pa.__webglTexture = pb.__webglTexture; pb.__webglTexture = t; this.streetSwaps = (this.streetSwaps || 0) + 1; r.resetState(); } }
   }
 
   setLiveAA(msaa) {

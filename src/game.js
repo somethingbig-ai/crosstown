@@ -132,6 +132,7 @@ export class Game {
     // heli lane: the helicopter (src/heli/). ?heli=none leaves it out.
     this.heli = this.P.get('heli') === 'none' ? null : await (await import('./heli/heli.js')).addHeli(this).catch((e) => { console.log('[heli] not loaded: ' + (e && (e.stack || e.message))); return null; });
     try { (await import('./pedhit.js')).install(this); } catch (e) { console.log('[game] pedhit not loaded: ' + (e && e.message)); }     // item 14: pedestrian hits (ragdoll) from nyc-breakable; ?pedhit=0 off
+    try { (await import('./props.js')).install(this); } catch (e) { console.log('[game] props not loaded: ' + (e && e.message)); }     // loose street props from nyc-breakable; ?props=0 off
     try { await (await import('./entry/entry.js')).addEntry(this); } catch (e) { console.log('[entry] not loaded: ' + (e && (e.stack || e.message))); }     // gameplay lane: real car entry and exit (door, seat, camera); ?entry=0 off
     try { (await import('./feedback.js')).install(this); } catch (e) { console.log('[game] feedback not loaded: ' + (e && e.message)); }     // lead: Feedback link + session trace (src/feedback.js)
     if (!/^(0|none|off)$/.test(this.P.get('guns') || '')) try { this.combat = await (await import('./combat/combat.js')).addCombat(this); } catch (e) { console.log('[guns] not loaded: ' + (e && (e.stack || e.message))); }     // gameplay lane: guns v1 (src/combat/, pistol and rifle); ?guns=0 off (nothing fetched)

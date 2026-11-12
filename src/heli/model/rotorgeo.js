@@ -34,7 +34,7 @@ function mainBlade(s, D, q) {
     if (xc < 0.11 && r > 1.25 && r < R - 0.035) m = BM.edge;
     setM(s, k, m);
   }
-  if (q < 2) for (const r of [3.35, 3.72]) { const k = s.nv; box(s, 0.3, 0.0025, 0.05, BM.tabs); const tw = 0.14 - 0.19 * (r / R); s.place(k, rotX(-tw - 0.05), [r, -0.75 * C * Math.sin(tw) * 1, -0.75 * C - 0.018]); }
+  if (q < 0) for (const r of [3.35, 3.72]) {      /* trim tabs off: smeared over the sweep they drew a row of dots behind the blade */ const k = s.nv; box(s, 0.3, 0.0025, 0.05, BM.tabs); const tw = 0.14 - 0.19 * (r / R); s.place(k, rotX(-tw - 0.05), [r, -0.75 * C * Math.sin(tw) * 1, -0.75 * C - 0.018]); }
   // cuff and sleeve: two plates clamping the blade root with the star's arm between them, bolts through, the spherical bearing at the
   // inboard end, rubber frequency adapters either side, and the pitch horn reaching forward to its link
   if (q < 2) {

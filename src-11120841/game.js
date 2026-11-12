@@ -442,11 +442,18 @@ export class Game {
         // is drawn, not by pixels. Below 42 fps at the floor, the game now also draws less: small street things and shadows come in nearer, the crowd
         // thins, the street mirror refreshes half as often. Steps 0.8 -> 0.64 -> 0.5; steps back up one at a time when 58 fps holds. ?detail=1 pins it.
         if (this.P.has('detail') && !this._detSet && this._govT >= 2) { this._detSet = 1; this.setDetail(+this.P.get('detail') || 1); }
+        // Public reports Nov 12 (Linux, Intel integrated graphics: 10 fps for the first 35 s of play while the governor walked down, then 12-25 fps at
+        // its floor): a weak integrated or software GPU now STARTS at the floor (small picture, no AO, FXAA, detail 0.5) and steps up if it holds
+        // 58 fps; ?weak=0 switches this off, ?weak=1 forces it on any machine.
+        if (!this._weakChk && this._govT >= 2) { this._weakChk = 1; let gs = ''; try { const gl = this.world.renderer.getContext(), e = gl.getExtension('WEBGL_debug_renderer_info'); gs = String(e ? gl.getParameter(e.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER)); } catch (e) {}
+          const weak = this.P.get('weak') === '1' || (this.P.get('weak') !== '0' && ((/Intel/i.test(gs) && !/Arc/i.test(gs)) || /llvmpipe|SwiftShader|softpipe|Mali|Adreno|PowerVR/i.test(gs)));
+          if (weak && !this.capture && !this.P.has('px') && !this.P.has('detail') && window.__fit) { this.world.liveScale = 0.57; window.__fit(); if (this.world.gtao && !this.P.has('ao')) this.world.gtao.enabled = false; if (!this.P.has('aa') && this.world.liveAA !== 'fxaa' && this.world.setLiveAA) this.world.setLiveAA(false); this._detSet = 1; this.setDetail(0.5); this.weakGpu = true; console.log('[game] weak graphics card (' + gs.slice(0, 60) + '): starting at the smallest picture and detail 0.5'); } }
         if (window.__safari && !this.P.has('detail') && !this._detSet && this._govT >= 2) { this._detSet = 1; this.setDetail(0.64); console.log('[game] Safari: starting at detail 0.64 and a smaller picture'); }
         if (this._govT >= 10 && !this.capture && !this.P.has('detail') && !(this.fly && this.fly.on) && !this.paused && (this.world.liveScale || 1) <= 0.66) { const w = this.world, d = w.detail || 1;
           this._slowD = this.fps < 42 ? (this._slowD || 0) + 1 : 0; this._fastD = this.fps >= 58 ? (this._fastD || 0) + 1 : 0;
           if (this._slowD >= 6 && d > 0.51) { this.setDetail(d > 0.81 ? 0.8 : d > 0.65 ? 0.64 : 0.5); this._slowD = 0; console.log('[game] detail ' + w.detail + ' to hold frame rate (' + this.fps.toFixed(0) + ' fps)'); }
-          else if (this._fastD >= 16 && d < 1) { this.setDetail(d < 0.51 ? 0.64 : d < 0.65 ? 0.8 : 1); this._fastD = 0; console.log('[game] detail back up to ' + w.detail); } }
+          else if (d <= 0.51 && d > 0.36 && (this._slowE = this.fps < 28 ? (this._slowE || 0) + 1 : 0) >= 8) { this._slowE = 0; this.setDetail(0.35); if ((w.liveScale || 1) > 0.5 && !this.P.has('px') && window.__fit) { w.liveScale = 0.5; window.__fit(); } console.log('[game] detail 0.35 and render scale ' + (w.liveScale || 1).toFixed(2) + ' to hold frame rate (' + this.fps.toFixed(0) + ' fps)'); }     /* Nov 12: one more step for machines still under 28 fps at the old floor */
+          else if (this._fastD >= 16 && d < 1) { this.setDetail(d < 0.36 ? 0.5 : d < 0.51 ? 0.64 : d < 0.65 ? 0.8 : 1); this._fastD = 0; console.log('[game] detail back up to ' + w.detail); } }
       if (this.paused) { this.hud.draw(); return; }
       // Public feedback Nov 11 ("the update interval of objects is too low and the stuttering of animations is distracting"): the world used to
       // advance in whole 1/60 s steps, so at 28 fps one frame moved everything 2 steps and the next 3: cars and people juddered. Each frame now

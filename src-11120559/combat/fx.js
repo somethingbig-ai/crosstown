@@ -100,21 +100,22 @@ export class Fx {
   spawn(o) {
     let p = null; for (let k = 0; k < 24; k++) { const q = this.p[this.cursor]; this.cursor = (this.cursor + 1) % N; if (!q.on) { p = q; break; } } if (!p) { p = this.p[this.cursor]; this.cursor = (this.cursor + 1) % N; }
     p.on = true; p.add = !!o.add; p.x = o.x; p.y = o.y; p.z = o.z; p.vx = o.vx || 0; p.vy = o.vy || 0; p.vz = o.vz || 0; p.age = 0; p.life = o.life || 1; p.s0 = o.s0 ?? 0.1; p.s1 = o.s1 ?? p.s0; p.r = o.r ?? 1; p.g = o.g ?? 1; p.b = o.b ?? 1; p.a0 = o.a ?? 1;
-    p.frame = o.frame || 0; p.rot = o.rot ?? rnd() * 6.283; p.rotv = o.rotv || 0; p.grav = o.grav || 0; p.drag = o.drag || 0; p.stretch = o.stretch || 0; p.len = o.len || 0; p.fade = o.fade ?? 1; p.fin = o.fin || 0; p.bounce = o.bounce || 0; p.r1 = o.r1 ?? p.r; p.g1 = o.g1 ?? p.g; p.b1 = o.b1 ?? p.b; p.ax = o.ax || 0; p.ay = o.ay || 0; p.az = o.az || 0; p.delay = o.delay || 0; p.up = o.up || 0;
+    p.frame = o.frame || 0; p.rot = o.rot ?? rnd() * 6.283; p.rotv = o.rotv || 0; p.grav = o.grav || 0; p.drag = o.drag || 0; p.stretch = o.stretch || 0; p.len = o.len || 0; p.fade = o.fade ?? 1; p.fin = o.fin || 0; p.bounce = o.bounce || 0; p.r1 = o.r1 ?? p.r; p.g1 = o.g1 ?? p.g; p.b1 = o.b1 ?? p.b; p.ax = o.ax || 0; p.ay = o.ay || 0; p.az = o.az || 0; p.delay = o.delay || 0; p.up = o.up || 0; p.mz = o.mz || 0;
     return p;
   }
 
   // ---- what a shot makes
+  follow(pos) { if (!this.mzAt || !this.ok) return; const dx = pos.x - this.mzAt.x, dy = pos.y - this.mzAt.y, dz = pos.z - this.mzAt.z; this.mzAt.copy(pos); if (!dx && !dy && !dz) return; if (dx * dx + dy * dy + dz * dz > 0.25) return; for (const p of this.p) if (p.on && p.mz) { p.x += dx; p.y += dy; p.z += dz; } if (this.lightT > 0) { this.light.position.x += dx; this.light.position.y += dy; this.light.position.z += dz; } }
   muzzle(pos, dir, kind, camPos) {
     const big = kind === 'shotgun' ? 1.55 : kind === 'rifle' ? 1.25 : kind === 'smg' ? 0.9 : 0.8, s = big * rr(0.85, 1.15);
-    const C = [9.0, 5.2, 1.9];
+    const C = [9.0, 5.2, 1.9]; (this.mzAt ||= pos.clone()).copy(pos);      /* the flash quads (mz) and the flash light ride with the muzzle: follow() */
     // a shaped flash: a short tongue out of the bore, a small star at its root, a faint glow; it lasts three frames and shrinks
     const L = 0.085;
-    this.spawn({ add: true, x: pos.x + dir.x * 0.03, y: pos.y + dir.y * 0.03, z: pos.z + dir.z * 0.03, life: L, s0: (kind === 'pistol' ? 0.36 : 0.24) * s, s1: 0.08 * s, r: C[0], g: C[1], b: C[2], r1: 5, g1: 1.6, b1: 0.3, a: 1, frame: 4 + (rnd() < 0.5 ? 1 : 0), fade: 0.7 });
-    this.spawn({ add: true, x: pos.x + dir.x * 0.2 * s, y: pos.y + dir.y * 0.2 * s, z: pos.z + dir.z * 0.2 * s, life: L, s0: 0.17 * s, s1: 0.07 * s, r: C[0], g: C[1], b: C[2], r1: 5, g1: 1.6, b1: 0.3, a: 1, frame: 6, ax: dir.x * 0.16 * s, ay: dir.y * 0.16 * s, az: dir.z * 0.16 * s, fade: 0.7 });
-    this.spawn({ x: pos.x + dir.x * 0.12 * s, y: pos.y + dir.y * 0.12 * s, z: pos.z + dir.z * 0.12 * s, life: L, s0: 0.12 * s, s1: 0.05 * s, r: 1.9, g: 1.15, b: 0.3, r1: 1.5, g1: 0.5, b1: 0.1, a: 0.9, frame: 6, ax: dir.x * 0.13 * s, ay: dir.y * 0.13 * s, az: dir.z * 0.13 * s, fade: 0.6 });
-    this.spawn({ x: pos.x + dir.x * 0.03, y: pos.y + dir.y * 0.03, z: pos.z + dir.z * 0.03, life: L, s0: 0.16 * s, s1: 0.06 * s, r: 1.9, g: 1.2, b: 0.35, r1: 1.5, g1: 0.5, b1: 0.1, a: 0.9, frame: 4, fade: 0.6 });
-    this.spawn({ add: true, x: pos.x + dir.x * 0.06, y: pos.y + dir.y * 0.06, z: pos.z + dir.z * 0.06, life: L, s0: 0.42 * s, s1: 0.3 * s, r: 1.7, g: 0.85, b: 0.3, a: 0.26, frame: 7, fade: 1 });
+    this.spawn({ mz: 1, add: true, x: pos.x + dir.x * 0.03, y: pos.y + dir.y * 0.03, z: pos.z + dir.z * 0.03, life: L, s0: (kind === 'pistol' ? 0.36 : 0.24) * s, s1: 0.08 * s, r: C[0], g: C[1], b: C[2], r1: 5, g1: 1.6, b1: 0.3, a: 1, frame: 4 + (rnd() < 0.5 ? 1 : 0), fade: 0.7 });
+    this.spawn({ mz: 1, add: true, x: pos.x + dir.x * 0.2 * s, y: pos.y + dir.y * 0.2 * s, z: pos.z + dir.z * 0.2 * s, life: L, s0: 0.17 * s, s1: 0.07 * s, r: C[0], g: C[1], b: C[2], r1: 5, g1: 1.6, b1: 0.3, a: 1, frame: 6, ax: dir.x * 0.16 * s, ay: dir.y * 0.16 * s, az: dir.z * 0.16 * s, fade: 0.7 });
+    this.spawn({ mz: 1, x: pos.x + dir.x * 0.12 * s, y: pos.y + dir.y * 0.12 * s, z: pos.z + dir.z * 0.12 * s, life: L, s0: 0.12 * s, s1: 0.05 * s, r: 1.9, g: 1.15, b: 0.3, r1: 1.5, g1: 0.5, b1: 0.1, a: 0.9, frame: 6, ax: dir.x * 0.13 * s, ay: dir.y * 0.13 * s, az: dir.z * 0.13 * s, fade: 0.6 });
+    this.spawn({ mz: 1, x: pos.x + dir.x * 0.03, y: pos.y + dir.y * 0.03, z: pos.z + dir.z * 0.03, life: L, s0: 0.16 * s, s1: 0.06 * s, r: 1.9, g: 1.2, b: 0.35, r1: 1.5, g1: 0.5, b1: 0.1, a: 0.9, frame: 4, fade: 0.6 });
+    this.spawn({ mz: 1, add: true, x: pos.x + dir.x * 0.06, y: pos.y + dir.y * 0.06, z: pos.z + dir.z * 0.06, life: L, s0: 0.42 * s, s1: 0.3 * s, r: 1.7, g: 0.85, b: 0.3, a: 0.26, frame: 7, fade: 1 });
     for (let i = 0; i < (kind === 'shotgun' ? 7 : 3); i++) { const sp = rr(6, 22); this.spawn({ add: true, x: pos.x, y: pos.y, z: pos.z, vx: dir.x * sp + rs(3), vy: dir.y * sp + rs(3), vz: dir.z * sp + rs(3), life: rr(0.05, 0.14), s0: 0.012, r: 8, g: 4, b: 1.2, frame: 8, stretch: 0.012, drag: 6 }); }
     // powder smoke: a quick jet out of the muzzle, then a pale cloud that hangs and drifts for a couple of seconds
     /* powder smoke: thin grey veils that leave the muzzle along the barrel line, swell to half a metre and drift up for three or four seconds (small bright puffs read as 'white cotton balls hanging at the muzzle': round 11) */

@@ -107,7 +107,7 @@ export async function add(game, ctx) {
   const [meta, gltf] = await Promise.all([fetch(A + 'vehicles.json', { cache: 'no-store' }).then((r) => r.json()), new GLTFLoader().setDRACOLoader(draco).loadAsync(A + 'vehicles.glb')]);
   // the openx-assets models (CC-BY, see ATTRIBUTION.md), on unless ?vopenx=0: same kit conventions, so they are more kinds of the same
   let oxMeta = null, oxScene = null;
-  if (!(game.P && (game.P.get('vopenx') === '0' || (window.__CFG && window.__CFG.public && game.P.get('vopenx') !== '1')))) try { oxMeta = await fetch(A + 'openx.json', { cache: 'no-store' }).then((r) => r.json()); oxScene = (await new GLTFLoader().setDRACOLoader(draco).loadAsync(A + 'openx.glb')).scene; oxScene.updateMatrixWorld(true); } catch (e) { console.log('[streets] vehicles: openx models not loaded: ' + (e && e.message)); oxMeta = null; }
+  if (!(game.P && (game.P.get('vopenx') === '0' || (window.__CFG && window.__CFG.public && game.P.get('vopenx') !== '1')))) try {   /* public build: hand-built cars only until the openx bodies are reshaped (CHIEF 02:37 Nov 12); ?vopenx=1 to test */ oxMeta = await fetch(A + 'openx.json', { cache: 'no-store' }).then((r) => r.json()); oxScene = (await new GLTFLoader().setDRACOLoader(draco).loadAsync(A + 'openx.glb')).scene; oxScene.updateMatrixWorld(true); } catch (e) { console.log('[streets] vehicles: openx models not loaded: ' + (e && e.message)); oxMeta = null; }
   const allMeta = Object.assign({}, meta, oxMeta || {}), findNode = (n) => gltf.scene.getObjectByName(n) || (oxScene && oxScene.getObjectByName(n));
   draco.dispose();
   const P = game.P, opt = (k, d) => (P && P.has(k) ? P.get(k) : d);

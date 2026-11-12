@@ -10,7 +10,7 @@ export const NP = 22;
 const MASS = [5, 3, 12, 6, 3.5, 3.5, 2.2, 2.2, 1.3, 1.3, 0.6, 0.6, 10, 5, 5, 5, 5, 5, 2.6, 2.6, 0.9, 0.9];
 const RAD = [0.098, 0.065, 0.102, 0.078, 0.068, 0.068, 0.05, 0.05, 0.04, 0.04, 0.035, 0.035, 0.102, 0.074, 0.09, 0.09, 0.068, 0.068, 0.06, 0.06, 0.04, 0.04];
 const G_LEGL = 0, G_LEGR = 1, G_SPINE = 2, G_NECK = 3, G_ARML = 4, G_ARMR = 5, NG = 6;
-const EV = (globalThis.process && process.env) || {}, HF = +(EV.HF ?? 0), VF = +(EV.VF || 0.45), PA = +(EV.PA || 5), SB = +(EV.SB || 0.3), MF = +(EV.MF || 0.7), H2 = +(EV.H2 ?? 0), M2 = +(EV.M2 ?? 0.45), T2 = +(EV.T2 ?? 0.32), ST = +(EV.ST || 0.08), AL = +(EV.AL || 1), HS = +(EV.HS ?? 0.5), TB = +(EV.TB ?? 0.5), KT = +(EV.KT ?? 0.2), TS = +(EV.TS ?? 0.42), STEP = +(EV.STEP ?? 0.8), SO = +(EV.SO ?? 0.0), LB = +(EV.LB ?? 0.8), RUP = +(EV.RUP ?? 0.2), KGT = +(EV.KGT ?? 0.35), SF = +(EV.SF ?? 0.15), SITF = +(EV.SITF ?? 0.22), SITH = +(EV.SITH ?? 0.55), LF = +(EV.LF ?? 0.03), AU = +(EV.AU ?? 1.2), KA = +(EV.KA ?? 0.65), KB = +(EV.KB ?? 0.8), PL = +(EV.PL ?? 0.5), UT = +(EV.UT ?? 0), UK = +(EV.UK ?? 0), KMIN = +(EV.KMIN ?? 62), LC = +(EV.LC ?? 0), AT = +(EV.AT ?? 0.3), AH = +(EV.AH ?? 0.15), GV = +(EV.GV ?? 0.25), FG = +(EV.FG ?? 0.003), JK = +(EV.JK ?? 2.6), SAG = +(EV.SAG ?? 0.9), IM = +(EV.IM ?? 1.7), AR = +(EV.AR ?? 0.2), SV = +(EV.SV ?? 0.3), AFT = +(EV.AFT ?? 1.8), GD = +(EV.GD ?? 0.012), KS = +(EV.KS ?? 1.4), NF = +(EV.NF ?? 110), WR = +(EV.WR ?? 1.2), LCAP = +(EV.LCAP ?? 0), AFD = +(EV.AFD ?? 0.9), CR = +(EV.CR ?? 1.25), DFR = +(EV.DFR ?? 0.995), WK = +(EV.WK ?? 4), STG = +(EV.STG ?? 0), AO = +(EV.AO ?? 0.3), AOK = +(EV.AOK ?? 0.3), ROR = +(EV.ROR ?? 0.5), RO = +(EV.RO ?? 2.4), LBK = +(EV.LBK ?? 0.7), ROU = +(EV.ROU ?? 0.5), ROT = +(EV.ROT ?? 4.2), TWL = +(EV.TWL ?? 45), TWC = +(EV.TWC ?? 1.5), KD = +(EV.KD ?? 0.3), AD = +(EV.AD ?? 0.04), ADR = +(EV.ADR ?? 0.15), PSH = +(EV.PSH ?? 1), VK = +(EV.VK ?? 1), RELAX = 3.2, D2R = Math.PI / 180, H_SUB = 1 / 120, ITER = 7, GRAV = 9.81, MU = 0.85;
+const EV = (globalThis.process && process.env) || {}, HF = +(EV.HF ?? 0), VF = +(EV.VF || 0.45), PA = +(EV.PA || 5), SB = +(EV.SB || 0.3), MF = +(EV.MF || 0.7), H2 = +(EV.H2 ?? 0), M2 = +(EV.M2 ?? 0.45), T2 = +(EV.T2 ?? 0.32), ST = +(EV.ST || 0.08), AL = +(EV.AL || 1), HS = +(EV.HS ?? 0.5), TB = +(EV.TB ?? 0.5), KT = +(EV.KT ?? 0.2), TS = +(EV.TS ?? 0.42), STEP = +(EV.STEP ?? 0.8), SO = +(EV.SO ?? 0.0), LB = +(EV.LB ?? 0.8), RUP = +(EV.RUP ?? 0.2), KGT = +(EV.KGT ?? 0.35), SF = +(EV.SF ?? 0.15), SITF = +(EV.SITF ?? 0.22), SITH = +(EV.SITH ?? 0.55), LF = +(EV.LF ?? 0.03), AU = +(EV.AU ?? 1.2), KA = +(EV.KA ?? 0.65), KB = +(EV.KB ?? 0.8), PL = +(EV.PL ?? 0.5), UT = +(EV.UT ?? 0), UK = +(EV.UK ?? 0), KMIN = +(EV.KMIN ?? 62), LC = +(EV.LC ?? 0), AT = +(EV.AT ?? 0.3), AH = +(EV.AH ?? 0.15), GV = +(EV.GV ?? 0.25), FG = +(EV.FG ?? 0.003), JK = +(EV.JK ?? 2.6), SAG = +(EV.SAG ?? 0.9), IM = +(EV.IM ?? 1.7), AR = +(EV.AR ?? 0.2), SV = +(EV.SV ?? 0.3), AFT = +(EV.AFT ?? 1.8), GD = +(EV.GD ?? 0.012), KS = +(EV.KS ?? 1.4), NF = +(EV.NF ?? 110), NFH = +(EV.NFH ?? 75), WR = +(EV.WR ?? 1.2), LCAP = +(EV.LCAP ?? 0), AFD = +(EV.AFD ?? 0.9), CR = +(EV.CR ?? 1.25), DFR = +(EV.DFR ?? 0.995), WK = +(EV.WK ?? 4), STG = +(EV.STG ?? 0), AO = +(EV.AO ?? 0.3), AOK = +(EV.AOK ?? 0.3), ROR = +(EV.ROR ?? 0.5), RO = +(EV.RO ?? 2.4), LBK = +(EV.LBK ?? 0.7), ROU = +(EV.ROU ?? 0.5), ROT = +(EV.ROT ?? 4.2), TWL = +(EV.TWL ?? 45), TWC = +(EV.TWC ?? 1.5), KD = +(EV.KD ?? 0.3), AD = +(EV.AD ?? 0.04), ADR = +(EV.ADR ?? 0.15), PSH = +(EV.PSH ?? 1), VK = +(EV.VK ?? 1), RELAX = 3.2, D2R = Math.PI / 180, H_SUB = 1 / 120, ITER = 7, GRAV = 9.81, MU = 0.85;
 const hyp = (x, y, z = 0) => Math.sqrt(x * x + y * y + z * z);
 const sm = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u));
 
@@ -82,6 +82,11 @@ export class Doll {
     // nor does a body fold shut like a book (chest onto its own thighs): trunk and thigh together stop at about a right angle
     { const sp = D(I.P, I.N), th = D(I.HL, I.KL), lo = Math.sqrt(sp * sp + th * th - 2 * sp * th * Math.cos(NF * D2R)); apart(I.N, I.KL, lo); apart(I.N, I.KR, lo); }
     apart(I.WL, I.WR, 0.07); apart(I.AL, I.AR, 0.06); apart(I.H, I.PF, 0.3);
+    // (public report 075004-16a733: a body folded shut, legs over the trunk) behind that soft stop a FIRM one that no blow, wall, car or step
+    // can get past: neck to knee never nearer than a fold of NFH degrees, head to knee and head / neck to ankle never nearer than a hand's
+    // length or two. Taken up whole every sub-step (the speed cap after it keeps it from showing as a twitch). Never tighter than the pose it starts in.
+    { const sp = D(I.P, I.N), hard = (i, j, lo) => this.hard.push({ i, j, lo: Math.min(lo, D(i, j) * 0.98) }); this.hard = [];
+      for (const s of ['L', 'R']) { const th = D(I['H' + s], I['K' + s]); hard(I.N, I['K' + s], Math.sqrt(sp * sp + th * th - 2 * sp * th * Math.cos(NFH * D2R))); hard(I.H, I['K' + s], 0.3); hard(I.H, I['F' + s], 0.42); hard(I.N, I['F' + s], 0.38); hard(I.C, I['F' + s], 0.3); } }
     // --- tone: what the muscles were holding
     this.sp = {};
     for (const s of ['L', 'R']) { const g = s === 'L' ? G_LEGL : G_LEGR, o = s === 'L' ? 'R' : 'L', ga = s === 'L' ? G_ARML : G_ARMR;
@@ -235,8 +240,10 @@ export class Doll {
     return [ay * tz - az * ty, az * tx - ax * tz, ax * ty - ay * tx];
   }
   step(dt) {
-    if (this.asleep) return; const n = Math.max(1, Math.round(dt / H_SUB));
-    for (let s = 0; s < n; s++) this.sub();
+    // (public report 075004-16a733) however long the frame was, the body is only ever moved in fixed 1/120 s sub-steps, and at most four
+    // of them a call (the game hands over 1/60 s or less; a hitch or another caller with a long dt gets slow motion, never one long step)
+    if (this.asleep) return; if (!(dt > 0)) return; if (dt > 4 * H_SUB) dt = 4 * H_SUB; const n = Math.max(1, Math.round(dt / H_SUB));
+    for (let s = 0; s < n; s++) { this.sub(); if (!this.sane()) return; }
     // nothing dead stays sitting up or squatting on its heels: a trunk that has come to a stop off the ground is tipped over
     { const p_ = this.p, q_ = this.q, c = I.C * 3, up = p_[c + 1] - this.env.ground(p_[c], p_[c + 2]), v = Math.hypot(p_[c] - q_[c], p_[c + 1] - q_[c + 1], p_[c + 2] - q_[c + 2]) / H_SUB;
       const pu = p_[I.P * 3 + 1] - this.env.ground(p_[I.P * 3], p_[I.P * 3 + 2]), nu = p_[I.N * 3 + 1] - this.env.ground(p_[I.N * 3], p_[I.N * 3 + 2]);
@@ -267,6 +274,11 @@ export class Doll {
     if (this.t > 14) this.sleep();
   }
   sleep() { this.asleep = true; this.q.set(this.p); }
+  // a body whose numbers have gone wrong (not a number, or a point a long way from the hips) is put back where it last was and left there
+  sane() { const p = this.p, q = this.q, P = I.P * 3; let ok = true; for (let i = 0; i < NP * 3; i++) if (!(Math.abs(p[i]) < 1e7)) { ok = false; break; }
+    if (ok) for (let i = 0; i < NP; i++) { const k = i * 3, dx = p[k] - p[P], dy = p[k + 1] - p[P + 1], dz = p[k + 2] - p[P + 2]; if (dx * dx + dy * dy + dz * dz > 6.25) { ok = false; break; } }
+    if (ok) { (this.okp || (this.okp = new Float64Array(NP * 3))).set(p); return true; }
+    if (this.okp) p.set(this.okp); for (let i = 0; i < NP * 3; i++) if (!(Math.abs(p[i]) < 1e7)) p[i] = 0; q.set(p); this.asleep = true; this.broke = true; return false; }
   // a body that is down is struck again: it wakes and takes the blow where it lands
   nudge(x, y, z, dx, dy, dz, dv = 1.4) { this.asleep = false; this.still = 0; this.slow = 0; if (this.t > 3) this.t = 3; this.lain = Math.min(this.lain, 0.9); this.impulse(x, y, z, dx, dy, dz, dv, 0.26, 0); }
   sub() {
@@ -378,6 +390,9 @@ export class Doll {
       if (cr && (p[k] !== W[k] || p[k + 2] !== W[k + 2]) && cr(W[k], W[k + 2], p[k], p[k + 2])) { p[k] = W[k]; p[k + 2] = W[k + 2]; q[k] = W[k]; q[k + 2] = W[k + 2]; }
       if (env.wall(p[k], p[k + 2], R[i] + 0.03, o, p[k + 1], np)) { if (cr && cr(W[k], W[k + 2], o.x, o.z)) { o.x = W[k]; o.z = W[k + 2]; } p[k] = o.x; p[k + 2] = o.z; q[k] = o.x; q[k + 2] = o.z; }
       W[k] = p[k]; W[k + 2] = p[k + 2]; } }
+    if (NFH) for (const s of this.hard) { const a = s.i * 3, b = s.j * 3; let dx = p[b] - p[a], dy = p[b + 1] - p[a + 1], dz = p[b + 2] - p[a + 2]; const d2 = dx * dx + dy * dy + dz * dz; if (d2 >= s.lo * s.lo) continue; const d = Math.sqrt(d2) || 1e-6, c = (d - s.lo) / d / (w[s.i] + w[s.j]); dx *= c; dy *= c; dz *= c;
+      p[a] += dx * w[s.i]; p[a + 1] += dy * w[s.i]; p[a + 2] += dz * w[s.i]; p[b] -= dx * w[s.j]; p[b + 1] -= dy * w[s.j]; p[b + 2] -= dz * w[s.j];
+      for (const i of [s.i, s.j]) { const g = gc[i] + R[i]; if (p[i * 3 + 1] < g) p[i * 3 + 1] = g; } this.nHard = (this.nHard || 0) + 1; }
     // whatever the constraints wanted, no joint is moved further in a step than a body can move (a stop that lets go must not show as a twitch)
     { const cap = (this.t < 1.2 && this.fast ? 17 : calm + 1) * h, c2 = cap * cap; for (let i = 0; i < NP; i++) { const k = i * 3, dx = p[k] - q[k], dy = p[k + 1] - q[k + 1], dz = p[k + 2] - q[k + 2], d2 = dx * dx + dy * dy + dz * dz, cc = legCap && LEG[i] ? Math.min(cap, legCap * 1.15) : cap; if (d2 > cc * cc) { const c = cc / Math.sqrt(d2); p[k] = q[k] + dx * c; p[k + 1] = q[k + 1] + dy * c; p[k + 2] = q[k + 2] + dz * c; } } }
     // a trunk that has come down stays down: whatever the joints still have to sort out, they do it along the ground (a stop taking

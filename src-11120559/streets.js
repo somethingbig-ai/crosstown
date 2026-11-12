@@ -4,13 +4,14 @@
 // is logged and skipped, the game runs without it. opts.select: null = every part, 'a,b' = only those, '-a,b' = all but those
 // (also from the url: ?streets=a,b or ?streets=-a  ; ?streets=none turns the layer off).
 import * as THREE from 'three';
-export const PARTS = ['ground', 'trees', 'storefronts', 'furniture', 'vehicles'];   // storefronts before furniture: furniture reads its shop list (game.streets.parts)
+export const HELD = ['sidewalks', 'grass'];     /* lead, Nov 12: these two looks were kept on one-sided blind judging (CHIEF 06:3x); off until their lanes re-judge both ways. ?held=1 shows them */
+export const PARTS = ['ground', 'sidewalks', 'grass', 'trees', 'storefronts', 'furniture', 'vehicles'];   // storefronts before furniture: furniture reads its shop list (game.streets.parts)
 export async function addStreets(game, opts = {}) {
   let sel = opts.select ?? (game.P && game.P.get('streets')) ?? null;
   const out = { parts: {}, report: {} }; game.streets = out;   // set early: a later part may read an earlier one's result (game.streets.parts.<name> or ctx.parts)
   if (sel === 'none') return out;
-  let want = PARTS;
-  if (sel) { const neg = sel.startsWith('-'), names = sel.replace(/^-/, '').split(','); want = PARTS.filter((p) => names.includes(p) !== neg); }
+  const shown = game.P && game.P.get('held') === '1' ? PARTS : PARTS.filter((p) => !HELD.includes(p)); let want = shown;
+  if (sel) { const neg = sel.startsWith('-'), names = sel.replace(/^-/, '').split(','); want = (neg ? shown : PARTS).filter((p) => names.includes(p) !== neg); }
   const ctx = { THREE, A: 'assets/streets/', world: game.world, shared: game.world.shared, city: game.city, parts: out.parts };
   for (const p of want) {
     const t = performance.now();

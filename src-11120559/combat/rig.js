@@ -57,6 +57,9 @@ export class AimRig {
   // face the head `yaw` off the body's own heading and `pitch` up (about `right`), whatever the clip and the trunk are doing
   face(yaw, pitch, right, w = 1) { const h = this.B.head; if (!h || !this.headRel || w <= 0) return; this.root.getWorldQuaternion(_q).multiply(this.headRel); _q.premultiply(_q3.setFromAxisAngle(_a.set(0, 1, 0), yaw)).premultiply(_q3.setFromAxisAngle(right, pitch)); const q = new THREE.Quaternion().copy(_q); setWorldQuat(h, q, w); }
   // turn one bone (and what hangs from it) about a world axis
+  /* a bone the playing clip holds at one constant value is written by three's mixer only when that value changes, so a nudge on it is never taken back and piles up frame after frame. hold(k) before the frame's nudges: if the bone is still exactly as we left it last frame, nobody wrote it, so put back what it was before we touched it; held(k) after them remembers how we left it. A no-op on a figure whose clips write the bone every frame */
+  hold(k) { const b = this.B[k]; if (!b) return; const H = (this._hold ||= {}); let h = H[k]; if (!h) { H[k] = { rest: b.quaternion.clone(), last: b.quaternion.clone(), n: 0 }; return; } if (b.quaternion.equals(h.last)) { b.quaternion.copy(h.rest); h.n++; } else h.rest.copy(b.quaternion); }
+  held(k) { const h = this._hold && this._hold[k], b = this.B[k]; if (h && b) h.last.copy(b.quaternion); }
   nudge(k, axis, ang) { const b = this.B[k]; if (!b || !ang) return; worldRotate(b, _q.setFromAxisAngle(axis, ang)); }
   // lean the head a little (cheek to the stock) and turn it to the aim
   head(q, w) { const h = this.B.head; if (!h) return; h.getWorldQuaternion(_q); _q.slerp(q, w); setWorldQuat(h, _q); }

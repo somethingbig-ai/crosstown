@@ -13,6 +13,7 @@ export async function addHero(world, dir) {
   if (!list.length) return;
   world.heroRoot = new THREE.Group(); world.heroRoot.userData.streetCube = true; world.scene.add(world.heroRoot);
   for (const h of list) {
+    if (!h.glb) { h.ok = true; continue; }     /* a cut-only entry: its footprint's massing and shopfronts go, nothing is put in their place (facades 19:35 Nov 11: the W 24th St skybridge strip) */
     try {
       const g = await loadPacked(dir + h.glb);     /* lead: served gzip-packed like the city, unpacked in the page */
       g.scene.traverse((o) => { if (!o.isMesh) return; o.castShadow = true; o.receiveShadow = true;

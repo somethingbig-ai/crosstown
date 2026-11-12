@@ -1357,6 +1357,15 @@ const FS_PHOTO = /* glsl */`
   col *= mix(1.0, uPM.w * 0.86, pnt);      // paint: off-white, never clipped, the road's stone telling through it close up
   vec2 tx = puv * uPL.zw; float mag = 1.0 - clamp(min(length(dFdx(tx)), length(dFdy(tx))) * 1.4, 0.0, 1.0);      // 1 where the photo has fewer pixels than the screen (seen from the side, a photo taken along the street is thin in one direction)
   col *= mix(1.0, clamp(asL, 0.5, 1.5), clamp(uPL.y * (0.35 + 1.5 * mag), 0.0, 0.9) * (1.0 - pnt) * (1.0 - smoothstep(0.006, 0.03, px)));       // the stone a phone camera smears away, from our close scan, on asphalt only
+  if (uPT.x + uPT.y + uPT.z > 0.0) {      // fresh loop f2-f4 (Nov 12): what a sunlit, noise-reduced photograph lost, put back from scans: stone-level aggregate at its real size, paint worn off the stone tops, the slow stains of a used road
+    vec3 sC = textureGrad(tAsC, m / 2.2, mdx / 2.2 * 0.5, mdy / 2.2 * 0.5).rgb / vec3(0.166, 0.152, 0.135); float sL = dot(sC, vec3(0.333));
+    float sk = 1.0 - uPT.w * smoothstep(0.012, 0.06, px);
+    vec2 muv = m / 15.0 + 0.37; float mac = pow(textureGrad(tMacro, muv, mdx / 15.0, mdy / 15.0).r, 2.2) / 0.1407;
+    col *= mix(1.0, mix(clamp(mac, 0.55, 1.5), min(1.0, 0.5 + 0.5 * mac + 0.5 * min(mac, 0.8) - 0.4), pnt), uPT.z);      // on paint only the scan's dark features tell, never a lighter patch
+    float fl = smoothstep(0.0, 0.22, sL * 0.55 + nF.r * 0.5 + (nW.g - 0.47) * 2.2 * uPT.y - 0.88) * pnt * step(0.001, uPT.y) * sk;
+    col = mix(col, uPL.x * sC * 0.9, fl * 0.85);
+    col *= mix(1.0, clamp(sL, 0.35, 1.9), uPT.x * sk * mix(1.0, 0.4, pnt * (1.0 - fl)));
+  }
   diffuseColor = vec4(col, a);
   gRough = clamp(mix(mix(0.9, 0.8, pnt), mix(0.56, 0.40, pnt), uPS.x) * (0.72 + 0.4 * asN.b / 0.66), 0.25, 1.0); gSpec = mix(0.5, 1.0, uPS.x);      // sheen: worn stone and thermoplastic glare toward the sun (the light's direction reads on the road)
   gNrm = vec3(asN.xy * 2.0 - 1.0, 0.0); gNrm.z = sqrt(max(0.0, 1.0 - dot(gNrm.xy, gNrm.xy)));
@@ -1537,9 +1546,9 @@ export async function add(game, ctx) {
     const c = [[p.box[0], z0], [p.box[1], z0], [p.box[1], p.box[3]], [p.box[0], p.box[3]]].map(([X, Z]) => ({ p: [p.world.x + dx * Z + rx * X, Y, -(p.world.y + dy * Z + ry * X)], X, Z }));
     const a = acc.get(p.world.x, p.world.y);
     for (const tri of [[c[0], c[1], c[2]], [c[0], c[2], c[3]]]) for (const v of triTo(tri, [0, 1, 0])) { a.position.push(...v.p); a.aQ.push(v.X, v.Z, 0, 0); }
-    const v = vary(['vec4 aQ'], 'vQ = aQ;'); v.fsDecl += ' uniform sampler2D tPh; uniform mat3 uPH; uniform vec4 uPN; uniform vec4 uPL; uniform vec4 uPM; uniform vec2 uPS;';
+    const v = vary(['vec4 aQ'], 'vQ = aQ;'); v.fsDecl += ' uniform sampler2D tPh; uniform mat3 uPH; uniform vec4 uPN; uniform vec4 uPL; uniform vec4 uPM; uniform vec2 uPS; uniform vec4 uPT;';
     const H = new THREE.Matrix3(); H.set(...p.H);
-    const mat = mkMat(shared, { ...U, tPh: { value: tPh[i] }, uPH: { value: H }, uPN: { value: new THREE.Vector4(p.norm[0], p.norm[1], p.norm[2], p.paintAt || 1.9) }, uPL: { value: new THREE.Vector4(p.level, p.grain, p.size[0], p.size[1]) }, uPM: { value: new THREE.Vector4(mz, z0, p.contrast || 1.0, p.paintGain || 1.0) }, uPS: { value: new THREE.Vector2(p.sheen || 0, 0) } },
+    const mat = mkMat(shared, { ...U, tPh: { value: tPh[i] }, uPH: { value: H }, uPN: { value: new THREE.Vector4(p.norm[0], p.norm[1], p.norm[2], p.paintAt || 1.9) }, uPL: { value: new THREE.Vector4(p.level, p.grain, p.size[0], p.size[1]) }, uPM: { value: new THREE.Vector4(mz, z0, p.contrast || 1.0, p.paintGain || 1.0) }, uPS: { value: new THREE.Vector2(p.sheen || 0, 0) }, uPT: { value: new THREE.Vector4(p.stone || 0, p.flake || 0, p.macro || 0, p.stoneFade === undefined ? 1 : p.stoneFade) } },
       { name: 'photo', ...v, fsMain: FS_PHOTO, graze: 0.55, setup: (m) => { m.transparent = true; m.depthWrite = false; m.polygonOffset = true; m.polygonOffsetFactor = -3; m.polygonOffsetUnits = -6; } });
     addAll(acc, mat, (m) => { m.renderOrder = 2.5 + i * 0.01; });      // in the order listed: a photo cut in two (for pixels enough) overlaps itself seamlessly
   });

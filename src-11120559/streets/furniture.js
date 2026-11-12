@@ -11,7 +11,7 @@
 //   bands     every kind is instanced per 190 m map tile with a far limit; signals, lights, bags and hydrants have cheap stand-ins.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BAKE_LIGHT_GLSL } from '../facade.js';
 
 const TAU = Math.PI * 2, PI = Math.PI;
@@ -138,7 +138,7 @@ function makeAtlas(names) {
     const hand = (col) => { g.fillStyle = col; rr(30, 44, 36, 34, 9); g.fill(); for (let k = 0; k < 4; k++) { rr(31 + k * 9, 16 + Math.abs(k - 1.5) * 4, 7.5, 34, 3.5); g.fill(); } g.save(); g.translate(28, 60); g.rotate(-0.6); rr(-5, -16, 9, 24, 4); g.fill(); g.restore(); };
     const man = (col) => { g.fillStyle = col; g.strokeStyle = col; g.lineCap = 'round'; g.beginPath(); g.arc(54, 17, 7, 0, TAU); g.fill(); g.lineWidth = 9; g.beginPath(); g.moveTo(51, 29); g.lineTo(46, 54); g.stroke(); g.lineWidth = 6.5; g.beginPath(); g.moveTo(47, 53); g.lineTo(60, 68); g.lineTo(62, 84); g.moveTo(46, 54); g.lineTo(38, 68); g.lineTo(27, 80); g.moveTo(51, 31); g.lineTo(65, 43); g.lineTo(74, 41); g.moveTo(50, 31); g.lineTo(37, 40); g.lineTo(32, 52); g.stroke(); };
     if (i === 0) hand('#ff6a10'); else if (i === 1) man('#eaf3ff'); else { hand('#2a1608'); }
-    if (i === 2) { g.fillStyle = 'rgba(120,120,120,0.10)'; for (let k = 0; k < 12; k++) g.fillRect(0, k * 8, w, 1); }
+    if (i === 2) { g.fillStyle = 'rgba(120,120,120,0.10)'; for (let k = 0; k < 12; k++) g.fillRect(0, k * 8, w, 1); } else { g.fillStyle = 'rgba(6,6,6,0.5)'; for (let k = 0; k < 32; k++) { g.fillRect(0, k * 3, w, 1); g.fillRect(k * 3, 0, 1, h); } }
   });
   fam('placard', 64, 96, 1, 1, (g, i, w, h) => { g.fillStyle = '#e8e6de'; g.fillRect(0, 0, w, h); g.strokeStyle = '#151515'; g.lineWidth = 2; g.strokeRect(3, 3, w - 6, h - 6); txt('PUSH', w / 2, 16, 12, '#151515', w - 10); txt('BUTTON', w / 2, 30, 11, '#151515', w - 10); txt('WAIT FOR', w / 2, 50, 9, '#151515', w - 10); txt('WALK', w / 2, 64, 13, '#151515', w - 10); txt('SIGNAL', w / 2, 80, 11, '#151515', w - 10); fade(w, h, 0.15); grime(w, h, 12, 111); });
   fam('oneway', 224, 72, 2, 2, (g, i, w, h) => {
@@ -168,15 +168,141 @@ function makeAtlas(names) {
   fam('mesh', 64, 64, 1, 1, (g, i, w, h) => { g.clearRect(0, 0, w, h); g.strokeStyle = '#e4e6e6'; g.lineWidth = 4.4; g.beginPath(); for (let k = 0; k < 8; k++) { g.moveTo(k * 8 + 4, 0); g.lineTo(k * 8 + 4, h); g.moveTo(0, k * 8 + 4); g.lineTo(w, k * 8 + 4); } g.stroke(); });
   fam('white', 32, 32, 1, 1, (g, i, w, h) => { g.fillStyle = '#ffffff'; g.fillRect(-4, -4, w + 8, h + 8); });
   fam('blade', 256, 48, names.length, 7, (g, i, w, h) => {
-    g.fillStyle = '#0c6a45'; g.fillRect(0, 0, w, h); g.strokeStyle = '#e9efe9'; g.lineWidth = 2; g.strokeRect(3, 3, w - 6, h - 6); txt(names[i], w / 2, h / 2 + 1, 31, '#f3f6f1', w - 24); fade(w, h, 0.07); grime(w, h, 8, 200 + i);
+    g.fillStyle = '#0a5c3c'; g.fillRect(0, 0, w, h); g.strokeStyle = 'rgba(233,239,233,0.55)'; g.lineWidth = 1; g.strokeRect(1.5, 1.5, w - 3, h - 3); txt(names[i], w / 2, h / 2 + 1, 33, '#f3f6f1', w - 18, '600'); fade(w, h, 0.07); grime(w, h, 8, 200 + i);
   });
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
   return { tex: t, cells };
 }
 
+// ------------------------------------------------------------------------------------------------ sign lettering
+// A stroke alphabet for road signs (capitals and digits), drawn by this file: uniform stroke, flat cut ends, in the manner of the US
+// highway alphabets (which are public-domain federal standards). No font file, so signs read the same on every machine.
+// A glyph: [width, paths...]; a path is a flat list of commands in units of the cap height, y up from the baseline:
+//   'M',x,y  'L',x,y  'E',cx,cy,rx,ry,a0,a1 (ellipse arc, degrees, counter-clockwise when a1 > a0)  'Q',cx,cy,x,y
+const GA = 0.082;      // half the stroke
+const GLY = (() => { const a = GA, T = 1 - a, B = a, M = 0.5, G = {};
+  const st = (w) => ['M', a, -0.1, 'L', a, 1.1];                     // left stem (cut by the clip)
+  G.A = [0.80, ['M', a - 0.035, -0.1, 'L', 0.40, 1.02, 'L', 0.80 - a + 0.035, -0.1], ['M', 0.2, 0.3, 'L', 0.6, 0.3]];
+  G.B = [0.68, st(), ['M', a, T, 'L', 0.37, T, 'E', 0.37, (T + M + 0.02) / 2, 0.215, (T - M - 0.02) / 2, 90, -90, 'L', a, M + 0.02], ['M', a, M + 0.02, 'L', 0.38, M + 0.02, 'E', 0.38, (M + 0.02 + B) / 2, 0.22, (M + 0.02 - B) / 2, 90, -90, 'L', a, B]];
+  G.C = [0.68, ['E', 0.36, 0.5, 0.36 - a, 0.5 - a, 42, 318]];
+  G.D = [0.70, st(), ['M', a, T, 'L', 0.3, T, 'E', 0.3, 0.5, 0.70 - a - 0.3, 0.5 - a, 90, -90, 'L', a, B]];
+  G.E = [0.62, st(), ['M', a, T, 'L', 0.7, T], ['M', a, M + 0.02, 'L', 0.5, M + 0.02], ['M', a, B, 'L', 0.7, B]];
+  G.F = [0.60, st(), ['M', a, T, 'L', 0.7, T], ['M', a, M + 0.02, 'L', 0.48, M + 0.02]];
+  G.G = [0.70, ['E', 0.36, 0.5, 0.36 - a, 0.5 - a, 42, 345, 'L', 0.70 - a, 0.46, 'L', 0.42, 0.46]];
+  G.H = [0.70, st(), ['M', 0.70 - a, -0.1, 'L', 0.70 - a, 1.1], ['M', a, M + 0.01, 'L', 0.70 - a, M + 0.01]];
+  G.I = [2 * a, ['M', a, -0.1, 'L', a, 1.1]];
+  G.J = [0.56, ['M', 0.56 - a, 1.1, 'L', 0.56 - a, 0.32, 'E', 0.28, 0.32, 0.28 - a, 0.32 - a, 0, -168]];
+  G.K = [0.72, st(), ['M', 0.76, 1.06, 'L', a, 0.36], ['M', 0.30, 0.58, 'L', 0.76, -0.06]];
+  G.L = [0.58, st(), ['M', a, B, 'L', 0.7, B]];
+  G.M = [0.86, ['M', a, -0.1, 'L', a, T, 'L', 0.43, 0.2, 'L', 0.86 - a, T, 'L', 0.86 - a, -0.1]];
+  G.N = [0.72, ['M', a, -0.1, 'L', a, T + 0.02, 'L', 0.72 - a, B - 0.02, 'L', 0.72 - a, 1.1]];
+  G.O = [0.72, ['E', 0.36, 0.5, 0.36 - a, 0.5 - a, 0, 360]];
+  G.P = [0.66, st(), ['M', a, T, 'L', 0.36, T, 'E', 0.36, T - 0.225, 0.66 - a - 0.36, 0.225, 90, -90, 'L', a, T - 0.45]];
+  G.Q = [0.72, ['E', 0.36, 0.5, 0.36 - a, 0.5 - a, 0, 360], ['M', 0.42, 0.3, 'L', 0.74, -0.04]];
+  G.R = [0.68, st(), ['M', a, T, 'L', 0.36, T, 'E', 0.36, T - 0.225, 0.68 - a - 0.36, 0.225, 90, -90, 'L', a, T - 0.45], ['M', 0.36, T - 0.45, 'L', 0.68 - a + 0.03, -0.1]];
+  G.S = [0.66, ['E', 0.33, T - 0.215, 0.33 - a - 0.01, 0.215, 28, 270, 'E', 0.33, B + 0.225, 0.33 - a, 0.225, 90, -152]];
+  G.T = [0.62, ['M', -0.1, T, 'L', 0.72, T], ['M', 0.31, T, 'L', 0.31, -0.1]];
+  G.U = [0.70, ['M', a, 1.1, 'L', a, 0.35, 'E', 0.35, 0.35, 0.35 - a, 0.35 - a, 180, 360, 'L', 0.70 - a, 1.1]];
+  G.V = [0.76, ['M', a - 0.035, 1.1, 'L', 0.38, -0.02, 'L', 0.76 - a + 0.035, 1.1]];
+  G.W = [1.02, ['M', a - 0.03, 1.1, 'L', 0.29, -0.02, 'L', 0.51, 0.86, 'L', 0.73, -0.02, 'L', 1.02 - a + 0.03, 1.1]];
+  G.X = [0.72, ['M', a - 0.05, 1.1, 'L', 0.72 - a + 0.05, -0.1], ['M', 0.72 - a + 0.05, 1.1, 'L', a - 0.05, -0.1]];
+  G.Y = [0.74, ['M', a - 0.04, 1.1, 'L', 0.37, 0.47, 'L', 0.74 - a + 0.04, 1.1], ['M', 0.37, 0.47, 'L', 0.37, -0.1]];
+  G.Z = [0.66, ['M', a, T, 'L', 0.66 - a - 0.02, T, 'L', a + 0.02, B, 'L', 0.66 - a, B]];
+  G['0'] = [0.66, ['E', 0.33, 0.5, 0.33 - a, 0.5 - a, 0, 360]];
+  G['1'] = [0.36, ['M', 0.36 - a, -0.1, 'L', 0.36 - a, T + 0.03, 'L', -0.02, 0.68]];
+  G['2'] = [0.66, ['E', 0.33, T - 0.235, 0.33 - a, 0.235, 165, -38, 'L', a + 0.01, B, 'L', 0.75, B]];
+  G['3'] = [0.66, ['E', 0.33, T - 0.21, 0.33 - a - 0.015, 0.21, 152, -90, 'E', 0.33, B + 0.228, 0.33 - a, 0.228, 90, -152]];
+  G['4'] = [0.70, ['M', 0.5, -0.1, 'L', 0.5, T + 0.03, 'L', a - 0.01, 0.31, 'L', 0.8, 0.31]];
+  G['5'] = [0.66, ['M', 0.62, T, 'L', a + 0.06, T, 'L', a + 0.02, 0.56, 'E', 0.33, B + 0.265, 0.33 - a, 0.265, 132, -152]];
+  G['6'] = [0.66, ['E', 0.33, B + 0.262, 0.33 - a, 0.262, 0, 360], ['M', a, B + 0.3, 'Q', a + 0.01, 0.86, 0.5, 0.97]];
+  G['7'] = [0.64, ['M', -0.1, T, 'L', 0.64 - a + 0.02, T, 'L', 0.26, -0.1]];
+  G['8'] = [0.66, ['E', 0.33, T - 0.2, 0.33 - a - 0.03, 0.2, 0, 360], ['E', 0.33, B + 0.24, 0.33 - a, 0.24, 0, 360]];
+  G['9'] = [0.66, ['E', 0.33, T - 0.262, 0.33 - a, 0.262, 0, 360], ['M', 0.66 - a, T - 0.3, 'Q', 0.66 - a - 0.01, 0.14, 0.16, 0.03]];
+  G['-'] = [0.4, ['M', 0.04, 0.5, 'L', 0.36, 0.5]]; G['&'] = G['8']; G['.'] = [0.2, ['M', 0.1, 0.0, 'L', 0.1, 0.17]]; G[' '] = [0.36];
+  return G; })();
+const GSP = 0.17;      // gap between letters
+function gothicWidth(s, h, track = 1) { let w = 0; for (const ch of s) { const gl = GLY[ch] || GLY[' ']; w += gl[0] + GSP * track; } return (w - GSP * track) * h; }
+// draw s with cap height h, its baseline at y, starting at x (align 'l') or centred on x ('c'); returns the width drawn
+function gothic(g, s, x, y, h, col, o = {}) {
+  s = s.toUpperCase(); const track = o.track ?? 1; let w = gothicWidth(s, h, track), sx = 1; if (o.maxW && w > o.maxW) { sx = o.maxW / w; w = o.maxW; }
+  let px = o.align === 'c' ? x - w / 2 : x; g.save(); g.strokeStyle = col; g.lineWidth = 2 * GA * h * (o.weight || 1); g.lineJoin = 'miter'; g.miterLimit = 3; g.lineCap = 'butt';
+  for (const ch of s) { const gl = GLY[ch] || GLY[' ']; g.save(); g.translate(px, y); g.scale(sx, 1); g.beginPath(); g.rect(-0.02 * h, -h, (gl[0] + 0.04) * h, h); g.clip();
+    for (let q = 1; q < gl.length; q++) { const p = gl[q]; g.beginPath(); let i = 0, first = true;
+      while (i < p.length) { const c = p[i];
+        if (c === 'M') { g.moveTo(p[i + 1] * h, -p[i + 2] * h); i += 3; }
+        else if (c === 'L') { g.lineTo(p[i + 1] * h, -p[i + 2] * h); i += 3; }
+        else if (c === 'Q') { g.quadraticCurveTo(p[i + 1] * h, -p[i + 2] * h, p[i + 3] * h, -p[i + 4] * h); i += 5; }
+        else if (c === 'E') { const a0 = p[i + 5] * Math.PI / 180, a1 = p[i + 6] * Math.PI / 180; g.ellipse(p[i + 1] * h, -p[i + 2] * h, p[i + 3] * h, p[i + 4] * h, 0, -a0, -a1, a1 > a0); i += 7; }
+        else i++; first = false; }
+      g.stroke(); }
+    g.restore(); px += (gl[0] + GSP * track) * h * sx; }
+  g.restore(); return w; }
+
+// ------------------------------------------------------------------------------------------------ the hero sign sheet
+// A second canvas for the signs of the hero blocks, drawn four times finer than the atlas cells and lettered with the stroke alphabet:
+// street-name blades, one-way plates, regulation plates, the LED faces of the pedestrian signals.
+function makeHeroSheet(names) {
+  const W = 2048, H = 2048, c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); const cells = {}, PAD = 4;
+  const fam = (name, x0, y0, w, h, n, cols, draw) => {
+    for (let i = 0; i < n; i++) { const x = x0 + (i % cols) * (w + PAD) + PAD / 2, y = y0 + Math.floor(i / cols) * (h + PAD) + PAD / 2; g.save(); g.translate(x, y); g.beginPath(); g.rect(0, 0, w, h); g.clip(); draw(g, i, w, h); g.restore(); }
+    const e = 1.5; cells[name] = { u0: (x0 + PAD / 2 + e) / W, u1: (x0 + PAD / 2 + w - e) / W, v0: 1 - (y0 + PAD / 2 + h - e) / H, v1: 1 - (y0 + PAD / 2 + e) / H, du: (w + PAD) / W, dv: -(h + PAD) / H, cols, n };
+  };
+  const rr = (x, y, w, h, r) => { g.beginPath(); g.moveTo(x + r, y); g.lineTo(x + w - r, y); g.arcTo(x + w, y, x + w, y + r, r); g.lineTo(x + w, y + h - r); g.arcTo(x + w, y + h, x + w - r, y + h, r); g.lineTo(x + r, y + h); g.arcTo(x, y + h, x, y + h - r, r); g.lineTo(x, y + r); g.arcTo(x, y, x + r, y, r); g.closePath(); };
+  // reflective sheeting: a faint lattice; weather: a few pale streaks and specks
+  const sheet = (w, h, a) => { g.save(); g.strokeStyle = `rgba(255,255,255,${a})`; g.lineWidth = 1; g.beginPath(); for (let k = -h; k < w + h; k += 9) { g.moveTo(k, 0); g.lineTo(k + h * 0.577, h); g.moveTo(k, 0); g.lineTo(k - h * 0.577, h); } g.stroke(); g.restore(); };
+  const cells2 = (w, h, a) => { g.save(); g.strokeStyle = `rgba(20,30,24,${a})`; g.lineWidth = 0.7; g.beginPath(); for (let k = -h; k < w + h; k += 5) { g.moveTo(k, 0); g.lineTo(k + h * 0.577, h); g.moveTo(k, 0); g.lineTo(k - h * 0.577, h); } g.stroke(); g.restore(); };
+  const cells3 = (w, h, a) => { g.save(); g.strokeStyle = `rgba(16,26,20,${a})`; g.lineWidth = 1.1; g.beginPath(); for (let k = -h; k < w + h; k += 8) { g.moveTo(k, 0); g.lineTo(k + h * 0.577, h); g.moveTo(k, 0); g.lineTo(k - h * 0.577, h); } g.stroke(); g.restore(); };
+  const edgeDirt = (w, h, seed) => { const gr = g.createLinearGradient(0, h * 0.78, 0, h); gr.addColorStop(0, 'rgba(40,36,28,0)'); gr.addColorStop(1, 'rgba(40,36,28,0.22)'); g.fillStyle = gr; g.fillRect(0, h * 0.78, w, h * 0.22); for (let i = 0; i < 9; i++) { g.fillStyle = `rgba(40,36,28,${0.05 + 0.06 * hsh(i, seed, 7)})`; g.fillRect(hsh(i, seed, 8) * w, 0, 3 + hsh(i, seed, 9) * 7, h * (0.2 + 0.5 * hsh(i, seed, 10))); } };
+  const weather = (w, h, seed, k) => { for (let i = 0; i < k; i++) { const a = hsh(i, seed), b = hsh(i, seed, 2), d = hsh(i, seed, 3); g.fillStyle = d < 0.6 ? `rgba(40,36,28,${0.02 + 0.03 * hsh(i, seed, 4)})` : `rgba(235,235,225,${0.015 + 0.025 * hsh(i, seed, 4)})`; g.fillRect(a * w, b * h, 6 + d * 16, 20 + hsh(i, seed, 5) * h * 0.6); } };
+  fam('blade', 0, 0, 1020, 228, Math.max(1, names.length), 1, (g, i, w, h) => {
+    g.fillStyle = '#0b7c52'; g.fillRect(0, 0, w, h); { const tg = g.createLinearGradient(0, 0, w, h); tg.addColorStop(0, 'rgba(255,255,255,0.07)'); tg.addColorStop(0.45, 'rgba(255,255,255,0)'); tg.addColorStop(1, 'rgba(0,0,0,0.12)'); g.fillStyle = tg; g.fillRect(0, 0, w, h); for (let q = 0; q < 5; q++) { const bx = hsh(q, i, 61) * w, by = hsh(q, i, 62) * h, br = 60 + 160 * hsh(q, i, 63), bg = g.createRadialGradient(bx, by, 0, bx, by, br); bg.addColorStop(0, hsh(q, i, 64) < 0.5 ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)'); bg.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = bg; g.fillRect(0, 0, w, h); } }
+    g.strokeStyle = '#e9eee8'; g.lineWidth = 7; rr(13, 13, w - 26, h - 26, 15); g.stroke();
+    const nm = (names[i] || 'Broadway').toUpperCase(), m = nm.match(/^(?:([EWNS]) )?(.*?)(?: (ST|AV|AVE|PL|SQ|RD|BLVD|S))?$/), cap = h * 0.6, base = h / 2 + cap / 2, col = '#f6f9f4';
+    const pre = m && m[1] ? m[1] : '', mid = m ? m[2] : nm, suf = m && m[3] ? m[3] : '', sc = 0.58, gp = cap * 0.42;
+    let tw = (pre ? gothicWidth(pre, cap) + gp : 0) + gothicWidth(mid, cap) + (suf ? gp * 0.6 + gothicWidth(suf, cap * sc) : 0); const k = Math.min(1, (w - 90) / tw); let x = w / 2 - tw * k / 2;
+    if (pre) { x += gothic(g, pre, x, base, cap, col, { maxW: gothicWidth(pre, cap) * k }) + gp * k; }
+    x += gothic(g, mid, x, base, cap, col, { maxW: gothicWidth(mid, cap) * k });
+    if (suf) gothic(g, suf, x + gp * 0.6 * k, base - cap * (1 - sc), cap * sc, col, { maxW: gothicWidth(suf, cap * sc) * k });
+    cells3(w, h, 0.12); edgeDirt(w, h, 300 + i); edgeDirt(w, h, 311 + i); weather(w, h, 300 + i, 22); for (let q = 0; q < 7; q++) { g.strokeStyle = `rgba(225,232,226,${0.1 + 0.16 * hsh(q, i, 71)})`; g.lineWidth = 0.8 + hsh(q, i, 72); g.beginPath(); const sx = hsh(q, i, 73) * w, sy = hsh(q, i, 74) * h; g.moveTo(sx, sy); g.lineTo(sx + (hsh(q, i, 75) - 0.5) * 140, sy + (hsh(q, i, 76) - 0.5) * 50); g.stroke(); }
+    { const eg = g.createLinearGradient(0, h - 16, 0, h); eg.addColorStop(0, 'rgba(30,26,20,0)'); eg.addColorStop(1, 'rgba(30,26,20,0.5)'); g.fillStyle = eg; g.fillRect(0, h - 16, w, 16); }
+  });
+  fam('oneway', 0, 940, 1020, 336, 2, 1, (g, i, w, h) => {
+    const dir = i ? -1 : 1; g.fillStyle = '#121212'; g.fillRect(0, 0, w, h); g.strokeStyle = '#ecece8'; g.lineWidth = 8; rr(12, 12, w - 24, h - 24, 18); g.stroke();
+    g.save(); g.translate(w / 2, h / 2); g.scale(dir, 1); g.fillStyle = '#f3f3ef'; g.beginPath(); g.moveTo(-0.435 * w, -0.215 * h); g.lineTo(0.215 * w, -0.215 * h); g.lineTo(0.215 * w, -0.36 * h); g.lineTo(0.45 * w, 0); g.lineTo(0.215 * w, 0.36 * h); g.lineTo(0.215 * w, 0.215 * h); g.lineTo(-0.435 * w, 0.215 * h); g.closePath(); g.fill(); g.restore();
+    gothic(g, 'ONE WAY', w / 2 - 0.09 * w * dir, h / 2 + 0.118 * h, 0.236 * h, '#121212', { align: 'c', weight: 1.08 }); cells2(w, h, 0.07); edgeDirt(w, h, 320 + i); weather(w, h, 320 + i, 12);
+  });
+  const PS = [['r', 'NO', 'STANDING', 'ANYTIME'], ['r', 'NO PARKING', '8AM-6PM', 'MON THRU FRI'], ['r', 'NO', 'STOPPING', 'ANYTIME'], ['r', 'TRUCK', 'LOADING', 'ONLY', '7AM-7PM']];
+  fam('park', 1028, 0, 380, 570, 4, 2, (g, i, w, h) => {
+    const P = PS[i], col = '#b5231c'; g.fillStyle = '#efeee8'; g.fillRect(0, 0, w, h); g.strokeStyle = col; g.lineWidth = 12; rr(16, 16, w - 32, h - 32, 26); g.stroke();
+    const lines = P.slice(1), top = 78, room = h * 0.6, lh = room / lines.length, cap = Math.min(64, lh * 0.62); lines.forEach((t, k) => gothic(g, t, w / 2, top + lh * k + (lh + cap) / 2, cap, col, { align: 'c', maxW: w - 86 }));
+    const ay = h - 86; g.fillStyle = col; g.fillRect(w * 0.27, ay - 8, w * 0.46, 16); g.beginPath(); g.moveTo(w * 0.14, ay); g.lineTo(w * 0.3, ay - 30); g.lineTo(w * 0.3, ay + 30); g.fill(); if (i !== 3) { g.beginPath(); g.moveTo(w * 0.86, ay); g.lineTo(w * 0.7, ay - 30); g.lineTo(w * 0.7, ay + 30); g.fill(); }
+    g.fillStyle = '#8d8f8c'; g.beginPath(); g.arc(w / 2, 38, 8, 0, TAU); g.arc(w / 2, h - 36, 8, 0, TAU); g.fill(); cells2(w, h, 0.07); edgeDirt(w, h, 340 + i); weather(w, h, 340 + i, 14);
+  });
+  fam('white', 1900, 1900, 48, 48, 1, 1, (g, i, w, h) => { g.fillStyle = '#ffffff'; g.fillRect(-4, -4, w + 8, h + 8); });
+  // the pedestrian faces: a hand and a walking figure made of LED dots
+  fam('ped', 1028, 1160, 384, 384, 2, 2, (g, i, w, h) => {
+    g.fillStyle = '#050505'; g.fillRect(0, 0, w, h);
+    const t = document.createElement('canvas'); t.width = w; t.height = h; const q = t.getContext('2d'); if (!q || !q.save) return; const s = w / 96 * 0.96; q.save(); q.translate(w * 0.02, h * 0.02); q.scale(s, s);
+    const r2 = (x, y, ww, hh, r) => { q.beginPath(); q.moveTo(x + r, y); q.lineTo(x + ww - r, y); q.arcTo(x + ww, y, x + ww, y + r, r); q.lineTo(x + ww, y + hh - r); q.arcTo(x + ww, y + hh, x + ww - r, y + hh, r); q.lineTo(x + r, y + hh); q.arcTo(x, y + hh, x, y + hh - r, r); q.lineTo(x, y + r); q.arcTo(x, y, x + r, y, r); q.closePath(); q.fill(); };
+    if (i === 0) { q.fillStyle = '#ff5a14'; r2(29, 44, 38, 38, 10); for (let k = 0; k < 4; k++) r2(30 + k * 9.4, 13 + Math.abs(k - 1.4) * 4.5, 7.8, 40, 3.9); q.save(); q.translate(27, 62); q.rotate(-0.62); r2(-5, -18, 9.5, 27, 4.5); q.restore(); }
+    else { q.fillStyle = '#eef3ff'; q.strokeStyle = '#eef3ff'; q.lineCap = 'round'; q.lineJoin = 'round'; q.beginPath(); q.arc(55, 15, 7.5, 0, TAU); q.fill(); q.lineWidth = 10; q.beginPath(); q.moveTo(51, 29); q.lineTo(46, 53); q.stroke(); q.lineWidth = 7; q.beginPath(); q.moveTo(47, 53); q.lineTo(60, 68); q.lineTo(63, 86); q.moveTo(46, 54); q.lineTo(38, 69); q.lineTo(26, 82); q.moveTo(51, 31); q.lineTo(65, 44); q.lineTo(75, 41); q.moveTo(50, 31); q.lineTo(37, 40); q.lineTo(31, 53); q.stroke(); }
+    q.restore(); g.save(); g.globalAlpha = 0.28; g.filter = 'blur(9px)'; g.drawImage(t, 0, 0); g.restore(); q.globalCompositeOperation = 'destination-in'; q.fillStyle = '#fff'; const pt = w / 34; q.beginPath(); for (let yy = 0; yy < 37; yy++) for (let xx = 0; xx < 35; xx++) { const cx = (xx + (yy % 2 ? 0.5 : 0)) * pt, cy = yy * pt * 0.94; q.moveTo(cx + pt * 0.36, cy); q.arc(cx, cy, pt * 0.36, 0, TAU); } q.fill();
+    g.drawImage(t, 0, 0);
+  });
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 16; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter;
+  return { tex: t, cells };
+}
+
 // ------------------------------------------------------------------------------------------------ materials
+const WEAR = { wear: { value: null }, rust: { value: null }, paint: { value: null }, painth: { value: null } };
+function loadWear(A) {
+  const one = (rgb) => { const t = new THREE.DataTexture(new Uint8Array([rgb[0], rgb[1], rgb[2], 255]), 1, 1); t.needsUpdate = true; return t; };
+  WEAR.wear.value = one([255, 115, 128]); WEAR.rust.value = one([120, 60, 30]); WEAR.paint.value = one([209, 209, 209]); WEAR.painth.value = one([81, 70, 0]);
+  const ld = (file, slot, srgb) => new Promise((res) => { try { new THREE.TextureLoader().load(A + 'tex/' + file, (t) => { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = 4; slot.value = t; res(); }, undefined, () => { console.log('[streets] furniture: ' + file + ' not loaded'); res(); }); } catch (e) { res(); } });
+  return Promise.all([ld('wear.jpg', WEAR.wear, false), ld('rust.jpg', WEAR.rust, true), ld('paint.jpg', WEAR.paint, true), ld('painth.jpg', WEAR.painth, false)]);
+}
 const FRAG_COMMON = /* glsl */`
-  varying vec3 vWPos; varying vec4 vFw;
+  varying vec3 vWPos; varying vec4 vFw; varying vec3 vWN; uniform sampler2D tWear; uniform sampler2D tRust; uniform sampler2D tPaint; uniform sampler2D tPaintH; uniform vec3 uSunDir; float fBump; float fPole; float fPoleR; float fArm; float fGloss; float fEnam; float fVis; float fShade; float fHsh; varying vec4 vHL; varying vec3 vSunL;
   uniform sampler2D tLight; uniform vec2 uHalf; uniform vec3 uSunColor; uniform float uShadowFar; uniform vec3 uShadowCenter;
   vec3 bakeV; vec3 bakeN; float fRust; float fBase; vec3 fEmit;
   float fH(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -185,10 +311,10 @@ const FRAG_COMMON = /* glsl */`
 function patch(m, shared, mode, extra = '') {
   const f = mode === 'f';
   m.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, { tLight: shared.tLight, uHalf: shared.uHalf, uSunColor: shared.uSunColor, uShadowFar: shared.uShadowFar, uShadowCenter: shared.uShadowCenter });
+    Object.assign(sh.uniforms, { tLight: shared.tLight, uHalf: shared.uHalf, uSunColor: shared.uSunColor, uShadowFar: shared.uShadowFar, uShadowCenter: shared.uShadowCenter, tWear: WEAR.wear, tRust: WEAR.rust, tPaint: WEAR.paint, tPaintH: WEAR.painth, uSunDir: shared.uSunDir });
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
-        varying vec3 vWPos; varying vec4 vFw; ${f ? 'attribute vec4 aW; attribute vec3 aTint; attribute vec2 aCell;' : ''}`)
+        varying vec3 vWPos; varying vec4 vFw; varying vec3 vWN; attribute vec2 aBand; float fCull; ${f ? 'attribute vec4 aW; attribute vec3 aTint; attribute vec2 aCell; attribute vec4 aHL; varying vec4 vHL; varying vec3 vSunL; uniform vec3 uSunDir;' : ''}`)
       .replace('#include <uv_vertex>', `#include <uv_vertex>
         ${f ? `#ifdef USE_MAP
           vMapUv += aCell * aW.z;
@@ -196,11 +322,22 @@ function patch(m, shared, mode, extra = '') {
       .replace('#include <color_vertex>', `#include <color_vertex>
         ${f ? 'vColor.rgb *= mix(vec3(1.0), aTint, aW.w);' : ''}`)
       .replace('#include <begin_vertex>', `#include <begin_vertex>
-        { vec4 fP = vec4(transformed, 1.0); vec4 fO = vec4(0.0, 0.0, 0.0, 1.0);
+        { vec4 fP = vec4(transformed, 1.0); vec4 fO = vec4(0.0, 0.0, 0.0, 1.0); vec3 fN = normal;
         #ifdef USE_INSTANCING
-          fP = instanceMatrix * fP; fO = instanceMatrix * fO;
+          fP = instanceMatrix * fP; fO = instanceMatrix * fO; fN = mat3(instanceMatrix) * fN;
         #endif
-        fP = modelMatrix * fP; fO = modelMatrix * fO; vWPos = fP.xyz; vFw = vec4(${f ? 'aW.x, aW.y' : '0.0, 0.0'}, fP.y - fO.y, 0.0); }`);
+        vWN = normalize(mat3(modelMatrix) * fN);
+        fP = modelMatrix * fP; fO = modelMatrix * fO; fCull = 0.0;
+        ${f ? `{ float hyaw = aHL.w > 50.0 ? aHL.w - 100.0 : aHL.w; vHL = vec4(aHL.xyz, aHL.x > 500.0 ? -1.0 : (aHL.w > 50.0 ? 0.32 : 0.27)); vec3 sP = uSunDir;
+        #ifdef USE_INSTANCING
+          sP = normalize(transpose(mat3(instanceMatrix)) * sP);
+        #endif
+          float hc = cos(hyaw), hs = sin(hyaw); vSunL = vec3(hc * sP.x - hs * sP.z, sP.y, hs * sP.x + hc * sP.z); }` : ''}
+        #ifdef USE_INSTANCING
+          if (aBand.y > 0.5) { float fBd = distance(cameraPosition.xz, fO.xz); if (fBd >= aBand.y || fBd < aBand.x) fCull = 1.0; }      // each instance is drawn only inside its own distance band (a tile is drawn whole otherwise)
+        #endif
+        vWPos = fP.xyz; vFw = vec4(${f ? 'aW.x, aW.y' : '0.0, 0.0'}, fP.y - fO.y, 0.0); }`);
+    sh.vertexShader = sh.vertexShader.replace('#include <fog_vertex>', '#include <fog_vertex>\n        if (fCull > 0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\n' + FRAG_COMMON)
       .replace('#include <color_fragment>', `#include <color_fragment>
@@ -211,31 +348,84 @@ function patch(m, shared, mode, extra = '') {
           float n3 = fN(vec2((wp.x - wp.z) * 23.0, wp.y * 19.0 + wp.x * 7.0));
           ${extra}
           ${f ? `
-          diffuseColor.rgb *= 0.74 + 0.2 * n2 + 0.16 * n1;
-          float lum = dot(diffuseColor.rgb, vec3(0.3, 0.5, 0.2)); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(lum) * 1.06, 0.22 * n2);          // sun fade
-          fRust = smoothstep(0.86 - vFw.x * 0.5, 0.98 - vFw.x * 0.45, n2 * 0.55 + n3 * 0.45);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.085, 0.045, 0.026) * (0.6 + 0.8 * n3), fRust * 0.8);
-          float chip = step(0.9, fN(wp.xy * 67.0 + wp.z * 43.0)) * step(0.5, n2) * (1.0 - vFw.y) * step(0.02, vFw.x);
-          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.19, 0.19, 0.185), chip * 0.55);` : `
-          diffuseColor.rgb *= 0.86 + 0.2 * n2; fRust = 0.0;`}
-          fBase = smoothstep(0.5, 0.0, vFw.z) * (0.35 + 0.65 * n2) + 0.25 * smoothstep(0.62, 0.9, n1 * n2 * 2.0);
+          fEnam = step(0.03, vFw.y) * step(vFw.y, 0.07);                                    // glossy enamel: signal housings, visors, lens glass
+          fPole = step(0.2, vFw.y) * step(vFw.y, 0.55); fBump = 0.0; fPoleR = 0.0; fArm = step(0.43, vFw.y) * step(vFw.y, 0.44); float fSheet = step(0.09, vFw.y) * step(vFw.y, 0.11);       // reflective sign sheeting
+          // the sun shadow of a signal head's own visors (the sun shadow map is far too coarse for this): the ray to the sun against the three visor skins
+          fHsh = 0.0;
+          if (vHL.w > 0.0) { vec3 hP = vHL.xyz, hD = normalize(vSunL); float ha = dot(hD.yz, hD.yz);
+            if (ha > 1e-4) for (int hk = -1; hk <= 1; hk++) { vec2 hq = vec2(hP.y - float(hk) * 0.345, hP.z); if (hP.x > 0.0 && abs(length(hq) - 0.16) < 0.016) continue; float hb = dot(hq, hD.yz), hc2 = dot(hq, hq) - 0.0256, hd = hb * hb - ha * hc2;
+              if (hd > 0.0) { float hs2 = sqrt(hd); for (int hj = 0; hj < 2; hj++) { float ht = (-hb + (hj == 0 ? -hs2 : hs2)) / ha; if (ht > 0.012) { float hX = hP.x + ht * hD.x, htt = hX / vHL.w; vec2 hh = hq + ht * hD.yz;
+                float hlen = 0.8 + 0.2 * clamp((hh.x / 0.15 + 0.75) / 1.5, 0.0, 1.0); if (hX > 0.004 && htt < hlen && abs(atan(hh.y, hh.x)) < 2.70 * (1.0 - 0.07 * htt / hlen)) fHsh = 1.0; } } } } }
+          float fFace = gl_FrontFacing ? 1.0 : -1.0;
+          diffuseColor.rgb *= mix(mix(0.74 + 0.2 * n2 + 0.16 * n1, 1.08 + 0.05 * n2, fEnam), 1.08 + 0.04 * n1, fSheet) * (0.86 + 0.14 * max(fEnam, fSheet) + 0.28 * n3 * step(0.15, vFw.y) * (1.0 - 0.8 * fArm));
+          float lum = dot(diffuseColor.rgb, vec3(0.3, 0.5, 0.2)); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(lum) * 1.06, 0.22 * n2 * (1.0 - fEnam) * (1.0 - fSheet));          // sun fade
+          // scanned wear, projected along the two horizontal axes and blended by the surface normal
+          vec3 an = abs(vWN); float wz = an.z / max(1e-3, an.x + an.z); vec2 ua = vec2(wp.x, wp.y) * 0.85 + vec2(wp.z * 0.37, 0.0), ub = vec2(wp.z, wp.y) * 0.85 + vec2(wp.x * 0.37, 0.0);
+          // the six scan reads only within a near band of the camera (cost): beyond it the neutral values
+          vec3 wr = vec3(1.0, 0.45, 0.5), wr2 = wr, rs = vec3(0.2, 0.09, 0.05);
+          float fNear = 1.0 - smoothstep(38.0, 52.0, distance(cameraPosition, wp));
+          vec2 dax = dFdx(ua), day = dFdy(ua), dbx = dFdx(ub), dby = dFdy(ub);
+          if (fNear > 0.0) {
+            vec3 w1 = mix(textureGrad(tWear, ub, dbx, dby).rgb, textureGrad(tWear, ua, dax, day).rgb, wz), w2 = mix(textureGrad(tWear, ub * 3.7, dbx * 3.7, dby * 3.7).rgb, textureGrad(tWear, ua * 3.7, dax * 3.7, day * 3.7).rgb, wz);
+            rs = mix(textureGrad(tRust, ub * 2.0, dbx * 2.0, dby * 2.0).rgb, textureGrad(tRust, ua * 2.0, dax * 2.0, day * 2.0).rgb, wz);
+            wr = mix(wr, w1, fNear); wr2 = mix(wr2, w2, fNear);
+            if (fEnam > 0.0 && vFw.y > 0.045) {      // signal enamel: the same scan, small and sparse: chips down to grey primer, a rust speck here and there, slow fading
+              vec2 ea = ua * 1.9 + 0.23, eb = ub * 1.9 + 0.61; vec3 ec = mix(texture2D(tPaint, eb).rgb, texture2D(tPaint, ea).rgb, wz), el = mix(texture2D(tPaint, eb * 0.09).rgb, texture2D(tPaint, ea * 0.09).rgb, wz);
+              float eLum = dot(ec, vec3(0.333)), eChip = 0.45 * (1.0 - smoothstep(0.3, 0.42, eLum)) * fNear * smoothstep(0.45, 0.7, n2), eRust = smoothstep(0.06, 0.16, ec.r - ec.b) * fNear;
+              diffuseColor.rgb *= mix(1.0, 0.86 + 0.2 * dot(el, vec3(0.333)) / 0.62, fNear);
+              diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.36, 0.35, 0.31), 0.72 * eChip * (1.0 - eRust)); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.3, 0.13, 0.05), 0.7 * eRust); fPoleR += 0.3 * max(eChip, eRust); }
+            if (fPole > 0.0) {       // painted steel of poles, arms and brackets: a scan (colour, relief, roughness), wrapped round by the same two projections
+              vec2 pa = ua * 0.62 + 0.37, pb2 = ub * 0.62 + 0.11; float pUp = step(abs(vWN.y), 0.35);
+              float pw = wz; if (pUp > 0.5) { pa = vec2(abs(atan(vWN.z, vWN.x)) * 0.075, wp.y * 0.53) + 0.37; pb2 = pa; }
+              vec3 pc = mix(textureGrad(tPaint, pb2, dbx * 0.62, dby * 0.62).rgb, textureGrad(tPaint, pa, dax * 0.62, day * 0.62).rgb, pw); vec2 ph = mix(textureGrad(tPaintH, pb2, dbx * 0.62, dby * 0.62).rg, textureGrad(tPaintH, pa, dax * 0.62, day * 0.62).rg, pw);
+              vec3 pl = mix(texture2D(tPaint, pb2 * 0.13).rgb, texture2D(tPaint, pa * 0.13).rgb, wz);          // the same scan very large: slow drifts of tone along the pole
+              vec3 pcc = pc / mix(0.6, 0.82, pUp); { float pl2 = dot(pcc, vec3(0.333)); pcc = mix(vec3(0.84), pcc, 0.35 + 0.65 * smoothstep(0.7, 0.84, pl2)); }
+              diffuseColor.rgb *= mix(vec3(1.0), pcc * (0.55 + 0.5 * dot(pl, vec3(0.333)) / 0.82) * (0.9 + 0.2 * n1), fNear * fPole);      // arms and brackets (not upright) keep the zinc's own brightness
+              fBump = clamp(ph.x - 0.316, -0.12, 0.1) * fNear * fPole; fPoleR = (ph.y - 0.27) * fNear * fPole; }
+          }
+          float prone = clamp(vFw.x * 1.3, 0.0, 1.0);                                       // how readily this surface chips and rusts
+          fRust = (1.0 - smoothstep(0.05 + 0.5 * prone, 0.3 + 0.55 * prone, wr.r * 0.75 + wr2.r * 0.25)) * step(0.01, vFw.x) * (1.0 - 0.9 * fEnam) * (1.0 - 0.45 * step(0.40, vFw.y) * step(vFw.y, 0.44) - 0.5 * fArm);
+          diffuseColor.rgb *= mix(0.9 + 0.2 * wr.b, 0.97 + 0.06 * wr.b, fEnam);                                            // tone drift inside the paint or zinc
+          { vec3 rc = rs * rs * (0.5 + 0.5 * n3); rc = mix(vec3(dot(rc, vec3(0.3, 0.5, 0.2))), rc, 0.55) * 0.8; diffuseColor.rgb = mix(diffuseColor.rgb, rc, fRust * 0.85); }
+          fGloss = ((wr.g - 0.45) * 0.5 + (wr2.g - 0.45) * 0.3) * (1.0 - 0.6 * fEnam) * (1.0 - fSheet);
+          float chip = step(0.9, fN(wp.xy * 67.0 + wp.z * 43.0)) * step(0.5, n2) * (1.0 - vFw.y) * step(0.02, vFw.x) * (1.0 - fEnam);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.19, 0.19, 0.185), chip * 0.55);
+          diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.9 + vec3(0.07, 0.065, 0.055), 0.5 * fEnam * step(0.045, vFw.y) * smoothstep(0.55, 0.95, vWN.y));      // dust on what faces the sky
+          float fZinc = step(0.40, vFw.y) * step(vFw.y, 0.44) * step(abs(vWN.y), 0.5);                         // upright painted steel: shafts of signal poles and lamp posts
+          float fCoat = fZinc * (1.0 - smoothstep(2.38, 2.46, vFw.z + 0.05 * (n2 - 0.5))) * step(0.95, vFw.z);                 // the grey anti-poster coat low on the shaft
+          diffuseColor.rgb *= 1.0 - 0.32 * fCoat; fPoleR += 0.2 * fCoat;
+          { float sa = atan(vWN.z, vWN.x); float sk = fN(vec2(sa * 4.0 + floor(wp.x * 0.5) * 3.1, 1.7)) * fN(vec2(sa * 13.0, wp.y * 0.35 + 5.0)); diffuseColor.rgb *= 1.0 - (0.4 * fZinc + 0.2 * fEnam * step(0.5, 1.0 - abs(vWN.y))) * smoothstep(0.3, 0.62, sk); diffuseColor.rgb *= 1.0 - 0.1 * fEnam * smoothstep(0.45, 0.8, n2); }
+          // a lit side and a shade side: the sky opposite the sun and the street below give less light than the even sky light assumes
+          float sunSide = dot(normalize(vWN) * fFace, uSunDir);
+          diffuseColor.rgb *= mix(0.58 + 0.3 * fSheet + 0.12 * fZinc + 0.24 * fArm - 0.04 * fEnam * step(0.045, vFw.y), 1.0 + 0.12 * fZinc, smoothstep(-0.5, 0.25, sunSide)) * mix(0.72 - 0.14 * fEnam * step(0.045, vFw.y), 1.0, smoothstep(-0.95, -0.2, vWN.y * fFace));
+          { float eb = fEnam * step(0.045, vFw.y) * smoothstep(0.3, 0.95, sunSide); diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 1.22 + vec3(0.0, 0.085, 0.022), eb); }
+          fVis = step(0.057, vFw.y) * step(vFw.y, 0.063) * step(fFace, 0.0);                  // the inside of a visor: matt black, a little lighter toward its mouth
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.03, 0.03, 0.028) * (1.0 + 3.5 * smoothstep(0.2, 1.0, clamp(vHL.x / max(0.05, vHL.w), 0.0, 1.0))), fVis);
+          float fGlass = step(0.036, vFw.y) * step(vFw.y, 0.044);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vColor.rgb * 0.7, fGlass); fGloss *= 1.0 - fGlass;
+          fShade = max(fVis, fGlass); bakeV.r *= 1.0 - 0.78 * fVis - 0.2 * fGlass;` : `
+          diffuseColor.rgb *= 0.86 + 0.2 * n2; fRust = 0.0; fGloss = 0.0; fEnam = 0.0; fVis = 0.0; fShade = 0.0; fHsh = 0.0; fBump = 0.0; fPole = 0.0; fPoleR = 0.0; fArm = 0.0;`}
+          fBase = smoothstep(0.5, 0.0, vFw.z) * (0.35 + 0.65 * n2) + 0.25 * (1.0 - 0.85 * fEnam) * smoothstep(0.62, 0.9, n1 * n2 * 2.0);
           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.06, 0.054, 0.047), clamp(fBase, 0.0, 1.0) * 0.62);
-          fEmit = diffuseColor.rgb * max(0.0, -vFw.x);
+          fEmit = diffuseColor.rgb * max(0.0, -vFw.x) + diffuseColor.rgb * 0.5 * fArm * (0.35 + 0.65 * smoothstep(0.3, -0.7, vWN.y)) * bakeV.g;
         }`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        if (fPole > 0.0) { vec2 bD = vec2(dFdx(fBump), dFdy(fBump)) * 0.007; vec3 bSx = dFdx(-vViewPosition), bSy = dFdy(-vViewPosition), bR1 = cross(bSy, normal), bR2 = cross(normal, bSx); float bDet = dot(bSx, bR1);
+          normal = normalize(abs(bDet) * normal - sign(bDet) * (bD.x * bR1 + bD.y * bR2)); }`)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n        totalEmissiveRadiance += fEmit;')
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-        roughnessFactor = clamp(roughnessFactor + 0.3 * fRust + 0.3 * fBase, 0.2, 1.0);`)
+        roughnessFactor = clamp(roughnessFactor - 0.42 * fEnam + 0.22 * step(0.036, vFw.y) * step(vFw.y, 0.044) - 0.16 * step(0.4, vFw.y) * step(vFw.y, 0.44) + 0.7 * fVis + fGloss + 0.35 * fRust + 0.3 * fBase + 1.4 * fPoleR, 0.06, 1.0);      // metal value 0.05 marks glossy enamel`)
       .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
-        ${f ? 'metalnessFactor = vFw.y * (1.0 - fRust) * (1.0 - 0.6 * clamp(fBase, 0.0, 1.0));' : ''}`)
-      .replace('#include <aomap_fragment>', '#include <aomap_fragment>\n' + BAKE_LIGHT_GLSL);
+        ${f ? 'metalnessFactor = vFw.y * step(0.07, vFw.y) * (1.0 - fRust) * (1.0 - 0.6 * clamp(fBase, 0.0, 1.0)) * (1.0 - 0.75 * fArm);' : ''}`)
+      .replace('#include <aomap_fragment>', '#include <aomap_fragment>\n' + BAKE_LIGHT_GLSL + '\n        reflectedLight.indirectSpecular *= 1.0 - 0.88 * fVis - 0.2 * (fShade - fVis); reflectedLight.indirectDiffuse *= 1.0 - 0.5 * fShade; reflectedLight.directSpecular *= (1.0 - 0.92 * fShade) * (1.0 - fHsh) * (1.0 + 3.0 * fEnam * step(0.045, vFw.y)); reflectedLight.directDiffuse *= (1.0 - 0.75 * fShade) * (1.0 - 0.93 * fHsh);');
   };
-  const key = 'stfurn4' + mode + extra.length + (m.transparent ? 't' : 'o');
+  const key = 'stfurn51' + mode + extra.length + (m.transparent ? 't' : 'o');
   m.customProgramCacheKey = () => key;
   return m;
 }
 
 // ------------------------------------------------------------------------------------------------ prototype builder
-const GAL = { w: [0.2, 0.55] }, PAINT = { w: [0.3, 0] }, IRON = { w: [0.36, 0.25] }, PLAIN = { w: [0, 0] }, STEEL = { w: [0.12, 0.7] };
+const GAL = { w: [0.035, 0.42] }, PAINT = { w: [0.3, 0] }, IRON = { w: [0.36, 0.25] }, PLAIN = { w: [0, 0] }, STEEL = { w: [0.12, 0.7] };
 const _m = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler();
 class PB {
   constructor(atlas) { this.A = atlas; this.list = []; }
@@ -252,7 +442,7 @@ class PB {
       else { uv[i * 2] = (cell.u0 + cell.u1) / 2; uv[i * 2 + 1] = (cell.v0 + cell.v1) / 2; }
     }
     const out = new THREE.BufferGeometry(); out.setAttribute('position', P); out.setAttribute('normal', g.attributes.normal); out.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    out.setAttribute('color', new THREE.BufferAttribute(c, 3)); out.setAttribute('aW', new THREE.BufferAttribute(w, 4));
+    out.setAttribute('color', new THREE.BufferAttribute(c, 3)); out.setAttribute('aW', new THREE.BufferAttribute(w, 4)); { const hl = new Float32Array(n * 4); for (let i = 0; i < n; i++) hl[i * 4] = 1000; out.setAttribute('aHL', new THREE.BufferAttribute(hl, 4)); }
     this.list.push(out); return this;
   }
   mat(c, o = {}, s = ONE) { _e.set(o.rx || 0, o.ry || 0, o.rz || 0, 'YXZ'); _q.setFromEuler(_e); return _m.compose(V(c), _q, s).clone(); }
@@ -267,14 +457,16 @@ class PB {
   // a flat face from the atlas, facing +Z unless turned (ry = PI/2 faces +X); double: a readable back face too
   quad(cell, c, w, h, o = {}) {
     const off = o.double ? 0.004 : 0, m = this.mat(c, o), nz = new THREE.Vector3(0, 0, 1).transformDirection(m);
-    this.push(new THREE.PlaneGeometry(w, h), o.col || WHITE, Object.assign({ w: [0.05, 0] }, o, { cell }), this.mat([c[0] + nz.x * off, c[1] + nz.y * off, c[2] + nz.z * off], o));
+    this.push(new THREE.PlaneGeometry(w, h, o.seg || 1, 1), o.col || WHITE, Object.assign({ w: [0.05, 0] }, o, { cell }), this.mat([c[0] + nz.x * off, c[1] + nz.y * off, c[2] + nz.z * off], o));
     if (o.double) { const o2 = Object.assign({}, o, { ry: (o.ry || 0) + PI }); if (o.back !== undefined) { if (o.back === null) { o2.col = o.backCol || C('#7d8182'); return this.push(new THREE.PlaneGeometry(w, h), o2.col, { w: [0.1, 0.4] }, this.mat([c[0] - nz.x * off, c[1] - nz.y * off, c[2] - nz.z * off], o2)); } Object.assign(o2, o.back); }
-      this.push(new THREE.PlaneGeometry(w, h), o2.col || WHITE, Object.assign({ w: [0.05, 0] }, o2, { cell: o2.cell || cell }), this.mat([c[0] - nz.x * off, c[1] - nz.y * off, c[2] - nz.z * off], o2)); }
+      this.push(new THREE.PlaneGeometry(w, h, o.seg || 1, 1), o2.col || WHITE, Object.assign({ w: [0.05, 0] }, o2, { cell: o2.cell || cell }), this.mat([c[0] - nz.x * off, c[1] - nz.y * off, c[2] - nz.z * off], o2)); }
     return this;
   }
   // a patch of the atlas wrapped on a vertical pole of radius r, centred at height y and angle ang (0 = +Z, PI/2 = +X)
-  wrap(cell, r, y, ang, w, h, o = {}) { const g = new THREE.CylinderGeometry(r, r, h, 4, 1, true, ang - w / (2 * r), w / r); return this.push(g, o.col || WHITE, Object.assign({ w: [0.05, 0] }, o, { cell }), this.mat([o.x || 0, y, o.z || 0])); }
+  wrap(cell, r, y, ang, w, h, o = {}) { const g = new THREE.CylinderGeometry(r, r, h, Math.max(4, Math.ceil(w / r * 5)), 1, true, ang - w / (2 * r), w / r); return this.push(g, o.col || WHITE, Object.assign({ w: [0.05, 0] }, o, { cell }), this.mat([o.x || 0, y, o.z || 0])); }
   merge(pb, m) { for (const g of pb.list) { const c = g.clone(); c.applyMatrix4(m); this.list.push(c); } return this; }
+  // mark every piece as part of a signal head: its position in the head's own frame (lens radius scaled to 0.15), the head's yaw in the prototype
+  tagHead(s, yaw) { for (const g of this.list) { const P = g.attributes.position, H = g.attributes.aHL; for (let i = 0; i < P.count; i++) H.setXYZW(i, P.getX(i) / s, P.getY(i) / s, P.getZ(i) / s, yaw + (s < 0.9 ? 100 : 0)); } return this; }
   build() { const g = mergeGeometries(this.list, false); g.computeBoundingSphere(); g.computeBoundingBox(); return g; }
 }
 // lumps: push the vertices of a geometry in and out by a hash of where they are, then shade it faceted
@@ -289,95 +481,145 @@ function lumpySmooth(geo, amp, seed = 0) {
   const P = geo.attributes.position; for (let i = 0; i < P.count; i++) { const x = P.getX(i), y = P.getY(i), z = P.getZ(i), k = 1 + amp * (hsh(Math.round(x * 97), Math.round(y * 97) + seed, Math.round(z * 97)) - 0.5) * 2 + amp * Math.sin(x * 5 + seed) * Math.cos(z * 6 + y * 4); P.setXYZ(i, x * k, y * k, z * k); }
   geo.computeVertexNormals(); return geo;
 }
+const headM = (h) => new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(h.tx || 0, h.yaw, h.tz || 0, 'YXZ')).setPosition(h.x, h.y, h.z);
+// a shallow dome (a signal lens): rim circle of radius rc in the plane x = 0, bulging toward +X; uv = a flat projection of the disc
+function domeGeo(rc, ws = 16, hs = 3) { const a = 0.38, Rs = rc / Math.sin(a), g = new THREE.SphereGeometry(Rs, ws, hs, 0, TAU, 0, a); g.rotateZ(-PI / 2); g.translate(-Rs * Math.cos(a), 0, 0);
+  const Pd = g.attributes.position, U = g.attributes.uv; for (let q = 0; q < Pd.count; q++) U.setXY(q, 0.5 + Pd.getZ(q) / (2 * rc), 0.5 + Pd.getY(q) / (2 * rc)); return g; }
 // ------------------------------------------------------------------------------------------------ the prototypes
-function buildProtos(A) {
+function roundBox(sx, sy, sz, rr, n = 6) { const t0 = n === 6 ? 1 / 3 : 0.5, rb = mergeVertices(new THREE.BoxGeometry(2, 2, 2, n, n, n)), Pr = rb.attributes.position, Nr = rb.attributes.normal, hh = [sx / 2, sy / 2, sz / 2];
+  for (let q = 0; q < Pr.count; q++) { const t = [Pr.getX(q), Pr.getY(q), Pr.getZ(q)], v = t.map((a, k) => { const m = Math.abs(a), h = hh[k]; return Math.sign(a) * (m <= t0 + 1e-6 ? m / t0 * (h - rr) : h - rr + rr * Math.tan((m - t0) / (1 - t0) * PI / 4)); }),
+      c = v.map((a, k) => Math.max(-(hh[k] - rr), Math.min(hh[k] - rr, a))), dd = Math.hypot(v[0] - c[0], v[1] - c[1], v[2] - c[2]) || 1; Pr.setXYZ(q, c[0] + (v[0] - c[0]) / dd * rr, c[1] + (v[1] - c[1]) / dd * rr, c[2] + (v[2] - c[2]) / dd * rr); Nr.setXYZ(q, (v[0] - c[0]) / dd, (v[1] - c[1]) / dd, (v[2] - c[2]) / dd); }
+  return rb; }
+function buildProtos(A, A2) {
   const P = {}, pb = () => new PB(A);
-  const cGalv = C('#8d9190'), cGalvD = C('#6c7070'), cYel = C('#dba514'), cYelD = C('#b98a10'), cBlk = C('#111213'), cConc = C('#77736a'), cIron = C('#15171a');
+  const cGalv = C('#8d9293'), cGalvD = C('#7b8081'), cYel = C('#dba514'), cYelD = C('#b98a10'), cBlk = C('#111213'), cConc = C('#77736a'), cIron = C('#15171a');
   const stickers = (b, r, n, seed, y0 = 0.9, y1 = 2.3) => { for (let i = 0; i < n; i++) { const fl = hsh(seed, i, 9) < 0.22, s = fl ? 0.14 : 0.055 + 0.05 * hsh(seed, i, 1); b.wrap(fl ? 'flyer' : 'sticker', r + 0.003, y0 + (y1 - y0) * hsh(seed, i, 2), hsh(seed, i, 3) * TAU, fl ? s * 0.75 : s, s, { vary: !fl, ci: fl ? i % 4 : i % 4, cj: fl ? 0 : i % 2 }); } };
   // the cast base, footing and shaft every city pole stands on
   const pole = (b0, top, r0, r1, seed, bs = 1) => { const b = bs === 1 ? b0 : pb();
-    const cast = C('#3a3c3e'), CI = { w: [0.5, 0.35] };
-    b.cyl([0, 0, 0], [0, 0.02, 0], 0.5, 0.48, cConc, { w: [0.2, 0], seg: 10, cap: true }); b.box([0, 0.036, 0], [0.68, 0.032, 0.68], C('#35373a'), { w: [0.6, 0.35] });
+    const cast = C('#8b9091'), CI = { w: [0.14, 0.22] };
+    b.box([0, 0.006, 0], [0.74, 0.012, 0.74], C('#4a4844'), { w: [0.5, 0] }); b.box([0, 0.026, 0], [0.68, 0.036, 0.68], C('#35373a'), { w: [0.6, 0.35] });
     for (const [x, z] of [[0.28, 0.28], [-0.28, 0.28], [0.28, -0.28], [-0.28, -0.28]]) { b.cyl([x, 0.05, z], [x, 0.1, z], 0.034, 0.034, C('#2e241c'), { w: [0.9, 0.2], seg: 6, cap: true }); b.cyl([x, 0.1, z], [x, 0.14, z], 0.014, 0.014, C('#3b2a1e'), { w: [0.9, 0.2], seg: 5, cap: true }); }
-    b.lathe([[0.31, 0.02], [0.31, 0.06], [0.275, 0.08], [0.275, 0.13], [0.24, 0.21], [0.22, 0.55], [0.232, 0.56], [0.232, 0.6], [0.215, 0.61], [0.2, 0.86], [0.175, 0.93], [r0 + 0.014, 0.97]], cast, { w: [0.5, 0.35], seg: 8, spin: PI / 8 });
-    for (let k = 0; k < 8; k++) { const a = k * PI / 4; b.box([0.2 * Math.cos(a), 0.4, 0.2 * Math.sin(a)], [0.05, 0.36, 0.028], C('#333537'), { w: [0.5, 0.35], ry: -a + PI / 2 }); }
-    b.box([0, 0.38, -0.215], [0.15, 0.25, 0.022], C('#55585a'), CI); for (const [x, y] of [[0.06, 0.48], [-0.06, 0.48], [0.06, 0.28], [-0.06, 0.28]]) b.box([x, y, -0.213], [0.016, 0.016, 0.01], C('#1b1c1d'), CI);
+    b.lathe([[0.31, 0.02], [0.31, 0.06], [0.275, 0.08], [0.275, 0.13], [0.24, 0.21], [0.22, 0.55], [0.232, 0.56], [0.232, 0.6], [0.215, 0.61], [0.2, 0.86], [0.175, 0.93], [r0 + 0.014, 0.97]], cast, { w: [0.14, 0.22], seg: 8, spin: PI / 8 });
+    for (let k = 0; k < 8; k++) { const a = k * PI / 4; b.box([0.2 * Math.cos(a), 0.4, 0.2 * Math.sin(a)], [0.05, 0.36, 0.028], C('#8f9392'), { w: [0.14, 0.22], ry: -a + PI / 2 }); }
+    b.box([0, 0.38, -0.215], [0.15, 0.25, 0.022], C('#a3a7a6'), CI); for (const [x, y] of [[0.06, 0.48], [-0.06, 0.48], [0.06, 0.28], [-0.06, 0.28]]) b.box([x, y, -0.213], [0.016, 0.016, 0.01], C('#1b1c1d'), CI);
     for (let k = 0; k < 4; k++) { const a = PI / 4 + k * PI / 2, x = 0.275 * Math.cos(a), z = 0.275 * Math.sin(a); b.cyl([x, 0.05, z], [x, 0.115, z], 0.024, 0.024, C('#2e241c'), { w: [0.9, 0.2], seg: 6, cap: true }); b.cyl([x, 0.115, z], [x, 0.145, z], 0.011, 0.011, C('#3b2a1e'), { w: [0.9, 0.2], seg: 5, cap: true }); }
     if (b !== b0) b0.merge(b, new THREE.Matrix4().makeScale(bs, bs, bs));
-    b0.cyl([0, 0.97 * bs, 0], [0, top, 0], r0, r1, cGalv, Object.assign({ seg: 8, spin: PI / 8 }, GAL)); if (bs !== 1) { b0.wrap('sticker', r0 + 0.004, 1.72, PI * 0.5 + seed, 0.08, 0.11, { col: C('#d8d4c4'), ci: 7, cj: 3 }); return; }
+    b0.cyl([0, 0.97 * bs, 0], [0, top, 0], r0, r1, cGalv, Object.assign({ seg: MID ? 8 : 18, spin: PI / 8 }, GAL)); if (bs !== 1) { b0.wrap('sticker', r0 + 0.004, 1.72, PI * 0.5 + seed, 0.08, 0.11, { col: C('#d8d4c4'), ci: 7, cj: 3 }); return; }
     
-    b.cyl([0, 0.95, 0], [0, 1.02, 0], r0 + 0.016, r0 + 0.012, cast, { w: [0.5, 0.35], seg: 8, spin: PI / 8 });
+    b.cyl([0, 0.95, 0], [0, 1.02, 0], r0 + 0.016, r0 + 0.012, cast, { w: [0.14, 0.22], seg: 8, spin: PI / 8 });
     b.wrap('sticker', r0 + 0.004, 1.72, PI * 0.5 + seed, 0.08, 0.11, { col: C('#d8d4c4'), ci: 7, cj: 3 });   // the pole's number tag
   };
   // a three-section vehicle head; origin at the centre of the middle lens face, lenses face +X. R = lens radius
-  const cHead = C('#f0aa00'), cHeadD = C('#c58a06'), HP = { w: [0.16, 0] };
+  const cHead = C('#ffa500'), cHeadD = C('#e08d05'), HP = { w: [0.07, 0.05] }, VIS = { w: [0.07, 0.06] };
+  let MID = false;      // true while the mid-detail poles are being built
   const head = (b, R, side) => {
     const s = R / 0.15, w = 0.345 * s, d = 0.27;
     for (let k = -1; k <= 1; k++) {
-      b.box([-d / 2, k * w, 0], [d, w - 0.006, w - 0.012], cHead, HP); b.box([-d - 0.016, k * w, 0], [0.032, w * 0.84, w * 0.82], cHeadD, HP); b.box([-d / 2, k * w + w / 2, 0], [d + 0.006, 0.012, w - 0.004], C('#6e4d05'), HP);
-      const lc = k === 1 ? C('#3c0d0a') : k === 0 ? C('#3b2a07') : C('#07301f'); const lens = new THREE.CircleGeometry(R * 0.93, 14); lens.rotateY(PI / 2); b.push(lens, lc, { w: [0, 0.3] }, b.mat([0.003, k * w, 0]));
-      const v1 = new THREE.CylinderGeometry(R * 1.04, R * 1.1, 0.3, 12, 1, true, PI * 0.78, PI * 1.44); v1.rotateZ(-PI / 2); b.push(v1, cHead, HP, b.mat([0.15, k * w, 0]));
-      const v2 = new THREE.CylinderGeometry(R * 1.0, R * 1.06, 0.296, 12, 1, true, PI * 0.78, PI * 1.44); v2.rotateZ(-PI / 2); b.push(v2, C('#0c0c0c'), PLAIN, b.mat([0.148, k * w, 0]));
+      // one section: a housing with a round door, a long tunnel visor cut away underneath, hinge and latch
+      { const tv = 0.9 + 0.2 * hsh(k, R * 77, side + 5), sc = [cHead[0] * tv, cHead[1] * (tv - 0.03 + 0.08 * hsh(k, R * 31, 2)), cHead[2]]; b.push(roundBox(d - 0.04, w - 0.014, w - 0.02, 0.046 * s, MID ? 4 : 6), sc, HP, b.mat([-d / 2 - 0.02, k * w, 0]));
+        if (!MID) for (const sg of [-1, 1]) for (const dy of [0.11, -0.11]) { b.cyl([-0.1, k * w + dy * s, sg * (w / 2 - 0.012)], [-0.1, k * w + dy * s, sg * (w / 2 - 0.002)], 0.008 * s, 0.008 * s, cHeadD, Object.assign({ seg: 6, cap: true }, HP)); } }
+      b.cyl([-0.045, k * w, 0], [0.004, k * w, 0], R * 1.085, R * 1.085, cHead, Object.assign({ seg: MID ? 10 : 24 }, HP)); b.cyl([0.0, k * w, 0], [0.012, k * w, 0], R * 1.105, R * 1.03, [0.02, 0.02, 0.018], { seg: MID ? 10 : 24, cap: true, w: [0, 0.04] });
+      b.box([-d - 0.012, k * w, 0], [0.03, w * 0.8, w * 0.78], cHeadD, HP); 
+      if (!MID) for (const dy of [0.075, -0.075]) b.cyl([-0.024, k * w + (dy - 0.026) * s, -R * 1.135], [-0.024, k * w + (dy + 0.026) * s, -R * 1.135], 0.015 * s, 0.015 * s, cHeadD, Object.assign({ seg: 8, cap: true }, HP)); { const ly = k * w + (hsh(k, R * 37, 11 + side) - 0.5) * 0.09 * s; b.cyl([-0.03, ly, R * 1.1], [-0.03, ly, R * 1.1 + 0.02], 0.007 * s, 0.007 * s, cHeadD, Object.assign({ seg: 6, cap: true }, HP)); b.sph([-0.03, ly, R * 1.1 + 0.026], [0.013 * s, 0.028 * s, 0.01 * s], C('#b9bcba'), STEEL); }
+      // the lens: a shallow dome of dark tinted glass in the shade of its visor (darker toward the top)
+      { const lc = k === 1 ? C('#7c2219') : k === 0 ? C('#765a12') : C('#145c46'); b.push(MID ? domeGeo(R, 8, 1) : domeGeo(R), lc, { w: [0, 0.04], colFn: (px, py) => { const f = 0.35 + 0.65 * Math.min(1, Math.max(0, 0.5 - (py - k * w) / (2 * R))); return [lc[0] * f, lc[1] * f, lc[2] * f]; } }, b.mat([0.014, k * w, 0])); }
+      // tunnel visor: one skin of sheet metal (the shader paints its inside matt black), cut away underneath
+      { const VL = 0.25 * Math.sqrt(s) * (0.95 + 0.1 * hsh(k, R * 51, 7 + side)), v1 = new THREE.CylinderGeometry(R * 1.03, R * 1.045, VL, MID ? 18 : 48, MID ? 1 : 3, true, PI * 0.64, PI * 1.72); v1.rotateZ(-PI / 2); const Pv = v1.attributes.position;
+        for (let q = 0; q < Pv.count; q++) { const t = (Pv.getX(q) + VL / 2) / VL, y = Pv.getY(q), z = Pv.getZ(q), rr2 = Math.hypot(y, z), ph = Math.atan2(z, y) * (1 - 0.07 * t); Pv.setY(q, rr2 * Math.cos(ph)); Pv.setZ(q, rr2 * Math.sin(ph)); }
+        for (let q = 0; q < Pv.count; q++) { const t = (Pv.getX(q) + VL / 2) / VL, f = 0.8 + 0.2 * Math.min(1, Math.max(0, (Pv.getY(q) / R + 0.75) / 1.5)); Pv.setX(q, -VL / 2 + t * VL * f); } v1.computeVertexNormals();
+        b.push(v1, cHead, VIS, b.mat([-0.014 + VL / 2, k * w, 0], { ry: (hsh(k, R * 100, 3 + side) - 0.5) * 0.09, rz: (hsh(k, R * 100, 4 + side) - 0.5) * 0.1 })); }
     }
     const top = 1.5 * w, yb = top + 0.07;
     if (side) for (const y of [yb - 0.03, -yb + 0.03]) { b.cyl([-d / 2, y, 0], [-d / 2, y, side * 0.44], 0.026, 0.026, cHeadD, HP); b.cyl([-d / 2, y - 0.05, 0], [-d / 2, y + 0.05, 0], 0.032, 0.032, cHeadD, HP); }
-    else { b.cyl([-0.36, -yb, 0], [-0.36, yb, 0], 0.024, 0.024, cGalvD, GAL); for (const y of [yb, -yb]) { b.cyl([-0.36, y, 0], [-d / 2, y, 0], 0.024, 0.024, cGalvD, GAL); b.cyl([-d / 2, y, 0], [-d / 2, y - Math.sign(y) * 0.075, 0], 0.032, 0.032, cHeadD, HP); } }
+    else { b.cyl([-0.36, -yb, 0], [-0.36, yb, 0], 0.03, 0.03, cHead, HP); for (const y of [yb, -yb]) { b.cyl([-0.36, y, 0], [-d / 2, y, 0], 0.03, 0.03, cHead, HP); b.sph([-0.36, y, 0], 0.036, cHeadD, HP); b.cyl([-d / 2, y, 0], [-d / 2, y - Math.sign(y) * 0.075, 0], 0.032, 0.032, cHeadD, HP); } }
   };
   const pedHead = (b) => {   // origin at the face centre, facing +X
-    const pk = cHeadD, PK = HP; b.box([-0.09, 0, 0], [0.18, 0.44, 0.44], pk, PK); b.box([-0.19, 0, 0], [0.02, 0.36, 0.36], pk, PK);
-    for (const [y, z, sy, sz] of [[0.2, 0, 0.02, 0.44], [-0.2, 0, 0.02, 0.44], [0, 0.21, 0.42, 0.02], [0, -0.21, 0.42, 0.02]]) b.box([0.08, y, z], [0.16, sy, sz], pk, PK);
-    b.quad('ped', [0.004, 0, 0], 0.38, 0.38, { ry: PI / 2, ci: 2, w: [0, 0.2] });
+    b.push(roundBox(0.2, 0.46, 0.46, 0.04, MID ? 4 : 6), cHead, HP, b.mat([-0.1, 0, 0])); b.box([-0.206, 0, 0], [0.014, 0.37, 0.37], cHeadD, HP);
+    for (const [y, z, sy, sz, dx] of [[0.218, 0, 0.012, 0.448, 0.17], [-0.218, 0, 0.012, 0.448, 0.1], [0, 0.218, 0.448, 0.012, 0.135], [0, -0.218, 0.448, 0.012, 0.135]]) b.box([dx / 2 - 0.004, y, z], [dx, sy, sz], cHead, VIS);
+    for (const yy of [0.14, -0.14]) b.cyl([-0.03, yy - 0.028, 0.236], [-0.03, yy + 0.028, 0.236], 0.01, 0.01, cHead, Object.assign({ seg: 8, cap: true }, HP)); b.cyl([-0.03, 0, -0.232], [-0.03, 0, -0.25], 0.008, 0.008, C('#8d9190'), Object.assign({ seg: 6, cap: true }, STEEL)); b.sph([-0.03, 0, -0.254], [0.009, 0.018, 0.007], C('#8d9190'), STEEL);
+    b.box([-0.012, 0, 0.2315], [0.004, 0.42, 0.003], C('#3a2c06'), PLAIN); b.box([-0.012, 0, -0.2315], [0.004, 0.42, 0.003], C('#3a2c06'), PLAIN);
+    if (!MID) for (const sg of [-1, 1]) for (const [x, y] of [[-0.16, 0.17], [-0.16, -0.17], [-0.06, 0.17], [-0.06, -0.17]]) b.cyl([x, y, sg * 0.229], [x, y, sg * 0.236], 0.008, 0.008, cHeadD, Object.assign({ seg: 6, cap: true }, HP));
+    b.quad('ped', [0.004, 0, 0], 0.4, 0.4, { ry: PI / 2, ci: 2, w: [0, 0.2] });
+    if (!MID) { b.quad('sticker', [-0.1, 0.1, 0.2305], 0.06, 0.06, { ci: 3, cj: 1 }); b.cyl([-0.1, -0.23, 0], [-0.1, -0.26, 0], 0.016, 0.016, C('#2a2b2c'), { w: [0.1, 0.3], seg: 8, cap: true }); for (const yy of [0.08, 0, -0.08]) b.box([-0.2135, yy, 0], [0.003, 0.012, 0.22], C('#2a2206'), PLAIN); }
   };
   // ---- signal pole with mast arm; L = arm length. Returns where the lenses and pedestrian faces are, for the lit lamps
-  const armYof = (L) => (z) => 5.2 + 1.1 * (1 - Math.pow(1 - Math.min(1, z / L), 2.3));
+  const armYof = (L) => (z) => { const t = Math.min(1, Math.max(0, z / L)); return 5.2 + 1.2 * Math.pow(Math.sin(PI / 2 * t), 0.8); };
   const signal = (L, seed) => {
     const b = pb(), armY = armYof(L), TOP = 6.95, pr = (y) => 0.14 - 0.042 * (y - 0.97) / (TOP - 0.97);
-    pole(b, TOP, 0.14, 0.098, seed); b.sph([0, TOP, 0], [0.1, 0.06, 0.1], cGalvD, GAL);
+    pole(b, TOP, 0.14, 0.098, seed); b.cyl([0, TOP - 0.02, 0], [0, TOP + 0.05, 0], 0.11, 0.105, cGalvD, { w: [0.3, 0.25], seg: 8, cap: true }); b.sph([0, TOP + 0.1, 0], 0.06, cGalvD, GAL); b.cyl([0, TOP + 0.15, 0], [0, TOP + 0.22, 0], 0.012, 0.004, cGalvD, { seg: 5 });
+    if (L > 7) { b.cyl([0, TOP + 0.05, 0], [0, TOP + 1.1, 0], 0.085, 0.07, cGalv, Object.assign({ seg: 8 }, GAL)); b.tube([[0, TOP + 1.05, 0], [0, TOP + 1.55, 0.25], [0, TOP + 1.78, 0.9], [0, TOP + 1.8, 1.9]], 0.042, cGalv, Object.assign({ n: 12, seg: 7 }, GAL));
+      b.sph([0, TOP + 1.76, 2.2], [0.17, 0.075, 0.4], C('#7d8184'), { w: [0.2, 0.25], seg: 10, rings: 6 }); b.box([0, TOP + 1.7, 2.22], [0.2, 0.012, 0.5], C('#d9dccf'), { w: [0, 0.1] }); }
     // the arm: thick at the pole, tapering and curving up to the tip
-    const NS = 10; for (let k = 0; k < NS; k++) { const z0 = Math.max(0.06, L * k / NS), z1 = L * (k + 1) / NS; b.cyl([0, armY(z0), z0], [0, armY(z1), z1], 0.098 - 0.046 * k / NS, 0.098 - 0.046 * (k + 1) / NS, cGalv, Object.assign({ seg: 8 }, GAL)); }
-    b.cyl([0, 5.02, 0], [0, 5.4, 0], pr(5.1) + 0.02, pr(5.3) + 0.018, cGalvD, { w: [0.45, 0.4], seg: 8, spin: PI / 8 }); b.box([0, 5.22, 0.15], [0.26, 0.3, 0.06], cGalvD, { w: [0.5, 0.4] });
-    for (const [x, y] of [[0.09, 5.32], [-0.09, 5.32], [0.09, 5.12], [-0.09, 5.12]]) b.box([x, y, 0.185], [0.03, 0.03, 0.02], C('#3a3d3d'), { w: [0.7, 0.4] });
+    { const NS = MID ? 10 : 22, SD = MID ? 6 : 10, pos = [], idx = [], ra = (t) => 0.092 - 0.046 * t; for (let k = 0; k <= NS; k++) { const t = k / NS, z = Math.max(0.05, L * t), y = armY(z), dz = 0.05, sl = Math.atan2(armY(z + dz) - armY(Math.max(0, z - dz)), z + dz - Math.max(0, z - dz)), r = ra(t);
+        for (let q = 0; q < SD; q++) { const a = q / SD * TAU, cx = Math.cos(a) * r, cy = Math.sin(a) * r; pos.push(cx, y + cy * Math.cos(sl), z - cy * Math.sin(sl)); } }
+      for (let k = 0; k < NS; k++) for (let q = 0; q < SD; q++) { const a = k * SD + q, b2 = k * SD + (q + 1) % SD, c2 = a + SD, d2 = b2 + SD; idx.push(a, c2, b2, b2, c2, d2); }
+      const ag = new THREE.BufferGeometry(); ag.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); ag.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(pos.length / 3 * 2), 2)); ag.setIndex(idx); ag.computeVertexNormals(); b.push(ag, C('#c0c4c4'), { w: [0.035, 0.435] }); }
+    b.cyl([0, 4.98, 0], [0, 5.42, 0], pr(5.0) + 0.022, pr(5.4) + 0.02, cGalvD, { w: [0.35, 0.25], seg: 8, spin: PI / 8 }); b.box([0, 5.2, 0.15], [0.28, 0.34, 0.06], cGalvD, { w: [0.4, 0.25] });
+    for (const [x, y] of [[0.1, 5.32], [-0.1, 5.32], [0.1, 5.08], [-0.1, 5.08]]) { b.cyl([x, y, 0.18], [x, y, 0.215], 0.016, 0.016, C('#3a3d3d'), { w: [0.6, 0.3], seg: 6, cap: true }); }
     b.sph([0, armY(L), L], 0.054, cGalvD, GAL);
-    const gz = L * 0.6, gy = armY(gz) + 0.06; b.cyl([0, TOP - 0.1, 0.05], [0, gy, gz], 0.022, 0.022, cGalvD, { w: [0.3, 0.5], seg: 6 });
-    b.box([0, (TOP - 0.1) * 0.5 + gy * 0.5, gz * 0.5], [0.035, 0.035, 0.26], cGalvD, { w: [0.6, 0.4], rx: Math.atan2(TOP - 0.1 - gy, gz) }); b.box([0, gy - 0.02, gz], [0.14, 0.06, 0.08], cGalvD, { w: [0.5, 0.4] }); b.box([0, TOP - 0.1, 0.07], [0.17, 0.07, 0.09], cGalvD, { w: [0.5, 0.4] });
-    const heads = [], place = (h, x, y, z, yaw, s) => { b.merge(h, new THREE.Matrix4().makeRotationY(yaw).setPosition(x, y, z)); heads.push({ x, y, z, yaw, s }); };
-    [[L - 0.32, -0.16], [L - 2.9, 0.2]].forEach(([z, yaw]) => { const h = pb(); head(h, 0.15, 0); const y = armY(z) - 0.2; place(h, 0.36, y, z, yaw, 1); b.box([0, armY(z), z], [0.14, 0.14, 0.12], cGalvD, { w: [0.5, 0.4] });
-      b.tube([[0, armY(z) - 0.06, z - 0.3], [0.1, armY(z) - 0.3, z - 0.2], [0.24, y + 0.62, z - 0.05]], 0.011, C('#0d0d0e'), { n: 6, seg: 4, w: [0, 0] }); });
-    { const h = pb(); head(h, 0.105, 1); place(h, 0.135, 4.5, -0.44, 0.1, 0.7); }
+    for (const [gf, gx] of [[0.42, -0.035], [0.72, 0.035]]) { const gz = L * gf, gy = armY(gz) + 0.05, A0 = [gx, TOP - 0.08, 0.06], B0 = [gx * 0.4, gy, gz], rod = C('#8b9091'), RD = { w: [0.05, 0.45], seg: 6 };
+      b.cyl(A0, B0, 0.015, 0.015, rod, RD); const tm = 0.3, M0 = A0.map((a, k) => a + (B0[k] - a) * tm), M1 = A0.map((a, k) => a + (B0[k] - a) * (tm + 0.22 / Math.hypot(B0[1] - A0[1], B0[2] - A0[2]))); b.cyl(M0, M1, 0.015, 0.015, cGalvD, { w: [0.3, 0.4], seg: 6, cap: true });
+      b.box([gx * 0.4, gy - 0.03, gz], [0.03, 0.07, 0.05], cGalvD, { w: [0.3, 0.4] }); b.cyl([-0.09, armY(gz), gz - 0.02], [0.09, armY(gz), gz - 0.02], 0.012, 0.012, cGalvD, { w: [0.3, 0.4], seg: 6, cap: true }); }
+    b.cyl([0, TOP - 0.14, 0], [0, TOP - 0.02, 0], 0.118, 0.115, cGalvD, { w: [0.3, 0.3], seg: 10 }); b.box([0, TOP - 0.08, 0.1], [0.12, 0.08, 0.1], cGalvD, { w: [0.3, 0.4] });
+    const heads = [], place = (h, x, y, z, yaw, s, tx = 0, tz = 0) => { const o = { x, y, z, yaw, s, tx, tz }; h.tagHead(s, yaw); b.merge(h, headM(o)); heads.push(o); };
+    const HANG = L > 7 ? 0.85 : 0.2; const extra = []; if (L > 7) { const z = L - 0.32, y = armY(z) - HANG; for (const [x, zz, yaw, opp] of [[-0.04, z + 0.47, -PI / 2, 1]]) { const h = pb(); head(h, 0.15, 0); const o = { x, y: y - 0.025, z: zz, yaw: yaw + 0.07, s: 1, opp, tx: 0.055, tz: -0.045 }; h.tagHead(1, yaw); b.merge(h, headM(o)); extra.push(o); }
+      b.cyl([-0.07, y + 0.59, z - 0.02], [-0.07, y + 0.59, z + 0.42], 0.028, 0.028, cHead, HP); b.cyl([-0.07, y - 0.59, z - 0.02], [-0.07, y - 0.59, z + 0.42], 0.028, 0.028, cHead, HP); for (const yy of [y + 0.59, y - 0.59]) { b.cyl([-0.07, yy, z + 0.1], [0.2, yy, z + 0.02], 0.026, 0.026, cHead, HP); b.cyl([-0.07, yy, z + 0.39], [-0.07, yy + (yy > y ? -0.07 : 0.07), z + 0.39], 0.032, 0.032, cHead, HP); } b.cyl([0, y + 0.59, z], [0, armY(z), z], 0.034, 0.034, cHead, HP); b.cyl([0, y + 0.56, z], [0, y + 0.64, z], 0.05, 0.05, cHeadD, Object.assign({ seg: 10, cap: true }, HP)); b.cyl([0, armY(z) - 0.11, z], [0, armY(z) - 0.06, z], 0.048, 0.048, cHeadD, Object.assign({ seg: 10, cap: true }, HP)); }
+    if (L > 7) { const z = L - 2.9, y = armY(z) - 0.16; b.box([0.085, y, z], [0.006, 0.76, 0.51], C('#b9bcba'), { w: [0.12, 0.3], rx: -0.012 });
+      for (const dz of [-0.17, 0.17]) { b.box([0.045, armY(z + dz), z + dz], [0.09, 0.15, 0.035], C('#4a4d4d'), { w: [0.3, 0.4] }); b.cyl([-0.07, armY(z + dz), z + dz - 0.03], [-0.07, armY(z + dz), z + dz + 0.03], 0.075, 0.075, C('#4a4d4d'), { w: [0.3, 0.4], seg: 8 }); } }
+    (L > 7 ? [[L - 0.32, -0.16]] : [[L - 0.32, -0.16], [L - 2.9, 0.2]]).forEach(([z, yaw]) => { const h = pb(); head(h, 0.15, 0); const y = armY(z) - HANG; place(h, 0.36, y, z, yaw - (L > 7 ? 0.09 : 0), 1, L > 7 ? -0.04 : -0.02, L > 7 ? 0.05 : 0.03); b.box([0, armY(z), z], [0.14, 0.14, 0.12], cGalvD, { w: [0.5, 0.4] });
+      { const S0 = [0, armY(z - 0.62) - 0.25, z - 0.62], E0 = [0.2, y + 0.55, z - 0.03], pts = []; for (let q = 0; q <= 8; q++) { const t = q / 8; pts.push([S0[0] + (E0[0] - S0[0]) * t + 0.05 * Math.sin(t * 9.0), S0[1] + (E0[1] - S0[1]) * t - 0.42 * 4 * t * (1 - t) * (1 - 0.5 * t) + 0.03 * Math.sin(t * 14.0), S0[2] + (E0[2] - S0[2]) * t]); } b.tube(pts, 0.014, C('#0d0d0e'), { n: 32, seg: 6, w: [0, 0] }); }
+      b.box([0, armY(z - 0.62) - 0.15, z - 0.62], [0.11, 0.19, 0.15], cGalvD, { w: [0.3, 0.3] }); b.box([0, armY(z - 0.62) - 0.15, z - 0.62 + 0.078], [0.07, 0.12, 0.006], C('#6f7476'), { w: [0.3, 0.3] });
+      for (const dz of [-0.075, 0.075]) { const zz = z + dz, ra = 0.092 - 0.046 * zz / L + 0.01; b.cyl([0, armY(zz), zz - 0.016], [0, armY(zz), zz + 0.016], ra, ra, C('#4a4d4d'), { w: [0.3, 0.4], seg: 8 }); } });
+    { const h = pb(); head(h, 0.105, 1); place(h, 0.135, 4.5, -0.44, 0.1, 0.7, 0.015, -0.025); }
     // a conduit up the back of the pole, a junction box, straps
-    b.cyl([-pr(1) - 0.012, 1.0, 0.03], [-pr(5) - 0.012, 5.0, 0.03], 0.018, 0.018, cGalvD, { w: [0.5, 0.5], seg: 5 }); b.box([-pr(2.95) - 0.05, 2.95, 0.03], [0.1, 0.22, 0.14], cGalvD, { w: [0.5, 0.4] });
-    for (const y of [1.45, 2.2, 3.4, 4.2]) b.cyl([0, y, 0], [0, y + 0.028, 0], pr(y) + 0.006, pr(y) + 0.006, C('#3a3d3d'), { w: [0.5, 0.5], seg: 8, spin: PI / 8 });
+    b.box([-pr(2.95) - 0.05, 2.95, 0.03], [0.1, 0.22, 0.14], cGalv, GAL); b.box([-pr(2.95) - 0.103, 2.95, 0.03], [0.006, 0.2, 0.12], cGalvD, { w: [0.2, 0.42] }); for (const [dy, dz] of [[0.085, 0.045], [0.085, -0.045], [-0.085, 0.045], [-0.085, -0.045]]) b.cyl([-pr(2.95) - 0.106, 2.95 + dy, 0.03 + dz], [-pr(2.95) - 0.11, 2.95 + dy, 0.03 + dz], 0.006, 0.006, C('#3a3d3d'), { w: [0.3, 0.4], seg: 6, cap: true }); b.cyl([-pr(2.95) - 0.05, 2.82, 0.03], [-pr(2.95) - 0.05, 2.84, 0.03], 0.024, 0.024, cGalvD, { w: [0.3, 0.42], seg: 8 });
+    for (const y of [1.45, 2.05]) { b.cyl([0, y, 0], [0, y + 0.019, 0], pr(y) + 0.004, pr(y) + 0.004, C('#b9bdbc'), { w: [0.02, 0.7], seg: MID ? 8 : 18, spin: PI / 8 }); b.box([pr(y) * 0.7071 + 0.004, y + 0.0095, pr(y) * 0.7071 + 0.004], [0.03, 0.024, 0.01], C('#b9bdbc'), { w: [0.02, 0.7], ry: -PI / 4 }); }
     b.tube([[-pr(4.3), 4.3, 0.03], [-0.15, 4.6, -0.2], [0, 4.9, -0.44]], 0.011, C('#0d0d0e'), { n: 6, seg: 4, w: [0, 0] });
-    if (L > 7) { b.cyl([0, armY(L * 0.8), L * 0.8], [0, armY(L * 0.8) + 0.3, L * 0.8], 0.02, 0.02, cGalvD, GAL); b.box([0.06, armY(L * 0.8) + 0.36, L * 0.8], [0.3, 0.11, 0.12], C('#c9cbc8'), { w: [0.15, 0.1], rz: -0.25 }); b.box([0.2, armY(L * 0.8) + 0.325, L * 0.8], [0.02, 0.08, 0.1], C('#0b0b0c'), PLAIN); }
+    if (L > 7) { b.cyl([0, armY(L * 0.8), L * 0.8], [0, armY(L * 0.8) + 0.3, L * 0.8], 0.02, 0.02, cGalvD, GAL); b.cyl([-0.08, armY(L * 0.8) + 0.4, L * 0.8], [0.18, armY(L * 0.8) + 0.33, L * 0.8], 0.06, 0.06, C('#c9cbc8'), { w: [0.15, 0.1], seg: 10, cap: true }); b.box([0.04, armY(L * 0.8) + 0.47, L * 0.8], [0.34, 0.012, 0.15], C('#b9bbb8'), { w: [0.15, 0.1], rz: -0.25 }); const cl = new THREE.CircleGeometry(0.045, 12); cl.rotateY(PI / 2); cl.rotateZ(-0.26); b.push(cl, C('#0b0d10'), { w: [0, 0.5] }, b.mat([0.183, armY(L * 0.8) + 0.33, L * 0.8])); }
     // pedestrian heads: A faces +X on the sidewalk side, B faces +Z (across the approach) on the +X side
-    const peds = [{ x: 0.14, y: 2.47, z: -0.38, ry: 0 }, { x: 0.38, y: 2.47, z: 0.14, ry: -PI / 2 }];
+    const peds = [{ x: 0.1, y: 2.47, z: -0.48, ry: 0 }, { x: 0.48, y: 2.47, z: 0.1, ry: -PI / 2 }];
     for (const q of peds) { const h = pb(); pedHead(h); b.merge(h, new THREE.Matrix4().makeRotationY(q.ry).setPosition(q.x, q.y, q.z)); }
-    for (const y of [2.62, 2.32]) { b.cyl([0, y, 0], [0, y, -0.38], 0.024, 0.024, cGalvD, GAL); b.cyl([0, y, 0], [0.38, y, 0], 0.024, 0.024, cGalvD, GAL); }
-    b.cyl([0.38, 2.25, 0], [0.38, 2.69, 0], 0.026, 0.026, cGalvD, GAL); b.cyl([0, 2.25, -0.38], [0, 2.69, -0.38], 0.026, 0.026, cGalvD, GAL);
+    for (const y of [2.74, 2.2]) { b.cyl([0, y, 0], [0, y, -0.48], 0.026, 0.026, cHead, HP); b.cyl([0, y, 0], [0.48, y, 0], 0.026, 0.026, cHead, HP); for (const [x, z] of [[0, -0.48], [0.48, 0]]) { b.sph([x, y, z], 0.036, cHead, HP); b.cyl([x, y, z], [x, y + (y > 2.47 ? -0.05 : 0.05), z], 0.03, 0.03, cHead, HP); } for (const dy of [-0.026, 0.026]) b.cyl([0, y + dy - 0.0095, 0], [0, y + dy + 0.0095, 0], pr(y) + 0.004, pr(y) + 0.004, C('#b9bdbc'), { w: [0.02, 0.7], seg: MID ? 8 : 18, spin: PI / 8 }); b.cyl([0, y - 0.014, 0], [0, y + 0.014, 0], pr(y) + 0.012, pr(y) + 0.012, cHead, Object.assign({ seg: MID ? 8 : 18 }, HP)); b.box([0, y, -pr(y) - 0.012], [0.085, 0.095, 0.05], cHeadD, HP); b.box([pr(y) + 0.012, y, 0], [0.05, 0.095, 0.085], cHeadD, HP); for (const [x, z] of [[-0.7071, -0.7071], [0.7071, 0.7071]]) { b.box([x * (pr(y) + 0.03), y, z * (pr(y) + 0.03)], [0.05, 0.06, 0.02], cHead, Object.assign({ ry: PI / 4 }, HP)); b.cyl([x * (pr(y) + 0.035) - 0.012, y, z * (pr(y) + 0.035) + 0.012], [x * (pr(y) + 0.035) + 0.012, y, z * (pr(y) + 0.035) - 0.012], 0.008, 0.008, C('#8d9190'), Object.assign({ seg: 6, cap: true }, STEEL)); } }
     // push button and its placard, stickers, flyers
     b.wrap('placard', pr(1.4) + 0.004, 1.42, PI * 0.25, 0.12, 0.17); b.box([0.1, 1.2, 0.1], [0.075, 0.12, 0.075], cGalvD, { w: [0.5, 0.4], ry: PI / 4 }); b.sph([0.132, 1.2, 0.132], 0.02, C('#b9bcbc'), STEEL);
-    stickers(b, pr(1.6) + 0.003, 14, seed, 1.05, 2.3);
-    return { geo: b.build(), heads, peds, armY };
+    stickers(b, pr(1.6) + 0.003, MID ? 4 : 14, seed, 1.05, 2.3);
+    return { geo: b.build(), heads, peds, armY, extra };
   };
-  P.sigS = signal(5.6, 1); P.sigL = signal(8.2, 2);
+  P.sigS = signal(5.6, 1); P.sigL = signal(8.2, 2); MID = true; P.sigSm = signal(5.6, 1).geo; P.sigLm = signal(8.2, 2).geo; MID = false;
   for (const [nm, L] of [['sigLodS', 5.6], ['sigLodL', 8.2]]) { const b = pb(), aY = armYof(L); b.cyl([0, 0, 0], [0, 0.95, 0], 0.26, 0.2, C('#4a4d4f'), { seg: 8, w: [0.4, 0.3] }); b.cyl([0, 0.95, 0], [0, 6.95, 0], 0.14, 0.098, cGalv, { seg: 6, w: [0.2, 0.5] });
     for (let k = 0; k < 5; k++) b.cyl([0, aY(L * k / 5), L * k / 5], [0, aY(L * (k + 1) / 5), L * (k + 1) / 5], 0.12 - 0.01 * k, 0.11 - 0.01 * k, cGalvD, { seg: 5, w: [0.2, 0.4] });
     b.cyl([0, 6.85, 0.05], [0, aY(L * 0.6) + 0.06, L * 0.6], 0.016, 0.016, cGalvD, { seg: 3, w: [0.3, 0.5] });
-    for (const [x, y, z, s, yaw] of [[0.36, aY(L - 0.32) - 0.2, L - 0.32, 1, -0.16], [0.36, aY(L - 2.9) - 0.2, L - 2.9, 1, 0.2], [0.135, 4.5, -0.44, 0.7, 0.1]]) { const h = pb(), w = 0.345 * s;
+    for (const [x, y, z, s, yaw] of [[0.36, aY(L - 0.32) - (L > 7 ? 0.85 : 0.2), L - 0.32, 1, -0.16], [0.36, aY(L - 2.9) - 0.2, L - 2.9, 1, 0.2], [0.135, 4.5, -0.44, 0.7, 0.1]]) { const h = pb(), w = 0.345 * s;
       h.box([-0.135, 0, 0], [0.27, 3 * w, w - 0.012], cHead, HP); h.box([-0.29, 0, 0], [0.03, 2.6 * w, 0.8 * w], cHeadD, HP);
       for (let k = -1; k <= 1; k++) { h.box([0.004, k * w, 0], [0.008, w * 0.8, w * 0.8], C('#0d0b06'), PLAIN); h.box([0.13, k * w + w * 0.42, 0], [0.26, 0.02, w * 0.9], cHead, HP); for (const sg of [-1, 1]) h.box([0.13, k * w + 0.1 * w, sg * w * 0.45], [0.26, w * 0.64, 0.02], cHead, HP); }
       b.merge(h, new THREE.Matrix4().makeRotationY(yaw).setPosition(x, y, z)); if (s === 1) b.cyl([0, y - 0.6, z], [0, y + 0.6, z], 0.024, 0.024, cGalvD, { seg: 3, w: [0.3, 0.5] }); }
     for (const [x, z, ry] of [[0.14, -0.38, 0], [0.38, 0.14, -PI / 2]]) { const h = pb(); h.box([-0.09, 0, 0], [0.18, 0.44, 0.44], cHeadD, HP); h.box([0.004, 0, 0], [0.008, 0.36, 0.36], C('#0d0b06'), PLAIN); b.merge(h, new THREE.Matrix4().makeRotationY(ry).setPosition(x, 2.47, z)); }
     P[nm] = b.build(); }
-  for (const [nm, L] of [['sigShS', 5.6], ['sigShL', 8.2]]) { const b = pb(), aY = armYof(L); b.cyl([0, 0, 0], [0, 6.95, 0], 0.15, 0.1, WHITE, { seg: 5 }); for (let k = 0; k < 3; k++) b.cyl([0, aY(L * k / 3), L * k / 3], [0, aY(L * (k + 1) / 3), L * (k + 1) / 3], 0.09, 0.07, WHITE, { seg: 4 });
-    for (const [x, y, z, sc] of [[0.25, aY(L - 0.32) - 0.2, L - 0.32, 1], [0.25, aY(L - 2.9) - 0.2, L - 2.9, 1], [0.05, 4.5, -0.44, 0.7], [0.1, 2.47, -0.2, 0.42]]) b.box([x, y, z], [0.5, 1.04 * sc, 0.36 * sc], WHITE); P[nm] = b.build(); }
+  for (const [nm, L] of [['sigShS', 5.6], ['sigShL', 8.2]]) { const b = pb(), aY = armYof(L); b.cyl([0, 0, 0], [0, 6.9, 0], 0.07, 0.045, WHITE, { seg: 5 }); for (let k = 0; k < 4; k++) b.cyl([0, aY(L * k / 4), L * k / 4], [0, aY(L * (k + 1) / 4), L * (k + 1) / 4], 0.04 - 0.005 * k, 0.035 - 0.005 * k, WHITE, { seg: 4 });
+    for (const [x, y, z, sc] of [[0.23, aY(L - 0.32) - 0.2, L - 0.32, 1], [0.23, aY(L - 2.9) - 0.2, L - 2.9, 1], [0.03, 4.5, -0.44, 0.7], [0.05, 2.47, -0.38, 0.4]]) b.box([x, y, z], [0.2, 0.96 * sc, 0.26 * sc], WHITE); P[nm] = b.build(); }
+  { const b = pb(); b.cyl([0, 0, 0], [0, 8.4, 0], 0.05, 0.035, WHITE, { seg: 5 }); b.tube([[0, 8.35, 0], [0.5, 9.6, 0], [2.45, 9.76, 0]], 0.022, WHITE, { n: 5, seg: 4 }); b.box([2.8, 9.74, 0], [0.6, 0.04, 0.22], WHITE); P.lampShG = b.build(); }
   // street-name blade (cantilevered from the pole along its own street) and the one-way plate strapped below
   { const b = pb(); b.quad('blade', [0.62, 0.11, 0], 0.92, 0.2, { double: true, vary: true }); b.box([0.62, 0.222, 0], [0.96, 0.024, 0.02], cGalvD, GAL); b.box([0.62, -0.002, 0], [0.96, 0.024, 0.02], cGalvD, GAL); b.box([0.135, 0.11, 0], [0.05, 0.25, 0.03], cGalvD, GAL);
-    b.cyl([0, 0.03, 0], [0, 0.19, 0], 0.132, 0.13, cGalvD, { w: [0.5, 0.5], seg: 8, spin: PI / 8 }); P.blade = b.build(); }
-  { const b = pb(); b.quad('oneway', [0, 0.15, 0.15], 0.92, 0.3, { double: true, back: { ci: 1 } });
-    for (const y of [0.06, 0.24]) { b.cyl([0, y, 0], [0, y + 0.03, 0], 0.134, 0.134, cGalvD, { w: [0.5, 0.5], seg: 8, spin: PI / 8 }); b.box([0, y + 0.015, 0.138], [0.07, 0.035, 0.03], cGalvD, GAL); } P.oneway = b.build(); }
-  { const b = pb(), aY = P.sigL.armY, y = aY(3.6) - 0.3; b.quad('blade', [0.1, y, 3.6], 0.92, 0.2, { ry: PI / 2, double: true, vary: true }); for (const dy of [0.112, -0.112]) b.box([0.1, y + dy, 3.6], [0.03, 0.03, 0.97], cGalvD, GAL); for (const dz of [0.475, -0.475]) b.box([0.1, y, 3.6 + dz], [0.03, 0.24, 0.03], cGalvD, GAL);
-    for (const z of [3.3, 3.9]) { b.cyl([0.1, y + 0.11, z], [0, aY(z), z], 0.022, 0.022, cGalvD, GAL); b.box([0, aY(z), z], [0.2, 0.07, 0.08], C('#3a3d3d'), GAL); } P.armsign = b.build(); }
+    for (const y of [0.05, 0.15]) b.cyl([0, y, 0], [0, y + 0.02, 0], 0.133, 0.132, C('#a9adac'), { w: [0.03, 0.6], seg: 10, spin: PI / 8 }); P.blade = b.build(); }
+  { const b = pb(); b.quad('oneway', [0, 0.15, 0.15], 0.92, 0.3, {}); b.quad('oneway', [0, 0.15, -0.15], 0.92, 0.3, { ry: PI, ci: 1 });      // two plates, one each side of the pole: read from both directions, the pole behind each
+    for (const y of [0.06, 0.24]) { b.cyl([0, y, 0], [0, y + 0.02, 0], 0.134, 0.134, C('#a9adac'), { w: [0.03, 0.6], seg: 10, spin: PI / 8 }); b.box([0, y + 0.01, 0.138], [0.05, 0.03, 0.03], C('#a9adac'), { w: [0.03, 0.6] }); } P.oneway = b.build(); }
+  // the hero blocks' own signs (fine sheet A2): a blade in its cast bracket on two stainless bands, the two one-way plates, a regulation plate
+  if (A2) { const alu = C('#b7bbb9'), AL = { w: [0.02, 0.55] }, stl = C('#8f9493'), ST2 = { w: [0.02, 0.5] }, bnd = C('#bcc0bf'), BND = { w: [0.02, 0.62] }, bk = C('#9da1a0'), BK = { w: [0.05, 0.5] };
+    { const b = new PB(A2); b.quad('blade', [0.615, 0.115, 0], 0.92, 0.206, { double: true, vary: true, w: [0.004, 0.1], seg: 10 }); b.push(new THREE.BoxGeometry(0.925, 0.211, 0.0045, 10, 1, 1), alu, AL, b.mat([0.615, 0.115, 0]));
+      for (const y of [0.0085, 0.2215]) { const eg = new THREE.CylinderGeometry(0.0055, 0.0055, 0.923, 6, 10, true); eg.rotateZ(PI / 2); b.push(eg, alu, AL, b.mat([0.6165, y, 0])); } b.box([1.078, 0.115, 0], [0.004, 0.218, 0.011], alu, AL);
+      for (const sg of [-1, 1]) { b.box([0.2, 0.115, sg * 0.006], [0.07, 0.2, 0.004], alu, AL); for (const y of [0.05, 0.18]) b.cyl([0.2, y, sg * 0.008], [0.2, y, sg * 0.013], 0.0075, 0.0075, bnd, Object.assign({ seg: 6, cap: true }, BND)); }
+      b.box([0.143, 0.115, 0], [0.03, 0.235, 0.03], alu, AL); b.box([0.166, 0.115, 0], [0.045, 0.19, 0.014], alu, AL); for (const y of [0.05, 0.18]) b.cyl([0.166, y, 0.007], [0.166, y, 0.012], 0.007, 0.007, bnd, Object.assign({ seg: 6, cap: true }, BND));
+      for (const y of [0.045, 0.185]) { b.cyl([0, y - 0.0095, 0], [0, y + 0.0095, 0], 0.1228, 0.1228, bnd, Object.assign({ seg: 32, spin: PI / 8 }, BND)); b.box([0.125, y, 0], [0.012, 0.024, 0.03], bnd, BND); b.box([-0.02, y, 0.1235], [0.022, 0.021, 0.005], bnd, BND); } P.hblade = b.build();
+      { const Pb = P.hblade.attributes.position; for (let q = 0; q < Pb.count; q++) { const x = Pb.getX(q); if (x < 0.26) continue; const t = (x - 0.26) / 0.82; Pb.setZ(q, Pb.getZ(q) + 0.045 * t * t + 0.22 * t * (Pb.getY(q) - 0.115)); } Pb.needsUpdate = true; P.hblade.computeBoundingSphere(); P.hblade.computeBoundingBox(); } }
+    { const b = new PB(A2); b.quad('oneway', [0.66, 0.15, 0.004], 0.914, 0.301, { w: [0.01, 0.1] }); b.quad('oneway', [0.66, 0.15, -0.004], 0.914, 0.301, { ry: PI, cj: 1, w: [0.01, 0.1] }); b.box([0.66, 0.15, 0], [0.918, 0.305, 0.004], alu, AL);
+      b.box([0.146, 0.15, 0], [0.03, 0.31, 0.03], alu, AL); b.box([0.18, 0.15, 0], [0.05, 0.25, 0.012], alu, AL); for (const sg of [-1, 1]) for (const y of [0.07, 0.23]) b.cyl([0.225, y, sg * 0.005], [0.225, y, sg * 0.011], 0.0075, 0.0075, bnd, Object.assign({ seg: 6, cap: true }, BND));
+      for (const y of [0.07, 0.23]) { b.cyl([0, y - 0.0095, 0], [0, y + 0.0095, 0], 0.129, 0.129, bnd, Object.assign({ seg: 18, spin: PI / 8 }, BND)); b.box([-0.02, y, 0.13], [0.03, 0.024, 0.008], bnd, BND); } P.honeway = b.build(); }
+    { const b = new PB(A2), rp = 0.142; b.quad('park', [rp + 0.03, 0, 0], 0.305, 0.4575, { ry: PI / 2, vary: true, w: [0.01, 0.1] }); b.box([rp + 0.0275, 0, 0], [0.003, 0.4575, 0.305], bk, BK);
+      for (const y of [0.15, -0.15]) { b.cyl([0, y - 0.0095, 0], [0, y + 0.0095, 0], rp - 0.004, rp - 0.004, stl, Object.assign({ seg: 12, spin: PI / 8 }, ST2)); b.box([rp + 0.012, y, 0], [0.03, 0.03, 0.05], stl, ST2); } P.hpsign = b.build(); } }
+  { const z = 8.2 - 2.9, y = P.sigL.armY(z) - 0.16; const b = pb(); b.quad('park', [0.0895, y, z], 0.51, 0.76, { ry: PI / 2, ci: 5, w: [0.05, 0], rx: -0.012 }); P.armface = b.build();
+    if (A2) { const h = new PB(A2); h.quad('park', [0.0895, y, z], 0.51, 0.76, { ry: PI / 2, w: [0.01, 0.1], rx: -0.012 }); P.harmface = h.build(); } }
+  { const b = pb(), aY = P.sigL.armY, y = aY(3.6) - 0.03; b.quad('blade', [0.092, y, 3.6], 1.2, 0.225, { ry: PI / 2, double: true, vary: true }); b.box([0.08, y, 3.6], [0.012, 0.235, 1.21], C('#8d9190'), { w: [0.1, 0.3] });
+    for (const z of [3.2, 4.0]) { b.box([0.04, aY(z), z], [0.08, 0.14, 0.035], C('#4a4d4d'), { w: [0.3, 0.4] }); b.cyl([0, aY(z), z - 0.03], [0, aY(z), z + 0.03], 0.066, 0.066, C('#4a4d4d'), { w: [0.3, 0.4], seg: 8 }); } P.armsign = b.build(); }
   // a regulation plate strapped to a round pole (plate faces +X)
   for (const [nm, rp] of [['psignP', 0.142], ['psignL', 0.108]]) { const b = pb(); b.quad('park', [rp + 0.023, 0, 0], 0.3, 0.45, { ry: PI / 2, double: true, back: null, vary: true }); for (const y of [0.15, -0.15]) { b.cyl([0, y, 0], [0, y + 0.025, 0], rp, rp, C('#3a3d3d'), { w: [0.5, 0.5], seg: 8, spin: PI / 8 }); b.box([rp + 0.008, y + 0.012, 0], [0.03, 0.03, 0.06], cGalvD, GAL); } P[nm] = b.build(); }
   // controller cabinet on the back of a pole
@@ -395,6 +637,29 @@ function buildProtos(A) {
     return b.build();
   };
   P.lampA = lamp(true, 3); P.lampS = lamp(false, 4);
+  // ---- the hero crossing's own lamp post: a cast-iron twin post (fluted shaft on a moulded pedestal, an urn and ladder bar, a ball with two scrolled arms, bell lanterns with glass globes), by hand
+  { const b = pb(), cI = C('#55473c'), CI = { w: [0.06, 0.16] }, cID = C('#45382f');
+    b.box([0, 0.05, 0], [0.66, 0.1, 0.66], cI, CI);
+    b.lathe([[0.31, 0.1], [0.31, 0.22], [0.275, 0.27], [0.265, 0.92], [0.29, 0.96], [0.29, 1.03], [0.25, 1.07], [0.21, 1.16], [0.185, 1.34], [0.205, 1.38], [0.205, 1.45], [0.165, 1.5], [0.15, 1.62]], cI, Object.assign({ seg: 8, spin: PI / 8 }, CI));
+    for (let k = 0; k < 8; k++) { const a = k * PI / 4; b.box([0.262 * Math.cos(a), 0.6, 0.262 * Math.sin(a)], [0.012, 0.5, 0.13], cID, Object.assign({ ry: -a }, CI)); }
+    { const y0 = 1.62, y1 = 5.5, r0 = 0.138, r1 = 0.1, NF = 12, SD = NF * 6, NR = 6, pos = [], idx = [];       // the fluted shaft
+      for (let k = 0; k <= NR; k++) { const t = k / NR, r = r0 + (r1 - r0) * t; for (let q = 0; q < SD; q++) { const a = q / SD * TAU, rr = r * (1 - 0.075 * Math.pow(0.5 + 0.5 * Math.cos(a * NF), 2)); pos.push(Math.cos(a) * rr, y0 + (y1 - y0) * t, Math.sin(a) * rr); } }
+      for (let k = 0; k < NR; k++) for (let q = 0; q < SD; q++) { const a = k * SD + q, b2 = k * SD + (q + 1) % SD, c2 = a + SD, d2 = b2 + SD; idx.push(a, b2, c2, b2, d2, c2); }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(pos.length / 3 * 2), 2)); g.setIndex(idx); g.computeVertexNormals(); b.push(g, cI, CI); }
+    b.lathe([[0.1, 5.5], [0.135, 5.53], [0.135, 5.59], [0.108, 5.63], [0.112, 5.8], [0.175, 5.9], [0.195, 5.97], [0.18, 6.04], [0.112, 6.09], [0.092, 6.14], [0.085, 6.3]], cI, Object.assign({ seg: 18 }, CI));
+    b.cyl([-0.43, 5.72, 0], [0.43, 5.72, 0], 0.021, 0.021, cI, Object.assign({ seg: 8 }, CI)); for (const sx of [-1, 1]) b.sph([sx * 0.45, 5.72, 0], 0.036, cI, CI);
+    b.cyl([0, 6.3, 0], [0, 7.28, 0], 0.085, 0.066, cI, Object.assign({ seg: 14 }, CI)); for (const y of [6.62, 6.95]) b.lathe([[0.075, y - 0.05], [0.105, y - 0.02], [0.105, y + 0.02], [0.075, y + 0.05]], cI, Object.assign({ seg: 14 }, CI));
+    b.lathe([[0.066, 7.26], [0.1, 7.3], [0.085, 7.34]], cI, Object.assign({ seg: 14 }, CI)); b.sph([0, 7.5, 0], 0.175, cI, Object.assign({ seg: 16, rings: 10 }, CI)); b.cyl([0, 7.66, 0], [0, 7.74, 0], 0.03, 0.02, C('#b8672a'), { w: [0.1, 0.2], seg: 8, cap: true });
+    for (const sx of [-1, 1]) {
+      b.cyl([sx * 0.15, 7.5, 0], [sx * 1.12, 7.66, 0], 0.036, 0.03, cI, Object.assign({ seg: 10 }, CI)); b.cyl([sx * 0.55, 7.555, 0], [sx * 0.6, 7.565, 0], 0.048, 0.048, cI, Object.assign({ seg: 10, cap: true }, CI));
+      b.tube([[sx * 0.09, 6.72, 0], [sx * 0.22, 6.95, 0], [sx * 0.42, 7.12, 0], [sx * 0.62, 7.32, 0], [sx * 0.66, 7.5, 0], [sx * 0.52, 7.52, 0], [sx * 0.46, 7.4, 0], [sx * 0.54, 7.34, 0]], 0.016, cI, Object.assign({ n: 28, seg: 6 }, CI));
+      b.tube([[sx * 0.09, 6.9, 0], [sx * 0.2, 7.1, 0], [sx * 0.3, 7.3, 0], [sx * 0.24, 7.4, 0], [sx * 0.16, 7.33, 0], [sx * 0.2, 7.26, 0]], 0.013, cI, Object.assign({ n: 20, seg: 6 }, CI));
+      b.sph([sx * 0.36, 7.25, 0], [0.05, 0.05, 0.022], cI, CI);
+      b.box([sx * 1.12, 7.68, 0], [0.13, 0.1, 0.11], cID, CI);
+      b.lathe([[0.02, 7.62], [0.07, 7.6], [0.09, 7.5], [0.12, 7.38], [0.2, 7.2], [0.245, 7.08], [0.255, 7.0], [0.262, 6.99]], cI, Object.assign({ seg: 18, at: [sx * 1.12, 0, 0] }, CI));
+      b.lathe([[0.262, 6.99], [0.262, 6.95], [0.25, 6.86], [0.2, 6.72], [0.11, 6.62], [0.0, 6.6]], C('#9aa08f'), { w: [0.0, 0.05], seg: 18, at: [sx * 1.12, 0, 0] });
+      b.lathe([[0.266, 7.0], [0.268, 6.97], [0.264, 6.94]], cID, Object.assign({ seg: 18, at: [sx * 1.12, 0, 0] }, CI)); }
+    P.twin = b.build(); }
   { const b = pb(); b.cyl([0, 0, 0], [0, 0.95, 0], 0.26, 0.2, C('#4a4d4f'), { seg: 8, w: [0.4, 0.3] }); b.cyl([0, 0.95, 0], [0, 8.4, 0], 0.108, 0.07, cGalv, { seg: 6, w: [0.2, 0.5] }); b.tube([[0, 8.35, 0], [0.5, 9.6, 0], [2.45, 9.76, 0]], 0.048, cGalv, { n: 5, seg: 4, w: [0.2, 0.5] }); b.box([2.8, 9.72, 0], [0.7, 0.1, 0.3], C('#74797c'), PLAIN); P.lampLod = b.build(); }
   { const b = pb(); b.quad('banner', [-0.58, 5.975, 0], 0.6, 1.5, { double: true, vary: true, w: [0, 0] }); for (const y of [5.2, 6.75]) for (const x of [-0.34, -0.82]) b.box([x, y + (y > 6 ? -0.03 : 0.03), 0], [0.03, 0.07, 0.02], C('#c9c6bc'), PLAIN); P.banner = b.build(); }
   // ---- sign post with footing; parking plate; bus stop
@@ -638,6 +903,7 @@ function distRing(x, y, r) { let best = 1e9; for (let i = 0; i < r.length; i++) 
 
 // ------------------------------------------------------------------------------------------------ the part
 export async function add(game, ctx) {
+  if (game.P && game.P.get && game.P.get('fnext') === '1') { try { const nx = await import('./furniture_next.js'); return await nx.add(game, ctx); } catch (e) { console.log('[streets] furniture: next build not used: ' + (e && e.message)); } }      // a build being tried (drawn only with ?fnext=1)
   const city = game.city, world = game.world, shared = world.shared, statics = game.statics, roads = game.roads, AS = ctx.A + 'furniture/';
   const group = new THREE.Group(); group.name = 'st_furniture';
   const SW = 0.15, meta = city.meta, playable = (x, y) => Math.abs(x) < meta.px + 8 && Math.abs(y) < meta.py + 8;
@@ -646,8 +912,11 @@ export async function add(game, ctx) {
   const sigs = city.props.signal || [], names = [], nameIx = new Map();
   for (const p of sigs) for (const k of city.nodes[p[4]].e) { const n = city.edges[k].name; if (n && !nameIx.has(n) && names.length < 160) { nameIx.set(n, names.length); names.push(shortName(n)); } }
   if (!names.length) names.push('Broadway');
-  const A = makeAtlas(names), P = buildProtos(A), BC = A.cells.blade.cols;
+  await loadWear(AS);
+  const heroNames = []; for (const p of sigs.slice().sort((a, b) => Math.hypot(a[0] + 213, a[1] + 352) - Math.hypot(b[0] + 213, b[1] + 352))) if (Math.hypot(p[0] + 225, p[1] + 380) < 230) for (const k of city.nodes[p[4]].e) { const n = city.edges[k].name; if (n && !heroNames.includes(shortName(n)) && heroNames.length < 4) heroNames.push(shortName(n)); }
+  const A = makeAtlas(names), A2 = makeHeroSheet(heroNames), P = buildProtos(A, A2), BC = A.cells.blade.cols;
   const fMat = patch(new THREE.MeshStandardMaterial({ map: A.tex, vertexColors: true, roughness: 0.62, metalness: 0, side: THREE.DoubleSide, alphaTest: 0.4 }), shared, 'f'); fMat.shadowSide = THREE.DoubleSide;
+  const hMat = patch(new THREE.MeshStandardMaterial({ map: A2.tex, vertexColors: true, roughness: 0.62, metalness: 0, side: THREE.DoubleSide, alphaTest: 0.4 }), shared, 'f'); hMat.shadowSide = THREE.DoubleSide;      // the hero blocks' signs, from the fine sheet
   const glassMat = new THREE.MeshStandardMaterial({ color: 0x1b2323, roughness: 0.06, metalness: 0, transparent: true, opacity: 0.22, depthWrite: false, side: THREE.DoubleSide });
   const netMat = patch(new THREE.MeshStandardMaterial({ map: A.tex, vertexColors: true, roughness: 0.95, transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide }), shared, 'f');
 
@@ -658,7 +927,7 @@ export async function add(game, ctx) {
   const BLOB = { ptable: 0.55, pchair: 0.4, planter3: 1.05, urn0: 0.85, urn1: 0.85, urn2: 0.85, basket: 0.62, basketFull: 0.62, planter0: 1.05, planter1: 1.05, planter2: 1.05, newsbox: 0.42, hydrant: 0.34, meter: 0.3, pbin: 0.42, can: 0.42, canRust: 0.42, cart: [1.25, 0.8], bike: [0.95, 0.28], bikeB: [0.95, 0.3], bikeShare: [0.95, 0.3],
     pchairL: 0, cbox: 0.4, crate: 0.4, ubox: 0.5, kiosk: [0.4, 0.7], block: [0.9, 0.6], bag: 0.45, chalk: 0.5, barrier: [1.0, 0.45], cone: 0.26, spost: 0.16, busstop: 0.18, bench: [1.1, 0.5], cbflat: [0.6, 0.45] };
   const BINT = [C('#2c3d34'), C('#263830'), C('#5d6163'), C('#6f7375'), C('#232526')];
-  const put = (name, x, y, z, h, o) => { const K = kinds[name]; if (!K) return; if ((name === 'basket' || name === 'basketFull') && !(o && o.tint)) o = Object.assign({ tilt: [(hsh(x, y, 71) - 0.5) * 0.09, (hsh(x, y, 72) - 0.5) * 0.09], s: 0.9 + 0.16 * hsh(x, y, 73) }, o, { tint: BINT[Math.floor(hsh(Math.round(x / 60), Math.round(y / 60), 74) * 2.99) + (hsh(x, y, 75) < 0.07 ? 2 : 0)] }); K.list.push([x, y, z, h, o || null]); const B = BLOB[name]; if (name === 'ptable' || name === 'pchair') put(name + 'L', x, y, z, h, o); if (name === 'sigS' || name === 'sigL') put(name === 'sigS' ? 'sigShS' : 'sigShL', x, y, z, h); if (name === 'lampA' || name === 'lampS') put('lampSh', x, y, z, h, { s: name === 'lampA' ? 1 : 0.88 }); if (name === 'bike' || name === 'bikeB') { put('bikeL', x, y, z, h, o); put('bikeM', x, y, z, h, o); } if (name === 'basket' || name === 'basketFull') put('basketL', x, y, z, h, o); if (name === 'planter0' || name === 'planter1' || name === 'planter2' || name === 'planter3') put('planterL', x, y, z, h, o); if (name === 'urn0' || name === 'urn1' || name === 'urn2') put('urnL', x, y, z, h, o);
+  const put = (name, x, y, z, h, o) => { const K = kinds[name]; if (!K) return; if ((name === 'basket' || name === 'basketFull') && !(o && o.tint)) o = Object.assign({ tilt: [(hsh(x, y, 71) - 0.5) * 0.09, (hsh(x, y, 72) - 0.5) * 0.09], s: 0.9 + 0.16 * hsh(x, y, 73) }, o, { tint: BINT[Math.floor(hsh(Math.round(x / 60), Math.round(y / 60), 74) * 2.99) + (hsh(x, y, 75) < 0.07 ? 2 : 0)] }); K.list.push([x, y, z, h, o || null]); const B = BLOB[name]; if (name === 'ptable' || name === 'pchair') put(name + 'L', x, y, z, h, o);  if (name === 'lampA' || name === 'lampS') put('lampSh', x, y, z, h, { s: name === 'lampA' ? 1 : 0.88 }); if (name === 'bike' || name === 'bikeB') { put('bikeL', x, y, z, h, o); put('bikeM', x, y, z, h, o); } if (name === 'basket' || name === 'basketFull') put('basketL', x, y, z, h, o); if (name === 'planter0' || name === 'planter1' || name === 'planter2' || name === 'planter3') put('planterL', x, y, z, h, o); if (name === 'urn0' || name === 'urn1' || name === 'urn2') put('urnL', x, y, z, h, o);
     if (SHP[name] && kinds['sh_' + SHP[name]]) kinds['sh_' + SHP[name]].list.push([x, y, z, h, o || null]);
     if ((name === 'pchair' || name === 'ptable') && kinds.sunsh && !(o && o.tilt && Math.abs(o.tilt[0]) > 1)) { const hgt = name === 'pchair' ? 0.86 : 0.73, rad = name === 'pchair' ? 0.24 : 0.33, len = hgt * SUN.k; kinds.sunsh.list.push([x + SUN.dx * len / 2, y + SUN.dy * len / 2, z + 0.016, SUN.h, { s: [len / 2 + rad, 1, rad] }]); }
  if (B && kinds.blob) { const k = o && typeof o.s === 'number' ? o.s : 1; kinds.blob.list.push([x, y, z + 0.012, h, { s: typeof B === 'number' ? [B * k, 1, B * k] : [B[0] * k, 1, B[1] * k] }]); } };
@@ -682,12 +951,16 @@ export async function add(game, ctx) {
   { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 2, 32, 32, 31); gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.45, '#9a9a9a'); gr.addColorStop(1, '#000000'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
     const t = new THREE.CanvasTexture(c), geo = new THREE.PlaneGeometry(2, 2); geo.rotateX(-PI / 2);
     def('blob', [{ geometry: geo, material: new THREE.MeshBasicMaterial({ color: 0x000000, alphaMap: t, transparent: true, opacity: 0.72, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }), noShadow: true }], { far: 45, shadow: false }); }
-    def('sigS', P.sigS.geo, { far: 150, fam: 'sticker', shadow: false }); def('sigL', P.sigL.geo, { far: 150, fam: 'sticker', shadow: false });
-  const shMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
-  def('sigShS', [{ geometry: P.sigShS, material: shMat }], { far: 150 }); def('sigShL', [{ geometry: P.sigShL, material: shMat }], { far: 150 }); def('lampSh', [{ geometry: P.lampLod, material: shMat }], { far: 150 });
+    def('sigSm', P.sigSm, { near: 45, far: 150, fam: 'sticker', shadow: false }); def('sigLm', P.sigLm, { near: 45, far: 150, fam: 'sticker', shadow: false });
+    def('sigS', P.sigS.geo, { far: 150, fam: 'sticker', shadow: false }); def('sigL', P.sigL.geo, { far: 150, fam: 'sticker', shadow: false }); def('sigSc', P.sigS.geo, { far: 150, fam: 'sticker' }); def('sigLc', P.sigL.geo, { far: 150, fam: 'sticker' });
+  const shMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }); shMat.onBeforeCompile = (sh) => { sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>', '#include <project_vertex>\n gl_Position = vec4(2.0, 2.0, 2.0, 1.0);'); }; shMat.customProgramCacheKey = () => 'stfurnsh1';
+  def('sigShS', [{ geometry: P.sigShS, material: shMat }], { far: 150 }); def('sigShL', [{ geometry: P.sigShL, material: shMat }], { far: 150 }); def('lampSh', [{ geometry: P.lampShG, material: shMat }], { far: 150 });
   const SHP = { planter0: 'planterL', planter1: 'planterL', planter2: 'planterL', planter3: 'planterL', urn0: 'urnL', urn1: 'urnL', urn2: 'urnL', bike: 'bikeL', bikeB: 'bikeL', basket: 'basketL', basketFull: 'basketL' };
-  for (const g of ['planterL', 'urnL', 'bikeL', 'basketL']) def('sh_' + g, [{ geometry: P[g], material: shMat }], { far: 60, scale: g === 'basketL' ? 0.9 : undefined }); def('sigLodS', P.sigLodS, { near: 150, far: 650, shadow: false }); def('sigLodL', P.sigLodL, { near: 150, far: 650, shadow: false });
+  for (const g of ['planterL', 'urnL', 'bikeL', 'basketL']) def('sh_' + g, [{ geometry: P[g], material: shMat }], { far: 60, scale: g === 'basketL' ? 0.74 : 0.84 }); def('sigLodS', P.sigLodS, { near: 150, far: 650, shadow: false }); def('sigLodL', P.sigLodL, { near: 150, far: 650, shadow: false });
+  def('hblade', [{ geometry: P.hblade, material: hMat }], { far: 260, shadow: false, fam: 'blade', atlas: A2 }); def('honeway', [{ geometry: P.honeway, material: hMat }], { far: 260, shadow: false }); def('hpsign', [{ geometry: P.hpsign, material: hMat }], { far: 220, shadow: false, fam: 'park', atlas: A2 });
+  def('armface', P.armface, { far: 200, shadow: false }); def('harmface', [{ geometry: P.harmface, material: hMat }], { far: 200, shadow: false });
   def('blade', P.blade, { far: 260, shadow: false, fam: 'blade' }); def('armsign', P.armsign, { far: 300, shadow: false, fam: 'blade' }); def('oneway', P.oneway, { far: 260, shadow: false }); def('cab', P.cab, { far: 260, shadow: false });
+  def('twin', P.twin, { far: 400 });
   def('lampA', P.lampA, { far: 140, fam: 'sticker', shadow: false }); def('lampS', P.lampS, { far: 140, fam: 'sticker', shadow: false }); def('lampLod', P.lampLod, { near: 140, far: 700, shadow: false }); def('banner', P.banner, { far: 220, fam: 'banner', shadow: false });
   def('spost', P.spost, { far: 300 , shadow: false }); def('psign', P.psign, { far: 220, shadow: false, fam: 'park' }); def('psignP', P.psignP, { far: 220, shadow: false, fam: 'park' }); def('psignL', P.psignL, { far: 220, shadow: false, fam: 'park' }); def('busstop', P.busstop, { far: 400 , shadow: false });
   def('shelter', [{ geometry: P.shelter, material: fMat }, { geometry: P.shelterGlass, material: glassMat, noShadow: true }], { far: 500 });
@@ -765,31 +1038,61 @@ export async function add(game, ctx) {
   const offGrate = (x, y, r) => { const o = grateGrid.hit(x, y, r); if (!o || !onGrate(x, y, r)) return [x, y]; const g = o[3], v = -(x - g[0]) * g[3] + (y - g[1]) * g[2], d = ((g[5] || 0.56) + r + 0.6) * (v >= 0 ? 1 : -1) - v; return [x - g[3] * d, y + g[2] * d]; };
   const free = (x, y, r) => playable(x, y) && !occ.hit(x, y, r) && statics.onSidewalk(x, y) && !roads.inLane(x, y, r + 0.25) && !bldAt(x, y) && !onGrate(x, y, Math.min(0.35, r * 0.5));
   let SOLID = true;                       // switched off where only the planters and blocks may stop a car (shared streets)
-  const take = (x, y, r, solid) => { occ.add(x, y, r); if (solid && SOLID) statics.addCircle(x, y, solid, 'furniture'); };
-  const circles = { n: 0 }; const solid = (x, y, r) => { if (!SOLID) return; statics.addCircle(x, y, r, 'furniture'); circles.n++; };
+  // Nov 11 (public game; a player: "npcs can drive through this area but i cant"): nothing of this file is solid inside a lane traffic uses (lane width + the circle + 0.25 m)
+  const laneClear = (x, y, r) => !(roads && roads.inLane && roads.inLane(x, y, r + 0.25)) && !(Math.hypot(x + 231.6, y + 483.9) < 1 || Math.hypot(x + 126.1, y - 369.5) < 1);     /* lead, Nov 12: two pieces stand in Broadway's carriageway where two edges join (inLane misses the joint): not solid until the item moves them */
+  const take = (x, y, r, solid) => { occ.add(x, y, r); if (solid && SOLID && laneClear(x, y, solid)) statics.addCircle(x, y, solid, 'furniture'); };
+  const circles = { n: 0, lane: 0 }; const solid = (x, y, r) => { if (!SOLID) return; if (!laneClear(x, y, r)) { circles.lane++; return; } statics.addCircle(x, y, r, 'furniture'); circles.n++; };
+  // a heavy piece (planter, urn, granite block) is never drawn where it cannot be solid: it moves to the nearest point clear of the lanes (up to 3 m off, 16 directions), or is not placed
+  const seated = { moved: 0, dropped: 0 };
+  const seat = (x, y, r, okAt) => { if (laneClear(x, y, r)) return [x, y]; for (let d = 0.25; d <= 3.01; d += 0.25) for (let k = 0; k < 16; k++) { const a = k * PI / 8, px = x + Math.cos(a) * d, py = y + Math.sin(a) * d; if (laneClear(px, py, r) && (!okAt || okAt(px, py))) { seated.moved++; return [px, py]; } } seated.dropped++; return null; };
+  const post = (x, y, r) => { if (laneClear(x, y, r)) { statics.addCircle(x, y, r, 'furniture'); circles.n++; } };      // a thin post: solid wherever it stands clear of traffic, also on shared streets
   const TINTS = { news: [C('#b3261e'), C('#1f4f9a'), C('#d8b21c'), C('#2c6b3f'), C('#d9d8d0'), C('#e06a1c')], bike: [C('#141516'), C('#141516'), C('#2a2c2f'), C('#5d6063'), C('#8a8d8f'), C('#3a1614'), C('#14263a'), C('#1f3324'), C('#7a6a3a'), C('#a8aaa6')],
     umb: [C('#5f7426'), C('#8f2a22'), C('#b9b09a'), C('#23485a'), C('#c9c6bc')], net: [C('#0b0b0c'), C('#0b0b0c'), C('#123a22'), C('#c9521a'), C('#1c3a6a')], pbin: [C('#151617'), C('#1c3f6e'), C('#1f4a30')] };
   const pick = (a, r) => a[Math.min(a.length - 1, Math.floor(r * a.length))];
   const scrapAt = (x, y, seed) => put('scrap', x, y, SW, hsh(seed, 1) * TAU, { s: 0.8 + hsh(seed, 2) * 0.7 });
 
   // ================================================================= signals
-  const L = game.sigLamps, lampFix = [];
+  const ledTex = {}; for (const [k, cs] of [['r', ['#ff1402', '#fb1002', '#e60c02', '#8c0602']], ['y', ['#ffb418', '#ffae10', '#f49a08', '#9a5600']], ['g', ['#04f868', '#04f260', '#02d44c', '#005c26']]]) { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d'), gr = g.createRadialGradient(64, 60, 3, 64, 64, 64);
+    gr.addColorStop(0, cs[0]); gr.addColorStop(0.4, cs[1]); gr.addColorStop(0.8, cs[2]); gr.addColorStop(0.97, cs[3]); gr.addColorStop(1, '#000000'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+    { const sh = g.createLinearGradient(0, 0, 0, 128); sh.addColorStop(0, 'rgba(0,0,0,0.5)'); sh.addColorStop(0.3, 'rgba(0,0,0,0.12)'); sh.addColorStop(0.55, 'rgba(0,0,0,0)'); g.fillStyle = sh; g.fillRect(0, 0, 128, 128); }      // the upper part of the lens sits deeper in its visor
+    g.fillStyle = 'rgba(0,0,0,0.2)'; for (let y = 0; y < 128; y += 5) for (let x = (y / 5) % 2 ? 2.5 : 0; x < 128; x += 5) { g.fillRect(x + 3.4, y, 1.6, 5); g.fillRect(x, y + 3.4, 5, 1.6); }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; ledTex[k] = t; }
+  const ledMat = (m) => { m.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vLedC; varying float vLedN;').replace('#include <project_vertex>', `#include <project_vertex>
+        { mat4 lm = modelMatrix; 
+          #ifdef USE_INSTANCING
+          lm = modelMatrix * instanceMatrix;
+          #endif
+          vec3 lax = normalize((lm * vec4(1.0, 0.0, 0.0, 0.0)).xyz); vec3 lwp = (lm * vec4(0.0, 0.0, 0.0, 1.0)).xyz; vec3 lvp = (lm * vec4(position, 1.0)).xyz; vec3 lvd = normalize(cameraPosition - lvp); vLedC = dot(lax, normalize(cameraPosition - lwp)); vLedN = dot(normalize(mat3(lm) * normal), lvd); }`);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vLedC; varying float vLedN;').replace('#include <map_fragment>', `#include <map_fragment>
+        diffuseColor.rgb *= mix(0.012, 1.0, smoothstep(0.52, 0.9, vLedC)) * mix(0.07, 1.0, pow(clamp(vLedN, 0.0, 1.0), 4.0));`); };
+    m.customProgramCacheKey = () => 'stled4'; return m; };
+  const litGeo = domeGeo(0.128), LMUL = { r: 3.6, y: 2.6, g: 2.7 };
+  const LCOL = { r: [2.5, 0.09, 0.05], y: [2.4, 1.25, 0.07], g: [0.02, 1.9, 0.22] };
+  const L = game.sigLamps, lampFix = [], sigKind = [];
   const pedSlots = [];                        // [matrix, slot 0 = A (walks on green), 1 = B (walks on red)] per signal
+  const HERO = (x, y) => Math.hypot(x + 225, y + 380) < 230, dropSig = new Set();
+  { const order = sigs.map((p, i) => i).filter((i) => HERO(sigs[i][0], sigs[i][1])).sort((a, b) => (sigs[b][5] - sigs[a][5]) || (a - b)), kept = [];
+    for (const i of order) { const p = sigs[i]; if (kept.some((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) < 21)) dropSig.add(i); else kept.push(p); } }
   sigs.forEach((p, i) => {
+    if (dropSig.has(i)) { if (L && L.base) for (const k of ['r', 'y', 'g']) for (let j = 0; j < 3; j++) L.base[k][i * 3 + j] = new THREE.Matrix4().makeScale(0, 0, 0); pedSlots.push([new THREE.Matrix4().makeScale(0, 0, 0), new THREE.Matrix4().makeScale(0, 0, 0)]); return; }
     const th = p[2] + (p[6] || 0), y0 = p[7] || SW, node = city.nodes[p[4]]; let width = p[5] ? 17.8 : 9.6, apName = null; const streets = new Map();
     for (const k of node.e) { const e = city.edges[k]; if (e.b === p[4] || e.a === p[4]) { const pts = e.b === p[4] ? e.pts : e.pts.slice().reverse(), a = pts[pts.length - 2], b = pts[pts.length - 1]; if (Math.abs(angDiff(Math.atan2(b[1] - a[1], b[0] - a[0]), p[2])) < 0.35) { width = e.width; apName = e.name; } }
       if (e.name && !streets.has(e.name)) { const q = e.pts, near0 = Math.hypot(q[0][0] - node.p[0], q[0][1] - node.p[1]) < Math.hypot(q[q.length - 1][0] - node.p[0], q[q.length - 1][1] - node.p[1]), a = near0 ? q[0] : q[q.length - 2], b = near0 ? q[1] : q[q.length - 1]; streets.set(e.name, [Math.atan2(b[1] - a[1], b[0] - a[0]), e.oneway]); } }
-    const long = width >= 14, K = long ? P.sigL : P.sigS, r = hsh(p[0], p[1], 1);
-    put(long ? 'sigL' : 'sigS', p[0], p[1], y0, th, { cell: [Math.floor(r * 5), Math.floor(hsh(p[0], p[1], 2) * 3)] }); put(long ? 'sigLodL' : 'sigLodS', p[0], p[1], y0, th);
+    const long = width >= 14, K = sigKind[i] = long ? P.sigL : P.sigS, r = hsh(p[0], p[1], 1);
+    const castsOwn = Math.hypot(p[0] + 222, p[1] + 364) < 80 && !(game.P && game.P.get && game.P.get('fsh') === '0'); put((long ? 'sigL' : 'sigS') + (castsOwn ? 'c' : ''), p[0], p[1], y0, th, { cell: [Math.floor(r * 5), Math.floor(hsh(p[0], p[1], 2) * 3)] }); put(long ? 'sigLm' : 'sigSm', p[0], p[1], y0, th, { cell: [Math.floor(r * 5), Math.floor(hsh(p[0], p[1], 2) * 3)] }); put(long ? 'sigShL' : 'sigShS', p[0], p[1], y0, th); put(long ? 'sigLodL' : 'sigLodS', p[0], p[1], y0, th);
+    if (long) put(HERO(p[0], p[1]) ? 'harmface' : 'armface', p[0], p[1], y0, th);
     let bi = 0, oi = 0;
-    for (const [name, [ang, ow]] of [...streets.entries()].sort().slice(0, 2)) { const ci = nameIx.get(name); if (ci !== undefined) put('blade', p[0], p[1], y0 + 3.62 + 0.3 * bi++, ang + (hsh(p[0], bi, 5) < 0.5 ? PI : 0), { cell: [ci % BC, Math.floor(ci / BC)] }); if (ow) put('oneway', p[0], p[1], y0 + 3.2 - 0.36 * oi++, ang); }
-    if (long) { const cross = [...streets.keys()].sort().find((nm) => nm !== apName), ci = cross ? nameIx.get(cross) : undefined; if (ci !== undefined) put('armsign', p[0], p[1], y0, th, { cell: [ci % BC, Math.floor(ci / BC)] }); }
-    if (hsh(p[0], p[1], 3) < 0.38) put('cab', p[0], p[1], y0, th);
-    if (hsh(p[0], p[1], 4) < 0.5) put('psignP', p[0], p[1], y0 + 1.9, th + 0.25, { cell: [Math.floor(hsh(p[0], p[1], 5) * 8), 0], tilt: [0, (hsh(p[0], p[1], 6) - 0.5) * 0.06] });
+    for (const [name, [ang, ow]] of [...streets.entries()].sort().slice(0, 2)) { const ci = nameIx.get(name); const hi = HERO(p[0], p[1]) ? heroNames.indexOf(shortName(name)) : -1; if (hi >= 0) put('hblade', p[0], p[1], y0 + 3.62 + 0.3 * bi++, ang + (hsh(p[0], bi, 5) < 0.5 ? PI : 0), { cell: [0, hi] }); else if (ci !== undefined) put('blade', p[0], p[1], y0 + 3.62 + 0.3 * bi++, ang + (hsh(p[0], bi, 5) < 0.5 ? PI : 0), { cell: [ci % BC, Math.floor(ci / BC)] }); if (ow) put(HERO(p[0], p[1]) ? 'honeway' : 'oneway', p[0], p[1], y0 + 3.2 - 0.36 * oi++, ang); }
+    if (long && !HERO(p[0], p[1])) { const cross = [...streets.keys()].sort().find((nm) => nm !== apName), ci = cross ? nameIx.get(cross) : undefined; if (ci !== undefined) put('armsign', p[0], p[1], y0, th, { cell: [ci % BC, Math.floor(ci / BC)] }); }
+    if (hsh(p[0], p[1], 3) < 0.38 || HERO(p[0], p[1])) put('cab', p[0], p[1], y0, th);
+    if (HERO(p[0], p[1])) { const k = Math.floor(hsh(p[0], p[1], 5) * 3.99); put('hpsign', p[0], p[1], y0 + 1.9, th + 0.25, { cell: [k % 2, Math.floor(k / 2)], tilt: [0, (hsh(p[0], p[1], 6) - 0.5) * 0.04] }); }
+    else if (hsh(p[0], p[1], 4) < 0.5) put('psignP', p[0], p[1], y0 + 1.9, th + 0.25, { cell: [Math.floor(hsh(p[0], p[1], 5) * 8), 0], tilt: [0, (hsh(p[0], p[1], 6) - 0.5) * 0.06] });
     occ.add(p[0], p[1], 0.9);
     // lit lamps: the lead's three discs per signal, moved onto our lenses
     const M = new THREE.Matrix4().compose(new THREE.Vector3(p[0], y0, -p[1]), new THREE.Quaternion().setFromAxisAngle(UP, th), new THREE.Vector3().setScalar(p[3] || 1));
-    if (L && L.base) K.heads.forEach((h, j) => { for (const [k, dy] of [['r', 0.345], ['y', 0], ['g', -0.345]]) { const T = new THREE.Matrix4().makeRotationY(h.yaw).setPosition(h.x, h.y, h.z).multiply(new THREE.Matrix4().makeTranslation(0.012, dy * h.s, 0)).multiply(new THREE.Matrix4().makeScale(h.s * 1.15, h.s * 1.15, h.s * 1.15)); L.base[k][i * 3 + j] = new THREE.Matrix4().multiplyMatrices(M, T); } });
+    if (L && L.base) for (let j = K.heads.length; j < 3; j++) for (const k of ['r', 'y', 'g']) L.base[k][i * 3 + j] = new THREE.Matrix4().makeScale(0, 0, 0);      // a lamp of the lead's with no head of ours
+    if (L && L.base) K.heads.forEach((h, j) => { for (const [k, dy] of [['r', 0.345], ['y', 0], ['g', -0.345]]) { const T = headM(h).multiply(new THREE.Matrix4().makeTranslation(0.022, dy * h.s, 0)).multiply(new THREE.Matrix4().makeScale(h.s * 1.06, h.s * 1.06, h.s * 1.06)); L.base[k][i * 3 + j] = new THREE.Matrix4().multiplyMatrices(M, T); } });
     pedSlots.push(K.peds.map((q) => new THREE.Matrix4().multiplyMatrices(M, new THREE.Matrix4().makeRotationY(q.ry + PI / 2).setPosition(q.x + (q.ry ? 0 : 0.008), q.y, q.z + (q.ry ? 0.008 : 0)))));
     // corner company: a litter basket past the pole, a cabinet, news boxes, a vendor on the avenues
     const dx = Math.cos(p[2]), dy = Math.sin(p[2]);
@@ -803,13 +1106,26 @@ export async function add(game, ctx) {
         if (kinds.crate) put('crate', x - dx * 1.25 + dy * 0.2, y - dy * 1.25 - dx * 0.2, SW, rv * 9); if (kinds.cbox) put('cbox', x - dx * 1.3 - dy * 0.25, y - dy * 1.3 + dx * 0.25, SW, rv * 5); } } }
   });
   if (L && L.state) L.state.fill('');
-  if (L && L.g && L.g.material) { L.g.material.color.setRGB(0.0, 1.15, 0.3); L.r.material.color.setRGB(2.3, 0.08, 0.04); L.y.material.color.setRGB(2.3, 1.2, 0.07); }        // the lead's lamp colours bloom to white
+  if (L && L.halo) for (const k of ['r', 'y', 'g']) if (L.halo[k]) L.halo[k].visible = false;
+  if (L) for (const k of ['r', 'y', 'g']) if (L[k]) L[k].visible = false;        // the lead's lamp colours bloom to white
   // lit pedestrian faces: an orange hand or a white walker, switched with the vehicle phases
+  // lit lamps of the extra heads at the arm tip (the lead's lamps cover three heads a pole)
+  const xl = { slots: [], n: 0 }; sigs.forEach((p, i) => { const th = p[2] + (p[6] || 0), K = sigKind[i]; xl.slots[i] = []; if (!K || !K.extra.length) return; const M = new THREE.Matrix4().compose(new THREE.Vector3(p[0], p[7] || SW, -p[1]), new THREE.Quaternion().setFromAxisAngle(UP, th), new THREE.Vector3().setScalar(p[3] || 1));
+    for (const h of K.extra) { const o = { opp: h.opp, m: {}, ix: xl.n++ }; for (const [k, dy] of [['r', 0.345], ['y', 0], ['g', -0.345]]) o.m[k] = new THREE.Matrix4().multiplyMatrices(M, headM(h).multiply(new THREE.Matrix4().makeTranslation(0.022, dy, 0)).multiply(new THREE.Matrix4().makeScale(1.06, 1.06, 1.06))); xl.slots[i].push(o); } });
+  const lit = {}, extras = []; { const cap = Math.max(1, sigs.length * 3 + xl.n); for (const k of ['r', 'y', 'g']) { const im = new THREE.InstancedMesh(litGeo, ledMat(new THREE.MeshBasicMaterial({ color: new THREE.Color(LMUL[k], LMUL[k], LMUL[k]), map: ledTex[k], toneMapped: false })), cap); im.frustumCulled = false; im.matrixAutoUpdate = false; im.count = 0; group.add(im); lit[k] = im; extras.push({ m: im, cube: true }); } }
+  const spill = { n: sigs.length * 3 + xl.n };
+  if (L && L.base && spill.n) { const sg = new THREE.CylinderGeometry(0.1335, 0.1425, 0.25, 20, 6, true, PI * 0.66, PI * 1.68); sg.rotateZ(-PI / 2); sg.translate(0.125, 0, 0); const P0 = sg.attributes.position, col = new Float32Array(P0.count * 3); for (let q = 0; q < P0.count; q++) { const X = Math.max(0, P0.getX(q)) / 0.13, f = 0.5 * ((X * X + 2) / Math.sqrt(X * X + 4) - X) * 2 * (0.85 + 0.15 * P0.getY(q) / 0.14); col[q * 3] = col[q * 3 + 1] = col[q * 3 + 2] = f; } sg.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    for (const k of ['r', 'y', 'g']) { const c0 = LCOL[k], lk = k === 'g' ? 0.42 : k === 'y' ? 0.5 : 1, c = [c0[0] * lk, c0[1] * lk, c0[2] * lk]; const im = new THREE.InstancedMesh(sg, new THREE.MeshBasicMaterial({ color: new THREE.Color(c[0] * 0.075, c[1] * 0.075 + c[0] * 0.004, c[2] * 0.075 + c[0] * 0.006), vertexColors: true, side: THREE.BackSide, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, toneMapped: false }), spill.n); im.frustumCulled = false; im.matrixAutoUpdate = false; const z0 = new THREE.Matrix4().makeScale(0, 0, 0); for (let q = 0; q < spill.n; q++) im.setMatrixAt(q, z0); im.count = 0; im.renderOrder = 4; group.add(im); spill[k] = im; extras.push({ m: im, cube: false }); } }
   const pedLit = { hand: null, walk: null, state: new Array(sigs.length).fill('') };
   if (sigs.length) {
-    const mk = (ci) => { const b = new PB(A); b.quad('ped', [0, 0, 0], 0.37, 0.37, { ci }); const g = b.build(); const m = new THREE.MeshBasicMaterial({ map: A.tex, color: new THREE.Color(1.7, 1.7, 1.7), toneMapped: false }); const im = new THREE.InstancedMesh(g, m, sigs.length * 2); im.frustumCulled = false; im.matrixAutoUpdate = false; group.add(im); return im; };
+    const mk = (ci) => { const b = new PB(A2); b.quad('ped', [0, 0, 0], 0.4, 0.4, { ci }); const g = b.build(); const m = new THREE.MeshBasicMaterial({ map: A2.tex, color: new THREE.Color(2.5, 2.5, 2.5), toneMapped: false }); const im = new THREE.InstancedMesh(g, m, sigs.length * 2); im.frustumCulled = false; im.matrixAutoUpdate = false; group.add(im); extras.push({ m: im, cube: false }); return im; };
     pedLit.hand = mk(0); pedLit.walk = mk(1); const hide = new THREE.Matrix4().makeScale(0, 0, 0);
-    const upd = () => { let dirty = false; sigs.forEach((p, i) => { const st = L && L.state ? L.state[i] : 'r'; if (st === pedLit.state[i]) return; pedLit.state[i] = st; dirty = true; for (let j = 0; j < 2; j++) { const walk = j === 0 ? st === 'g' : st === 'r'; pedLit.walk.setMatrixAt(i * 2 + j, walk ? pedSlots[i][j] : hide); pedLit.hand.setMatrixAt(i * 2 + j, walk ? hide : pedSlots[i][j]); } }); if (dirty) { pedLit.hand.instanceMatrix.needsUpdate = true; pedLit.walk.instanceMatrix.needsUpdate = true; } };
+    const upd = () => { let dirty = false; sigs.forEach((p, i) => { const st = L && L.state ? L.state[i] : 'r'; if (st === pedLit.state[i]) return; pedLit.state[i] = st; dirty = true;
+        for (let j = 0; j < 2; j++) { const walk = j === 0 ? st === 'g' : st === 'r'; pedLit.walk.setMatrixAt(i * 2 + j, walk ? pedSlots[i][j] : hide); pedLit.hand.setMatrixAt(i * 2 + j, walk ? hide : pedSlots[i][j]); } });
+      if (!dirty) return; pedLit.hand.instanceMatrix.needsUpdate = true; pedLit.walk.instanceMatrix.needsUpdate = true;
+      for (const k of ['r', 'y', 'g']) { let n = 0; const add = (m) => { if (!m) return; lit[k].setMatrixAt(n, m); if (spill[k]) spill[k].setMatrixAt(n, m); n++; };       // every face shows its true phase; only lit lamps are instances
+        sigs.forEach((p, i) => { const K = sigKind[i]; if (!K || dropSig.has(i)) return; const st = pedLit.state[i] || 'r'; if (st === k && L && L.base) for (let j = 0; j < K.heads.length; j++) add(L.base[k][i * 3 + j]); for (const o of xl.slots[i] || []) if ((o.opp ? (st === 'r' ? 'g' : 'r') : st) === k) add(o.m[k]); });
+        lit[k].count = n; lit[k].instanceMatrix.needsUpdate = true; if (spill[k]) { spill[k].count = n; spill[k].instanceMatrix.needsUpdate = true; } } };
     const prevUpd = game.updateSignals; game.updateSignals = function () { prevUpd.call(this); upd(); };
     try { game.updateSignals(); } catch (e) { console.log('[streets] furniture: signal refresh: ' + e.message); }
     if (pedLit.state[0] === '') { pedLit.state.fill('x'); sigs.forEach((p, i) => { for (let j = 0; j < 2; j++) { pedLit.hand.setMatrixAt(i * 2 + j, pedSlots[i][j]); pedLit.walk.setMatrixAt(i * 2 + j, hide); } }); }
@@ -818,6 +1134,10 @@ export async function add(game, ctx) {
   // ================================================================= street lights
   for (const p of city.props.light || []) {
     const th = p[2] - PI / 2, e = nearEdge(p[0] + Math.cos(th) * 3, p[1] + Math.sin(th) * 3), ave = !!(e && e.e.ave), r = hsh(p[0], p[1], 20);
+    if (Math.hypot(p[0] + 213, p[1] + 352) < 26) {      // the hero crossing: cast-iron twin posts with the two street names on them
+      put('twin', p[0], p[1], SW, th + PI / 2); post(p[0], p[1], 0.2); const g23 = Math.atan2(0.487, -0.875), gBw = Math.atan2(0.875, 0.487), hi = (re) => heroNames.findIndex((n) => re.test(n));
+      const iB = hi(/Broadway/i), i23 = hi(/23/); if (iB >= 0) put('hblade', p[0], p[1], SW + 3.55, gBw + (r < 0.5 ? PI : 0), { cell: [0, iB] }); if (i23 >= 0) put('hblade', p[0], p[1], SW + 3.22, g23 + (r < 0.5 ? 0 : PI), { cell: [0, i23] });
+      occ.add(p[0], p[1], 0.8); continue; }
     put(ave ? 'lampA' : 'lampS', p[0], p[1], SW, th, { cell: [Math.floor(r * 5), Math.floor(hsh(p[0], p[1], 21) * 3)], tilt: [(r - 0.5) * 0.012, (hsh(p[0], p[1], 22) - 0.5) * 0.012] }); put('lampLod', p[0], p[1], SW, th, { s: ave ? 1 : 0.88 });
     if (ave && r < 0.62) put('banner', p[0], p[1], SW, th, { cell: [Math.floor(hsh(Math.round(p[0] / 90), Math.round(p[1] / 90), 23) * 4), 0] });
     if (hsh(p[0], p[1], 24) < 0.55) put('psignL', p[0], p[1], SW + 2.3, th + (hsh(p[0], p[1], 25) < 0.5 ? PI / 2 : -PI / 2), { cell: [Math.floor(hsh(p[0], p[1], 26) * 8), 0], tilt: [(hsh(p[0], p[1], 27) - 0.5) * 0.05, 0] });
@@ -908,7 +1228,7 @@ export async function add(game, ctx) {
       let run = 1.5;
       for (let i = 0; i < ring.length; i++) { const a = ring[i], b = ring[(i + 1) % ring.length], SL = Math.hypot(b[0] - a[0], b[1] - a[1]); if (SL < 0.5) continue; const tx = (b[0] - a[0]) / SL, ty = (b[1] - a[1]) / SL, nx = -ty, ny = tx;
         for (; run < SL; run += 2.6 + 1.6 * hsh(i, run, 95)) { const kx = a[0] + tx * run, ky = a[1] + ty * run, ox = kx - nx * 1.3, oy = ky - ny * 1.3; if (statics.onSidewalk(ox, oy) || bldAt(ox, oy) || inPark(ox, oy)) continue;          // only where the roadway is on the other side
-          const q = Math.floor(hsh(kx, ky, 96) * 4), x = kx + nx * 0.85, y = ky + ny * 0.85, Z = zAt(x, y); if (occ.hit(x, y, 0.8) || bldAt(x, y) || !playable(x, y) || laneDist(x, y) < 3.3) continue;
+          const q = Math.floor(hsh(kx, ky, 96) * 4), st0 = q < 2 ? seat(kx + nx * 0.85, ky + ny * 0.85, 0.62, (px, py) => !bldAt(px, py) && playable(px, py) && !occ.hit(px, py, 0.8)) : [kx + nx * 0.85, ky + ny * 0.85]; if (!st0) continue; const x = st0[0], y = st0[1], Z = zAt(x, y); if (occ.hit(x, y, 0.8) || bldAt(x, y) || !playable(x, y) || laneDist(x, y) < 3.3) continue;
           if (q === 0) { put((hsh(kx, ky, 91) < 0.45 ? 'planter' + Math.floor(hsh(kx, ky, 97) * 4) : 'urn' + (1 + Math.floor(hsh(kx, ky, 92) * 1.99))), x, y, Z, kx, { s: 0.8 + 0.5 * hsh(kx, ky, 98) }); take(x, y, 0.9, 0.62); }
           else if (q === 1) { put('block', x, y, Z, Math.atan2(ty, tx) + (hsh(kx, ky, 99) - 0.5) * 0.5, { s: 0.85 + 0.3 * hsh(kx, ky, 98) }); take(x, y, 0.8, 0.5); }
           else { const dx2 = kx + nx * 0.3, dy2 = ky + ny * 0.3; put('delin', dx2, dy2, zAt(dx2, dy2), kx, { tilt: [(hsh(kx, ky, 97) - 0.5) * 0.16, (hsh(kx, ky, 98) - 0.5) * 0.16] }); take(dx2, dy2, 0.25, 0.06); } }
@@ -926,9 +1246,9 @@ export async function add(game, ctx) {
       for (let i = 0; i + 1 < pts.length; i++) { const a = pts[i], b = pts[i + 1], SL = Math.hypot(b[0] - a[0], b[1] - a[1]); if (SL < 0.5) continue; const tx = (b[0] - a[0]) / SL, ty = (b[1] - a[1]) / SL, rot = Math.atan2(ty, tx);
         for (; run < SL; run += 3.0) { const cx = a[0] + tx * run, cy = a[1] + ty * run; if (!playable(cx, cy) || cornerDist(cx, cy) < 3) continue; const ne = nearEdge(cx, cy, 8), half = (ne ? ne.e.width : 11) / 2, k = Math.round((sharedM += 3) / 3);
           for (const sd of [-1, 1]) { const nx = -ty * sd, ny = tx * sd, P2 = (o) => [cx + nx * o, cy + ny * o], sdk = k * 2 + sd, okR = (x, y, r) => !statics.onSidewalk(x, y) && !occ.hit(x, y, r) && !bldAt(x, y);
-            { const [x, y] = P2(2.0); if (hsh(sdk, 9) < 0.7 && okR(x, y, 0.2)) put('delin', x + tx * (hsh(sdk, 10) - 0.5) * 1.4, y + ty * (hsh(sdk, 10) - 0.5) * 1.4, 0.03, sdk, { s: [1, 0.8 + 0.25 * hsh(sdk, 11), 1], tilt: [(hsh(sdk, 1) - 0.5) * 0.14, (hsh(sdk, 2) - 0.5) * 0.14] }); }
+            { const [x, y] = P2(2.0); if (hsh(sdk, 9) < 0.7 && okR(x, y, 0.2)) { post(x + tx * (hsh(sdk, 10) - 0.5) * 1.4, y + ty * (hsh(sdk, 10) - 0.5) * 1.4, 0.06); put('delin', x + tx * (hsh(sdk, 10) - 0.5) * 1.4, y + ty * (hsh(sdk, 10) - 0.5) * 1.4, 0.03, sdk, { s: [1, 0.8 + 0.25 * hsh(sdk, 11), 1], tilt: [(hsh(sdk, 1) - 0.5) * 0.14, (hsh(sdk, 2) - 0.5) * 0.14] }); } }
             if (half < 4.4) continue;
-            if (k % 2 === 0) { const [x, y] = P2(3.55 + 0.3 * hsh(sdk, 3)); if (okR(x, y, 0.8)) { if (hsh(sdk, 4) < 0.62) { put((hsh(sdk, 12) < 0.45 ? 'planter' + Math.floor(hsh(sdk, 5) * 4) : 'urn' + (1 + Math.floor(hsh(sdk, 13) * 1.99))), x, y, 0.03, sdk, { s: 0.8 + 0.5 * hsh(sdk, 6) }); take(x, y, 0.9, 0.62); } else { put('block', x, y, 0.03, rot + (hsh(sdk, 7) - 0.5) * 0.5, { s: 0.85 + 0.3 * hsh(sdk, 6) }); take(x, y, 0.8, 0.5); } } }
+            if (k % 2 === 0) { const s0 = P2(3.55 + 0.3 * hsh(sdk, 3)), st0 = seat(s0[0], s0[1], 0.62, (px, py) => okR(px, py, 0.8)), x = st0 ? st0[0] : 0, y = st0 ? st0[1] : 0; if (st0 && okR(x, y, 0.8)) { if (hsh(sdk, 4) < 0.62) { put((hsh(sdk, 12) < 0.45 ? 'planter' + Math.floor(hsh(sdk, 5) * 4) : 'urn' + (1 + Math.floor(hsh(sdk, 13) * 1.99))), x, y, 0.03, sdk, { s: 0.8 + 0.5 * hsh(sdk, 6) }); take(x, y, 0.9, 0.62); } else { put('block', x, y, 0.03, rot + (hsh(sdk, 7) - 0.5) * 0.5, { s: 0.85 + 0.3 * hsh(sdk, 6) }); take(x, y, 0.8, 0.5); } } }
             if (half > 5.6) { const [x, y] = P2(4.7 + (half - 5.5) * hsh(sdk, 8)); SOLID = false; fillCell(x, y, 0.03, (px, py, r) => okR(px, py, r * 0.8)); SOLID = true; } } } run -= SL; } }
   } catch (e) { console.log('[streets] furniture: shared_streets.json not used: ' + (e && e.message)); }
 
@@ -1035,14 +1355,29 @@ export async function add(game, ctx) {
   // ================================================================= build the instanced meshes
   const hidden = ['signal', 'light', 'hydrant', 'bin', 'meter', 'newsbox'];
   for (const m of game.propMeshes || []) if (hidden.includes(m.userData.kind)) { if (m.userData.kind === 'hydrant' && !kinds.hydrant && !kinds.hydLod) continue; m.visible = false; }
+  // frame cost (r15): furniture was +3 ms on the M2 Pro, in draw calls (about 350 meshes in range, each drawn again by the AO pass and the street cube).
+  // Now: a tile size per kind chosen by cost, each instance culled to its own distance band in the vertex shader, the shadow stand-ins merged
+  // into one caster mesh per 95 m tile, and only what matters drawn in the AO pass and the street cube. ?fperf=0 = as before (to measure).
+  const PF = game.P && game.P.get && game.P.get('fperf') !== null ? +game.P.get('fperf') : 7, PT = !!(PF & 1), PC = !!(PF & 4), PFS = { pass: !!(PF & 2), only: (PF & 8) ? /^(sig|lamp|blade|oneway|cab|armsign|blob|shcast)/ : null },     /* ?fperf= bits: 1 tile sizes, 2 pass rules, 4 merged casters, 8 only signals and lamps (a floor to measure against) */ SAMP = [[-201, -366], [-122, -143], [40, 60], [260, -200], [-330, 240]], DRAW = 24000;
+  const pickT = (K, vertsK) => { let best = 190, bc = 1e18;
+    for (const T of [48, 95, 190, 380, 760, 4000]) { const tl = new Map(); for (const it of K.list) { const k = (Math.floor(it[0] / T) + 512) * 1024 + Math.floor(it[1] / T) + 512; tl.set(k, (tl.get(k) || 0) + 1); }
+      let c = 0; const r = T * 0.7072; for (const [k, n] of tl) { const tx = (Math.floor(k / 1024) - 512 + 0.5) * T, ty = (k % 1024 - 512 + 0.5) * T; for (const sp of SAMP) { const d = Math.hypot(sp[0] - tx, sp[1] - ty); if (d - r < K.far && d + r >= K.near) c += DRAW + n * vertsK; } }
+      if (c < bc) { bc = c; best = T; } }
+    return best; };
+  const NOAO = /^(blob|sunsh|sigSh|lampSh|sh_|net|hblade|honeway|hpsign|armface|harmface|blade|armsign|oneway|psign|banner|shedBoard|shedPermit|cbflat|scrap)/, CUBE = /^(sig[SL][cm]?$|sigLod|lamp[AS]$|lampLod|twin|shelter|cart|umbrella|kiosk)/;
+  if (PT) { const FAR = { sigS: 45, sigL: 45, sigSc: 45, sigLc: 45, sigSm: 130, sigLm: 130, lampA: 110, lampS: 110, rack: 90, fence: 120, spost: 120, urnL: 120, planterL: 120, pchairL: 100, ptableL: 110, bagLod: 120, scaf: 90, shedUnder: 60, scrap: 40, bikeL: 110, net: 150, psign: 140, psignP: 140, psignL: 140, hpsign: 140,
+      blade: 180, hblade: 180, armsign: 200, oneway: 180, honeway: 180, cab: 180, meter: 150, newsbox: 150, delin: 140, cone: 140, cbflat: 100, banner: 160, hydLod: 180, basketL: 120, busstop: 250, shelter: 300, kiosk: 300, umbrella: 300, umbrellaC: 300, umbrellaV1: 300, umbrellaV2: 300, cart: 300,
+      block: 250, benchP: 200, aframe: 160, dock: 160, dockKiosk: 250, pbin: 160, shedBoard: 150, sigLodS: 350, sigLodL: 350, lampLod: 350 };
+    for (const k in FAR) if (kinds[k]) kinds[k].far = Math.min(kinds[k].far, FAR[k]); for (const k of ['sigLodS', 'sigLodL']) kinds[k].near = 130; kinds.lampLod.near = 110; }
+  else { kinds.sigSm.list.length = 0; kinds.sigLm.list.length = 0; }
   const meshes = []; let instances = 0, tris = 0; const M4 = new THREE.Matrix4(), q4 = new THREE.Quaternion(), e4 = new THREE.Euler(), v4 = new THREE.Vector3(), s4 = new THREE.Vector3();
   for (const name of Object.keys(kinds)) {
-    const K = kinds[name]; if (!K.list.length) continue; const tiles = new Map(), triK = K.parts.reduce((t, q) => t + (q.geometry.index ? q.geometry.index.count : q.geometry.attributes.position.count) / 3, 0), T = K.list.length * triK < 80000 ? 380 : 190;      // big tiles only for kinds that are cheap in total: a tile is drawn whole
+    const K = kinds[name]; if (!K.list.length) continue; const tiles = new Map(), triK = K.parts.reduce((t, q) => t + (q.geometry.index ? q.geometry.index.count : q.geometry.attributes.position.count) / 3, 0), T = PT ? pickT(K, triK * 3) : (K.list.length * triK < 80000 ? 380 : 190);      // the tile size that costs least: a draw call against the vertices of a tile drawn whole
     for (const it of K.list) { const k = Math.floor(it[0] / T) + ',' + Math.floor(it[1] / T); let a = tiles.get(k); if (!a) tiles.set(k, (a = [])); a.push(it); }
     for (const [key, items] of tiles) {
       const [ti, tj] = key.split(',').map(Number);
       for (const part of K.parts) {
-        const isF = part.material === fMat || part.material === netMat, n = items.length, fc = K.fam ? A.cells[K.fam] : null;
+        const isF = part.material === fMat || part.material === netMat || part.material === hMat, n = items.length, fc = K.fam ? (K.atlas || A).cells[K.fam] : null;
         const g = new THREE.BufferGeometry(); for (const a in part.geometry.attributes) g.setAttribute(a, part.geometry.attributes[a]); g.setIndex(part.geometry.index); g.boundingSphere = part.geometry.boundingSphere; g.boundingBox = part.geometry.boundingBox;
         const im = new THREE.InstancedMesh(g, part.material, n), tint = isF ? new Float32Array(n * 3).fill(1) : null, cell = isF ? new Float32Array(n * 2) : null;
         for (let i = 0; i < n; i++) {
@@ -1052,21 +1387,45 @@ export async function add(game, ctx) {
           if (isF && o) { if (o.tint) tint.set(o.tint, i * 3); if (o.cell && fc) { cell[i * 2] = o.cell[0] * fc.du; cell[i * 2 + 1] = o.cell[1] * fc.dv; } }
         }
         if (isF) { g.setAttribute('aTint', new THREE.InstancedBufferAttribute(tint, 3)); g.setAttribute('aCell', new THREE.InstancedBufferAttribute(cell, 2)); }
+        { const bd = new Float32Array(n * 2); for (let i = 0; i < n; i++) { bd[i * 2] = K.near; bd[i * 2 + 1] = K.far; } g.setAttribute('aBand', new THREE.InstancedBufferAttribute(bd, 2)); }
         im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); im.matrixAutoUpdate = false; im.updateMatrix();
         im.castShadow = K.shadow && !part.noShadow; im.receiveShadow = true; im.name = 'st_' + name; if (part.material.transparent) im.renderOrder = 3;
-        im.userData = { kind: 'st_' + name, far: K.far, near: K.near, cx: (ti + 0.5) * T, cz: -(tj + 0.5) * T, r: T * 0.7072 };
+        im.userData = { tiled: true, kind: 'st_' + name, far: K.far, near: K.near, cx: (ti + 0.5) * T, cz: -(tj + 0.5) * T, r: T * 0.7072, cast: im.castShadow, ao: K.near === 0 && T <= 380 && !part.material.transparent && !NOAO.test(name), cube: CUBE.test(name) && part.material !== shMat };
         group.add(im); meshes.push(im); instances += n; tris += n * (g.index ? g.index.count : g.attributes.position.count) / 3;
       }
     }
   }
+  // the shadow stand-ins of every kind as one caster mesh per 95 m tile (made once the other parts have taken their instances out)
+  const tDone = performance.now(); let merged = !PC;
+  const ready = () => { const rp = game.streets && game.streets.report; return !!(rp && (rp.clutter !== undefined || rp.vehicles !== undefined)) || performance.now() - tDone > 5000; };
+  const AO_R = 28, CUBE_R = 60, CAST_R = 60;
+  const mergeCasters = () => { merged = true; const tl = new Map(), TS = 95, v = new THREE.Vector3(), e = M4.elements;
+    for (const m of meshes) { if (m.material !== shMat || !m.isInstancedMesh) continue; const P = m.geometry.attributes.position;
+      for (let i = 0; i < m.count; i++) { m.getMatrixAt(i, M4); if (Math.abs(e[0]) + Math.abs(e[1]) + Math.abs(e[2]) < 1e-6) continue; const k = Math.floor(e[12] / TS) + ',' + Math.floor(-e[14] / TS); let a = tl.get(k); if (!a) tl.set(k, (a = []));
+        for (let q = 0; q < P.count; q++) { v.fromBufferAttribute(P, q).applyMatrix4(M4); a.push(v.x, v.y, v.z); } }
+      m.userData.off = true; m.visible = false; group.remove(m); }
+    for (const [key, a] of tl) { const ij = key.split(',').map(Number), g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(a), 3)); g.computeBoundingSphere();
+      const me = new THREE.Mesh(g, shMat); me.castShadow = true; me.receiveShadow = false; me.matrixAutoUpdate = false; me.name = 'st_shcast';
+      me.userData = { tiled: true, kind: 'st_shcast', far: CAST_R, near: 0, cx: (ij[0] + 0.5) * TS, cz: -(ij[1] + 0.5) * TS, r: TS * 0.7072, cast: false }; group.add(me); meshes.push(me); } };
+  let active = meshes, actP = null; const ACT = !(PF & 16);
+  const refresh = (p) => { const fixed = group.children.filter((c) => !c.userData.tiled); active = [];
+    for (const m of meshes) { const u = m.userData; if (u.off) continue; const dc = Math.hypot(p.x - u.cx, p.z - u.cz); if (Math.max(0, dc - u.r) < u.far + 15 && (u.near === 0 || dc + u.r >= u.near - 15)) { active.push(m); m.parent = group; } }
+    group.children = fixed.concat(active); actP = { x: p.x, z: p.z }; };
   const prev = world.scene.onBeforeRender;
   world.scene.onBeforeRender = function (renderer, scene, camera, rt) {
     if (prev) prev.call(this, renderer, scene, camera, rt);
     if (!camera.isPerspectiveCamera || !group.visible) return; const p = camera.position;
-    for (const m of meshes) { const u = m.userData, d = Math.max(0, Math.hypot(p.x - u.cx, p.z - u.cz) - u.r); m.visible = !u.off && d < u.far && (u.near === 0 || d >= u.near); }
+    if (!merged && ready()) { try { mergeCasters(); } catch (err) { merged = true; console.log('[streets] furniture: caster merge failed: ' + (err && err.message)); } actP = null; }
+    if (ACT && merged && (!actP || (camera === world.camera && Math.hypot(p.x - actP.x, p.z - actP.z) > 10))) refresh(p);
+    const PERF = PFS.pass, ONLY = PFS.only, ao = PERF && !!scene.overrideMaterial, cube = PERF && !ao && (camera.layers.mask === 8 || !!(rt && rt.isWebGLCubeRenderTarget));
+    for (const e of extras) e.m.visible = ao ? false : cube ? e.cube : true;
+    for (const m of active) { const u = m.userData; if (u.off) continue; if (ONLY && !ONLY.test(u.kind.slice(3))) { m.visible = false; continue; } const dc = Math.hypot(p.x - u.cx, p.z - u.cz), d = Math.max(0, dc - u.r);
+      let v = d < u.far && (u.near === 0 || dc + u.r >= u.near);
+      if (v && ao) v = !!u.ao && d < AO_R; else if (v && cube) v = !!u.cube && d < CUBE_R;
+      m.visible = v; if (PC && u.cast && !ao && !cube) m.castShadow = d < CAST_R; }
   };
   world.scene.add(group);
   const kc = {}; for (const k in kinds) if (kinds[k].list.length) kc[k] = kinds[k].list.length;
   console.log('[streets] furniture kinds ' + JSON.stringify(kc) + ' kerb ' + JSON.stringify(counts));
-  return { group, meshes, kinds, grateSpots, report: { instances, ktris: Math.round(tris / 1000), signals: sigs.length, lights: (city.props.light || []).length, plazaSets, fence_m: Math.round(fenceM), scafBays, shedBays, osmPlazas, shops: shopN, grates: gratesIn.length, grateRacks, shared_m: sharedM, circles: circles.n } };
+  return { group, meshes, kinds, grateSpots, perf: PFS, lit, report: { instances, ktris: Math.round(tris / 1000), signals: sigs.length, lights: (city.props.light || []).length, plazaSets, fence_m: Math.round(fenceM), scafBays, shedBays, osmPlazas, shops: shopN, grates: gratesIn.length, grateRacks, shared_m: sharedM, circles: circles.n, seatMoved: seated.moved, seatDropped: seated.dropped } };
 }

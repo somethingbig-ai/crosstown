@@ -420,7 +420,8 @@ export class Game {
     let last = performance.now(), acc = 0; this.fps = 60; let fc = 0, ft = 0;
     const loop = (now) => {
       requestAnimationFrame(loop); const now0 = performance.now();
-      let el = Math.min(0.1, (now - last) / 1000); last = now; ft += el; fc++; if (ft > 0.5) { this.fps = fc / ft; fc = 0; ft = 0;
+      let el = Math.max(0, Math.min(0.1, (now - last) / 1000));
+      { const wc = this.world && this.world.cam; if (wc && wc.taa) { const h = this.cam.mode === 'heli'; if (h !== !!wc._heli) { wc._heli = h; wc.taa.enabled = !h && !wc.isOld; if (wc._rs) this.world.resize(...wc._rs); } } }     /* lead, Nov 12: the camera lane's anti-aliasing history smears the cockpit (it moves with the camera), so in the helicopter the picture goes back to FXAA */ last = now; ft += el; fc++; if (ft > 0.5) { this.fps = fc / ft; fc = 0; ft = 0;
         // live play keeps its frame rate first: screen-space ambient occlusion (a second full geometry pass) steps down when the machine can't hold ~50 fps
         // audit item 12: the governor used to count the slow first seconds (shaders compiling, textures going up) and could only step down, so
         // every machine ended at the smallest picture with AO off. It now waits 10 s, and steps back up when there is room: picture size first, then

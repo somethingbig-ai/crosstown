@@ -14,7 +14,7 @@ import { worldRotate } from './rig.js';
 import { clamp } from '../geo.js';
 import { bake } from '../crowd/render.js';
 
-const POOL = 12, DOWN = [I.H, I.N, I.C, I.P, I.KL, I.KR, I.FL, I.FR, I.EL, I.ER];
+const NOOP = () => {}, POOL = 12, DOWN = [I.H, I.N, I.C, I.P, I.KL, I.KR, I.FL, I.FR, I.EL, I.ER];
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _m = new THREE.Matrix4();
 const _o = {}, _mL = new THREE.Matrix4();
 const phi_fix = (L) => L.negate();
@@ -92,8 +92,9 @@ export class Fit {
         let ang = Math.atan2(_v4.crossVectors(ref, sh).dot(t), ref.dot(sh)); ang = clamp(ang, -0.6, 0.6) * sm((flex - 0.12) / 0.3); R[l[0]].premultiply(_q.setFromAxisAngle(t, ang)); } }
     R.toe_L.copy(R.foot_L); R.toe_R.copy(R.foot_R);
     // world rotations -> local, parents first
-    const wq = this.wq; wq.clear(); const world = (b) => { let q = wq.get(b); if (q) return q; q = new THREE.Quaternion(); if (b === par || !b.parent) b.getWorldQuaternion(q); else q.copy(world(b.parent)).multiply(b.quaternion); wq.set(b, q); return q; };
-    par.getWorldQuaternion(_q); wq.set(par, _q.clone());
+    const wq = this.wq, pool = this.wqp || (this.wqp = new Map()), tmp = (b) => { let q = pool.get(b); if (!q) pool.set(b, (q = new THREE.Quaternion())); return q; };      // (nothing is allocated per frame: the quaternions are kept per bone)
+    wq.clear(); const world = (b) => { let q = wq.get(b); if (q) return q; q = tmp(b); if (b === par || !b.parent) b.getWorldQuaternion(q); else q.copy(world(b.parent)).multiply(b.quaternion); wq.set(b, q); return q; };
+    wq.set(par, par.getWorldQuaternion(tmp(par)));
     for (const k of ORDER) { const b = B[k]; if (!b || (k === 'chest' && b === B.spine)) continue; const w = this._w || (this._w = {}), t = w[k] || (w[k] = new THREE.Quaternion()); t.copy(R[k]).multiply(q0[k]); b.quaternion.copy(_q2.copy(world(b.parent)).invert()).multiply(t); wq.set(b, t); }
     if (this.loose.length) { hips.updateWorldMatrix(true, false); for (const L of this.loose) { const b = L.b; if (!b.parent) continue; b.parent.updateWorldMatrix(true, false); _m.copy(b.parent.matrixWorld).invert().multiply(_mL.multiplyMatrices(hips.matrixWorld, L.rel)).decompose(b.position, b.quaternion, b.scale); } }
   }
@@ -156,12 +157,12 @@ function standMaterial(src, part, shared, hasMask) {
     if (shared) Object.assign(sh.uniforms, { tLight: shared.tLight, uHalf: shared.uHalf, uSunColor: shared.uSunColor, uShadowFar: shared.uShadowFar, uShadowCenter: shared.uShadowCenter });
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
         varying vec3 vWPos; varying vec3 vCTint; varying float vCH; varying float vCAO; varying vec3 vBind; uniform vec4 uWound; uniform sampler2D tLight; uniform vec2 uHalf; uniform vec3 uSunColor; uniform float uShadowFar; uniform vec3 uShadowCenter; vec3 bakeV; vec3 bakeN;`)
-      .replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb *= vCTint; if (uWound.w > 0.0) { vec3 wd = vBind - uWound.xyz; float wr = length(wd) * (1.0 + 0.22 * sin(wd.x * 70.0 + wd.y * 31.0) + 0.16 * sin(wd.y * 110.0 - wd.z * 47.0 + 1.7)); float sw = 1.0 - smoothstep(uWound.w * 0.15, uWound.w, wr); diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.2, 0.012, 0.012) + vec3(0.085, 0.002, 0.002), sw * 0.95); }')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb *= vCTint; if (uWound.w > 0.0) { vec3 wd = vBind - uWound.xyz; float wr = length(wd) * (1.0 + 0.22 * sin(wd.x * 70.0 + wd.y * 31.0) + 0.16 * sin(wd.y * 110.0 - wd.z * 47.0 + 1.7)); float sw = 1.0 - smoothstep(uWound.w * 0.6, uWound.w, wr); diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.13, 0.008, 0.008) + vec3(0.05, 0.0015, 0.0015), sw * 0.96); }')
       .replace('#include <aomap_fragment>', (lit ? 'bakeV = texture2D(tLight, vec2(vWPos.x / (2.0 * uHalf.x) + 0.5, -vWPos.z / (2.0 * uHalf.y) + 0.5)).rgb; bakeN = vec3(0.0, 1.0, 0.0);' + BAKE_LIGHT_GLSL : '') + `
         { float ao = ${ao ? 'clamp(vCAO, 0.0, 1.0)' : '1.0'}; float cg = mix(0.45, 1.0, smoothstep(0.0, 1.25, vCH)); float amb = 0.8; float sunK = 1.15;
           reflectedLight.indirectDiffuse *= cg * amb * ao; reflectedLight.indirectSpecular *= cg * 0.5 * ao; reflectedLight.directDiffuse *= mix(1.0, ao, 0.2) * sunK; reflectedLight.directSpecular *= ao * 1.5; }`);
   };
-  m.customProgramCacheKey = () => 'standin5|' + (hasMask ? 'm' : 'u') + (ao ? 'a' : '') + (lit ? 'l' : 'd');
+  m.customProgramCacheKey = () => 'standin6|' + (hasMask ? 'm' : 'u') + (ao ? 'a' : '') + (lit ? 'l' : 'd');
   return m;
 }
 
@@ -176,15 +177,15 @@ BLOB_GEO.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([0, 1
 // Round 15: a DECAL UNDER BODIES by draw order (opaque, hard edge by discard, renderOrder 1, no depth write; bodies are renderOrder 3, so a
 // body lying on it always covers it), and UNLIT: a dark red divided by the film pass's live exposure (POOL_K, set each frame in poseRest),
 // so it shows as the same dark red in sun and shade (lit it went pink, unlit and undivided it glowed).
-const POOL_K = { value: 1 };
+const POOL_K = { value: 1 }, POOL_TEX = { value: null }, POOL_TEXON = { value: 0 };      // (live play meters exposure into a 1x1 texture the film pass reads, world.js tExp / uExpTex: the pool divides by the same texel, or it glows red in shade: seen in out/pub/lead_over.jpg)
 function poolMat() {
   const m = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: false, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
-  const U = (m.uniforms = { uA: { value: 0 }, uS: { value: 0 }, uH: { value: 0.22 }, uPK: POOL_K });
+  const U = (m.uniforms = { uA: { value: 0 }, uS: { value: 0 }, uH: { value: 0.22 }, uPK: POOL_K, tPExp: POOL_TEX, uPExpOn: POOL_TEXON });
   m.onBeforeCompile = (sh) => { Object.assign(sh.uniforms, U);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vQ;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvQ = position.xz;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uA; uniform float uS; uniform float uH; uniform float uPK; varying vec2 vQ;')
-      .replace('#include <color_fragment>', '#include <color_fragment>\n{ float an = atan(vQ.y, vQ.x); float edge = 0.72 + 0.12 * sin(an * 2.0 + uS) + 0.08 * sin(an * 5.0 + uS * 2.3) + 0.05 * sin(an * 9.0 + uS * 0.7) + 0.05 * uH * sin(an * 14.0 + uS * 1.9); float pd = length(vQ) / edge; pd *= 1.0 + 0.10 * sin(vQ.x * 9.0 + uS * 3.1) * sin(vQ.y * 11.0 - uS * 1.7); float pa = 1.0 - smoothstep(mix(0.86, 0.95, uH), 1.0, pd); float sat = 0.5 + 0.5 * sin(vQ.x * 23.0 + uS * 5.0) * sin(vQ.y * 19.0 + uS * 2.0); pa *= mix(1.0, step(0.25, sat), smoothstep(0.62, 0.9, pd)); if (uA * pa < 0.5) discard; diffuseColor = vec4(mix(vec3(0.092, 0.003, 0.003), vec3(0.04, 0.0015, 0.0015), 1.0 - smoothstep(0.3, 0.9, pd)) * uPK, 1.0); }'); };
-  m.customProgramCacheKey = () => 'bloodpool9'; return m;
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uA; uniform float uS; uniform float uH; uniform float uPK; uniform sampler2D tPExp; uniform float uPExpOn; varying vec2 vQ;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n{ float an = atan(vQ.y, vQ.x); float edge = 0.72 + 0.12 * sin(an * 2.0 + uS) + 0.08 * sin(an * 5.0 + uS * 2.3) + 0.05 * sin(an * 9.0 + uS * 0.7) + 0.05 * uH * sin(an * 14.0 + uS * 1.9); float pd = length(vQ) / edge; pd *= 1.0 + 0.10 * sin(vQ.x * 9.0 + uS * 3.1) * sin(vQ.y * 11.0 - uS * 1.7); float pa = 1.0 - smoothstep(mix(0.86, 0.95, uH), 1.0, pd); /* (close stills, Nov 12: the rim had round punched holes and one flat colour: a sticker. Now a whole lobed shape, thin and browner at the rim, deep in the middle, with a faint wet sheen off-centre) */ if (uA * pa < 0.5) discard; float thick = 1.0 - smoothstep(0.25, 0.97, pd); vec3 bc = mix(vec3(0.085, 0.012, 0.008), vec3(0.036, 0.0012, 0.0012), smoothstep(0.0, 0.55, thick)); float sh = exp(-dot(vQ - vec2(0.18, -0.22), vQ - vec2(0.18, -0.22)) * 9.0) * (0.6 + 0.4 * sin(vQ.x * 17.0 + uS)); bc += vec3(0.022, 0.016, 0.016) * sh * thick; float pk = uPExpOn > 0.5 ? 1.0 / clamp(texture2D(tPExp, vec2(0.5)).r, 0.25, 8.0) : uPK; diffuseColor = vec4(bc * pk, 1.0); }'); };
+  m.customProgramCacheKey = () => 'bloodpool11'; return m;
 }
 // blood in the air at the hit: a short burst of dark drops out of the far side (and a few back toward the gun) that fall and leave
 // small spots on the ground behind the person. One Points object for everything; restrained: no chunks, gone in half a second
@@ -224,7 +225,7 @@ class Drops {
 }
 const PATCH_MAT = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8, uniforms: { uA: { value: 0 }, uS: { value: 0 } },
   vertexShader: 'varying vec2 vQ; void main(){ vQ = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-  fragmentShader: 'uniform float uA; uniform float uS; varying vec2 vQ; void main(){ float an = atan(vQ.y, vQ.x); float edge = 0.7 + 0.14 * sin(an * 3.0 + uS) + 0.09 * sin(an * 5.0 + uS * 2.3) + 0.05 * sin(an * 11.0 + uS * 0.7); float d = length(vQ) / edge; float a = 1.0 - smoothstep(0.45, 1.0, d); gl_FragColor = vec4(mix(vec3(0.05, 0.002, 0.002), vec3(0.02, 0.001, 0.001), smoothstep(0.0, 0.6, 1.0 - d)), uA * a); }' });
+  fragmentShader: 'uniform float uA; uniform float uS; varying vec2 vQ; void main(){ float an = atan(vQ.y, vQ.x); float edge = 0.7 + 0.14 * sin(an * 3.0 + uS) + 0.09 * sin(an * 5.0 + uS * 2.3) + 0.05 * sin(an * 11.0 + uS * 0.7); float d = length(vQ) / edge; float a = 1.0 - smoothstep(0.78, 1.0, d); gl_FragColor = vec4(mix(vec3(0.05, 0.002, 0.002), vec3(0.02, 0.001, 0.001), smoothstep(0.0, 0.6, 1.0 - d)), uA * a); }' });
 // where a bullet meets the figure's own surface (the hit test is a cylinder): one ray against the skinned meshes as they are posed now
 const _rc = new THREE.Raycaster();
 function surface(root, h) {
@@ -304,6 +305,9 @@ export class Bodies {
       wall: (x, z, r, out, y, np) => { let hit = false; if (st.resolve(x, -z, r, _o, !!np)) { x = _o.x; z = -_o.y; hit = true; }
       if (!np) for (const c of this.boxes) { const dx = x - c.x, dy = -z - c.y; if (dx * dx + dy * dy > c.r2 || (y !== undefined && y > c.top)) continue; const lx = dx * c.cs + dy * c.sn, ly = -dx * c.sn + dy * c.cs, px = c.hx + r - Math.abs(lx), py = c.hy + r - Math.abs(ly); if (px <= 0 || py <= 0) continue;
         let ex = 0, ey = 0; if (px < py) ex = (lx < 0 ? -1 : 1) * Math.min(px, 0.05); else ey = (ly < 0 ? -1 : 1) * Math.min(py, 0.05); x += ex * c.cs - ey * c.sn; z -= ex * c.sn + ey * c.cs; hit = true; }
+      // (seen on a laptop, out/pub/crossA_k0: a body lying INSIDE a concrete block) the map holds street furniture as a circle (a block: r 0.5 m) but a block is
+      // drawn as a box whose corners reach 0.75 m: for a body the big furniture circles count 45 % wider (eased out, 5 cm a step at most)
+      if (!np && st.circ && st.key && st.cell) { try { const ci = Math.floor(x / st.cell), cj = Math.floor(-z / st.cell); for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const L = st.circ.get(st.key(ci + a, cj + b)); if (!L) continue; for (const c of L) { if (!c.on || c.tag !== 'furniture' || c.r < 0.45 || (y !== undefined && y > 0.75)) continue; const dx = x - c.x, dy = -z - c.y, d = Math.hypot(dx, dy), R = c.r * 1.45 + r; if (d >= R || d < 1e-6) continue; const e = Math.min(R - d, 0.05); x += (dx / d) * e; z -= (dy / d) * e; hit = true; } } } catch (e) {} }
       if (hit) { out.x = x; out.z = z; } return hit; } };
     this.blobs = new THREE.Group(); game.world.scene.add(this.blobs); try { this.drops = new Drops(this); } catch (e) { this.drops = null; }
     { const gt = game.world.gtao, bl = this.blobs; if (gt && gt.renderOverride && !gt._bodies) { gt._bodies = true; const ro = gt.renderOverride.bind(gt); const self = this; gt.renderOverride = function (...a) { const v = bl.visible; bl.visible = false; for (const q of self.peds) if (q.body && q.body.mark) q.body.mark.visible = false; try { return ro(...a); } finally { bl.visible = v; for (const q of self.peds) if (q.body && q.body.mark) q.body.mark.visible = true; } }; } }
@@ -330,9 +334,11 @@ export class Bodies {
     if (!b.fit.ok) return null;
     // room in the pool: the oldest body that is out of sight goes; if all are in sight, the oldest
     while (this.live.length >= POOL) { let k = this.live.findIndex((q) => q.doll && !this.seen(q)); if (k < 0) k = this.live.findIndex((q) => q.doll); if (k < 0) break; this.release(this.live[k]); }
-    b.used = true; b.holder.visible = true; b.t = 0; this.live.push(b); return b;
+    if (b.rest) this.freeze(b, false); b.rest = 0; b.used = true; b.holder.visible = true; b.t = 0; this.live.push(b); return b;
   }
-  release(b) { const i = this.live.indexOf(b); if (i >= 0) this.live.splice(i, 1); b.used = false; b.doll = null; b.holder.visible = false; b.blob.visible = false; this.free.push(b); if (this.free.length > 30) { const d = this.free.shift(); this.group.remove(d.holder); } }
+  release(b) { const i = this.live.indexOf(b); if (i >= 0) this.live.splice(i, 1); if (b.rest) this.freeze(b, false); b.rest = 0; b.used = false; b.doll = null; b.holder.visible = false; b.blob.visible = false; this.free.push(b); if (this.free.length > 30) { const d = this.free.shift(); this.group.remove(d.holder); } }
+  // a stand-in at rest: three's per-frame skeleton update (bone matrices and the bone texture's upload) is switched off / on again
+  freeze(b, on) { try { b.root.traverse((o) => { if (!o.isSkinnedMesh || !o.skeleton) return; const sk = o.skeleton; if (on) { if (sk.update !== NOOP) { sk.update(); sk.update = NOOP; } } else if (sk.update === NOOP) delete sk.update; }); } catch (e) {} }
   seen(b) { const cam = this.g.world.camera, p = b.doll ? b.doll.p : null; if (!p) return false; _v.set(p[I.P * 3], p[I.P * 3 + 1], p[I.P * 3 + 2]); const d = _v.distanceTo(cam.position); if (d > 120) return false; _v.project(cam); return Math.abs(_v.x) < 1.1 && Math.abs(_v.y) < 1.2 && _v.z < 1; }
 
   // h: the hit, sim space (x y z, dx dy dz, part). Returns true when the death is ours.
@@ -523,9 +529,18 @@ export class Bodies {
   pose(dt) {
     if (this._warm && --this._warm.n <= 0) { if (!this._warm.b.used) this._warm.b.holder.visible = false; this._warm = null; }
     const t0 = performance.now();
-    for (const b of this.live) if (b.doll) { b.fit.apply(b.doll); if (b.wound) { const W = b.wound; W.t += dt; const r = 0.045 + 0.07 * (1 - Math.exp(-W.t / 1.3)); for (const m of b.mats) m.userData.si.uWound.value.set(W.x, W.y, W.z, r); }
-      this.shade(b.doll, b.blob, 1); }
-    for (const p of this.peds) { const o = p.vis.object; o.position.set(p.x, this.env.ground(p.x, -p.y), -p.y); o.rotation.set(0, p.h, 0); o.updateMatrixWorld(true); p.body.fit.apply(p.body.doll); this.shade(p.body.doll, p.body.blob, 0); }
+    // (public report 075004-16a733: frame rate beside a body) a body AT REST is posed once and then left alone: no fit, no shadow blob work, and
+    // for a stand-in no skeleton update or bone-texture upload either (rest: 0 moving, 1 posed for the last time, 2 frozen). A shot wakes it.
+    for (const b of this.live) if (b.doll) { const d = b.doll;
+      if (b.wound && b.wound.t < 9) { const W = b.wound; W.t += dt; const r = 0.045 + 0.07 * (1 - Math.exp(-W.t / 1.3)); for (const m of b.mats) m.userData.si.uWound.value.set(W.x, W.y, W.z, r); }
+      if (d.asleep && b.rest) { if (b.rest === 1) { this.freeze(b, true); b.rest = 2; } this.nRest = (this.nRest || 0) + 1; continue; }
+      if (b.rest) { this.freeze(b, false); b.rest = 0; }
+      b.fit.apply(d); this.shade(d, b.blob, 1); if (d.asleep) b.rest = 1; }
+    for (const p of this.peds) { const o = p.vis.object, bd = p.body, d = bd.doll, hq = bd.fit.B.hips.quaternion;
+      // (a kit pedestrian's figure is the game's own: at rest it is left as posed unless something else has moved it since)
+      if (d.asleep && bd.rest && o.position.x === bd.rx && o.position.z === bd.rz && o.rotation.y === bd.rh && hq.x === bd.hx && hq.y === bd.hy && hq.z === bd.hz && hq.w === bd.hw) continue;
+      o.position.set(p.x, this.env.ground(p.x, -p.y), -p.y); o.rotation.set(0, p.h, 0); o.updateMatrixWorld(true); bd.fit.apply(d); this.shade(d, bd.blob, 0);
+      bd.rest = d.asleep; if (bd.rest) { bd.rx = o.position.x; bd.rz = o.position.z; bd.rh = o.rotation.y; bd.hx = hq.x; bd.hy = hq.y; bd.hz = hq.z; bd.hw = hq.w; } }
     this.poseRest(dt, t0);
     if (this.drops) { const w = this.g.world; this.drops.step(dt, w.camera, w.renderer.domElement.height); }
   }
@@ -537,9 +552,9 @@ export class Bodies {
   poseRest(dt, t0) {
     // the pool: nothing until the trunk has lain for a moment; then it starts small on the ground under the wound and creeps outward
     // for ten seconds or so (it stays where it began: the ground does not follow a limb that is still settling)
-    { let ex = 0; try { const f = this.g.world && this.g.world.film; ex = f && f.uniforms && f.uniforms.uExposure ? +f.uniforms.uExposure.value : 0; } catch (e) { ex = 0; } POOL_K.value = ex > 0.05 && isFinite(ex) ? 1 / Math.min(8, ex) : 1; }
+    { let ex = 0; try { const f = this.g.world && this.g.world.film; ex = f && f.uniforms && f.uniforms.uExposure ? +f.uniforms.uExposure.value : 0; } catch (e) { ex = 0; } POOL_K.value = ex > 0.05 && isFinite(ex) ? clamp(1 / ex, 0.35, 1.6) : 1; try { const fu = this.g.world.film.uniforms; POOL_TEX.value = fu.tExp ? fu.tExp.value : null; POOL_TEXON.value = fu.uExpTex && fu.uExpTex.value > 0.5 && POOL_TEX.value ? 1 : 0; } catch (e) { POOL_TEXON.value = 0; } }      // (capped: in live play on a laptop the pool showed BRIGHT red under trees, out/pub/lead_over.jpg: one over a small exposure figure blew it up)
     for (const q of this.pools) { const d = q.doll; if (!q.me.visible && d.lain < 0.45 && !d.asleep) continue; q.t += dt; const r = q.r * (0.15 + 0.85 * (1 - Math.exp(-q.t / 1.8)));      // from a hand's width: half size after a second, full in about five (at 3.0 s round 19's critics saw no pool in 2.4 s)
-      if (!q.me.visible) { const P = d.p, lo = P[I.SL * 3 + 1] < P[I.SR * 3 + 1] ? I.SL : I.SR, ox = P[lo * 3] - P[I.C * 3], oz = P[lo * 3 + 2] - P[I.C * 3 + 2], ol = Math.hypot(ox, oz) || 1, x = P[q.i * 3] * 0.65 + P[q.i2 * 3] * 0.35 + (ox / ol) * 0.3, z = P[q.i * 3 + 2] * 0.65 + P[q.i2 * 3 + 2] * 0.35 + (oz / ol) * 0.3; q.me.visible = true; q.me.position.set(x, this.env.ground(x, z) + 0.05, z); }
+      if (!q.me.visible) { const P = d.p, lo = P[I.SL * 3 + 1] < P[I.SR * 3 + 1] ? I.SL : I.SR, ox = P[lo * 3] - P[I.C * 3], oz = P[lo * 3 + 2] - P[I.C * 3 + 2], ol = Math.hypot(ox, oz) || 1, x = P[q.i * 3] * 0.65 + P[q.i2 * 3] * 0.35 + (ox / ol) * 0.3, z = P[q.i * 3 + 2] * 0.65 + P[q.i2 * 3 + 2] * 0.35 + (oz / ol) * 0.3; q.me.visible = true; q.me.position.set(x, this.env.ground(x, z) + 0.02, z); }
       q.me.scale.set(Math.max(0.01, r * q.sx), 1, Math.max(0.01, r)); q.me.material.uniforms.uA.value = 0.96; }
     for (const p of this.afraid) { const F = p.fear; if (!F || F.kind !== 'ped' || p.state === 'down' || !p.vis || !p.vis.object) continue; const want = F.cower > 0 || F.hold > 0; F.dk = clamp((F.dk || 0) + (want ? dt * 6 : -dt * 3.5), 0, 1); if (F.dk <= 0) continue;
       try { let fit = p.vis._fit; if (!fit || fit.root !== p.vis.object) fit = p.vis._fit = new Fit(p.vis.object, p.vis.name || p.kind); if (!fit.ok) continue; p.vis.object.updateMatrixWorld(true); if (fit.flip === undefined) fit.points(); if (F.cower > 0) F.deep = true;

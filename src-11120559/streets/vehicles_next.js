@@ -106,7 +106,7 @@ export async function add(game, ctx) {
   const [meta, gltf] = await Promise.all([fetch(A + 'vehicles.json', { cache: 'no-store' }).then((r) => r.json()), new GLTFLoader().setDRACOLoader(draco).loadAsync(A + 'vehicles.glb')]);
   // the openx-assets models (CC-BY, see ATTRIBUTION.md), on unless ?vopenx=0: same kit conventions, so they are more kinds of the same
   let oxMeta = null, oxScene = null, oxPrev = null; const prevKinds = [];
-  if (!(game.P && (game.P.get('vopenx') === '0' || (window.__CFG && window.__CFG.public && game.P.get('vopenx') !== '1')))) try { let ox = 'openx'; if (!(game.P && game.P.get('vox2') === '0')) { const r2 = await fetch(A + 'openx_next.json', { cache: 'no-store' }); if (r2.ok) { oxMeta = await r2.json(); ox = 'openx_next'; } }
+  if (!(game.P && (game.P.get('vopenx') === '0' || (window.__CFG && window.__CFG.public && game.P.get('vopenx') !== '1')))) try {   /* public build: hand-built cars only until the openx bodies are reshaped (CHIEF 02:37 Nov 12); ?vopenx=1 to test */ let ox = 'openx'; if (!(game.P && game.P.get('vox2') === '0')) { const r2 = await fetch(A + 'openx_next.json', { cache: 'no-store' }); if (r2.ok) { oxMeta = await r2.json(); ox = 'openx_next'; } }
       if (ox === 'openx') oxMeta = await fetch(A + 'openx.json', { cache: 'no-store' }).then((r) => r.json());
       oxScene = (await new GLTFLoader().setDRACOLoader(draco).loadAsync(A + ox + '.glb')).scene; oxScene.updateMatrixWorld(true);
       if (oxMeta.ox_cab) { oxMeta.ox_cab.base = ['taxi']; if (oxMeta.ox_corolla) oxMeta.ox_corolla.base = ['sedan']; }      // cabs are the cab model; same length, so the kerbs fill as before

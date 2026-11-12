@@ -29,6 +29,7 @@ export const WEAPONS = {
   rifle: { name: 'CARBINE', key: 'Digit5', auto: true, rpm: 700, mag: 30, reserve: 210, dmg: 38, pellets: 1, spread: 0.22, hip: 1.9, bloom: 0.30, bloomMax: 2.8, kick: 0.22, kickYaw: 0.14, back: 0.05, rise: 0.07, reload: 2.2, fov: 47, range: 220, tracer: 0.6, force: 1.5 },
 };
 // what the body shows of each shot: shoulder hike, head snap, chest turn (rad), hand lift per rad of muzzle flip (m), per-shot wander (m), roll (rad)
+const CLAV = ['clavicle_R', 'clavicle_L', 'spine', 'chest2'], _mzf = new THREE.Vector3();
 const KICK = { pistol: { sh: 0.2, head: 0.08, yaw: 0.07, lift: 0.2, jit: 0.006, roll: 0.06, sway: 0.05 }, smg: { sh: 0.09, head: 0.06, yaw: 0.07, lift: 0.1, jit: 0.018, roll: 0.07, sway: 0.045 }, shotgun: { sh: 0.3, head: 0.14, yaw: 0.14, lift: 0.22, jit: 0.01, roll: 0.08, sway: 0.08 }, rifle: { sh: 0.09, head: 0.06, yaw: 0.07, lift: 0.08, jit: 0.016, roll: 0.06, sway: 0.045 } };
 let ORDER = ['pistol', 'rifle', 'unarmed'];      /* v1: a pistol and a rifle, keys 1 and 2; Q puts the gun away and takes it out again. ?gall=1 adds the SMG (3) and the shotgun (4) */
 const _o = {}, _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _v4 = new THREE.Vector3(), _v5 = new THREE.Vector3(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _m = new THREE.Matrix4(), _e = new THREE.Euler();
@@ -101,9 +102,9 @@ class Combat {
   }
   hook() {
     const g = this.g, self = this;
-    const step0 = g.step.bind(g); g.step = function (dt) { self.pre(dt); self.own = self.stance; try { step0(dt); } finally { self.own = false; } self.post(dt); };
+    const step0 = g.step.bind(g); g.step = function (dt) { const d = dt > 0 ? dt : 0;      /* a negative frame time (the first live frame can carry one, see game.js start()) must never run the timers backwards: 'arc radius (-1.449) is negative' was headT pushed UP to 0.705 by dt = -0.705 */ self.pre(d); self.own = self.stance; try { step0(dt); } finally { self.own = false; } self.post(d); };
     const anim0 = (this.anim0 = g.playerAnim.bind(g)); g.playerAnim = function (n) { if (self.own) return; anim0(n); };
-    const sync0 = g.syncVisuals.bind(g); g.syncVisuals = function (dt) { sync0(dt); self.pose(dt); if (self.cap) self.cap.update(self.rig, g.player.vis.object.visible !== false); self.fx.update(dt, g.world.camera); };
+    const sync0 = g.syncVisuals.bind(g); g.syncVisuals = function (dt) { sync0(dt); if (!(dt > 0)) dt = 0; const ch = self.rig && self.rig.hold && g.P.get('gclav') !== '0' ? CLAV : null;      /* the clavicles (and spine, chest2) are put back before the frame's nudges when the clip did not write them (rig.hold; ?gclav=0 off) */ if (ch) for (const k of ch) self.rig.hold(k); self.pose(dt); if (ch) for (const k of ch) self.rig.held(k); if (self.fx.follow && g.P.get('gmzf') !== '0' && self.slot !== 'unarmed' && self.t - (self.lastShot ?? -9) < 0.2) self.fx.follow(self.muzzleWorld(_mzf));      /* the flash rides the muzzle for 0.2 s after a shot (?gmzf=0 off) */ if (self.cap) self.cap.update(self.rig, g.player.vis.object.visible !== false); self.fx.update(dt, g.world.camera); };
     const tgt0 = g.camTarget.bind(g); g.camTarget = function () { const t = tgt0(); if (self.armedFoot()) { const W = WEAPONS[self.slot], a = sm(Math.max(self.zoomT || 0, self.hipZ || 0)); t.auto = 0; const pc = self.slot === 'pistol'; t.dist = lerp(2.6, +(g.P.get('gcam') || self.T('camd', pc ? 1.0 : 1.3)), a); self._td = t.dist; t.height = lerp(0.26, +(g.P.get('gcamh') || self.T('camh', pc ? 0.24 : 0.18)), a);      /* aimed: close above and behind the right shoulder, the figure cropped at the chest, as every reference frames it; nearer and higher for the pistol, so the one-handed gun lies below and left of the crosshair and is seen along its side */ t.fov = lerp(50, +(g.P.get('gfov') || W.fov), a) + self.fovPunch; } return t; };
     const place0 = g.placeCamera.bind(g); g.placeCamera = function (dt) { if (self.armedFoot()) self.placeCamera(dt); else place0(dt); };
     const near0 = g.nearestCar.bind(g); g.nearestCar = function (d) { if (self.stance) return null; const all = g.vehicles; g.vehicles = all.filter((v) => !v.wreck); try { return near0(d); } finally { g.vehicles = all; } };
@@ -489,7 +490,7 @@ class Combat {
   }
   limp(I) {
     const g = this.g, v = g.player.vehicle, S = v && this.cars.get(v), C = S && S.crash; if (!C || g.demo) return; const f = clamp((900 - S.hp) / 700, 0, 1), sp = Math.abs(v.vf || 0);
-    if (f > 0.2 && sp > 2) { const p = C.side * this.T('crpull', 0.05) * ((f - 0.2) / 0.8) * Math.min(1, sp / 8); if (I.lock !== undefined) I.lock += p; else I.steer = clamp(I.steer + p * 4, -1, 1); }
+    if (f > 0.2 && sp > 2) { const p = C.side * this.T('crpull', 0) * ((f - 0.2) / 0.8) * Math.min(1, sp / 8); if (I.lock !== undefined) I.lock += p; else I.steer = clamp(I.steer + p * 4, -1, 1); }
     if (C.stall > 0) { I.throttle = 0; if ((v.vf || 0) < 0.6) I.brake = 0; } else if (f > 0.4) I.throttle *= 1 - 0.33 * f;
   }
   mkVehicle(v) { const n = new Vehicle(v.def, v.x, v.y, v.h, v.color); if (v.vseed !== undefined) n.vseed = v.vseed; if (v.mission) n.mission = v.mission; return n; }
@@ -663,7 +664,7 @@ class Combat {
       else { tick(cx - gap - len, cy, cx - gap, cy); tick(cx + gap, cy, cx + gap + len, cy); tick(cx, cy + gap, cx, cy + gap + len); if (!W.auto || true) tick(cx, cy - gap - len, cx, cy - gap); }
       c.fillStyle = 'rgba(0,0,0,0.55)'; c.beginPath(); c.arc(cx, cy, 2.6, 0, 7); c.fill(); c.fillStyle = col; c.beginPath(); c.arc(cx, cy, 1.5, 0, 7); c.fill();
       if (this.hitT > 0 || this.killT > 0) { const kq = this.killT > 0, u = kq ? this.killT / 0.4 : this.hitT / 0.16, r0 = 9 + (1 - u) * 5, r1 = r0 + 9; c.globalAlpha = Math.min(1, u * 1.6); c.strokeStyle = kq ? '#ff3b2f' : '#fff'; c.lineWidth = kq ? 3 : 2.2; for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) { c.beginPath(); c.moveTo(cx + sx * r0, cy + sy * r0); c.lineTo(cx + sx * r1, cy + sy * r1); c.stroke(); } }
-      if (this.headT > 0) { const u = this.headT / 0.55, r0 = 11 + (1 - u) * 9, r1 = r0 + 13; c.globalAlpha = Math.min(1, u * 2.2); c.lineCap = 'round';      /* a headshot: a gold cross, longer and thicker than the hit marker, with a ring that opens out */
+      if (this.headT > 0) { const u = Math.min(1, this.headT / 0.55), r0 = 11 + (1 - u) * 9, r1 = r0 + 13; c.globalAlpha = Math.min(1, u * 2.2); c.lineCap = 'round';      /* a headshot: a gold cross, longer and thicker than the hit marker, with a ring that opens out */
         for (const [colr, lw] of [['rgba(0,0,0,0.6)', 6.5], ['#ffd23f', 3.6]]) { c.strokeStyle = colr; c.lineWidth = lw; for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) { c.beginPath(); c.moveTo(cx + sx * r0, cy + sy * r0); c.lineTo(cx + sx * r1, cy + sy * r1); c.stroke(); } }
         c.strokeStyle = '#ffd23f'; c.lineWidth = 2; c.globalAlpha = Math.min(1, u * 1.4) * 0.8; c.beginPath(); c.arc(cx, cy, Math.max(0.5, 7 + (1 - u) * 30), 0, 7); c.stroke(); c.lineCap = 'butt'; }
       c.globalAlpha = 1;

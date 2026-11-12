@@ -9,7 +9,7 @@ import { buildCabin, BONES, PIVOT } from './cockpit/cabin.js';
 import { buildAtlas, buildPanelPicture, buildGrain, buildDust, AI_WIN } from './cockpit/faces.js';
 import { Displays } from './cockpit/displays.js';
 import { SCALES, angleOf, KT, AI_SPAN, compassDeg, altFt } from './cockpit/scales.js';
-import { dial } from './cockpit/layout.js';
+import { dial, DIALS, UNITS } from './cockpit/layout.js';
 import { buildStandinShell } from './cockpit/standin.js';
 import { Builder, M, GRAIN, rbox, setQuality } from './cockpit/geo.js';
 import { CabinSun } from './cockpit/sunshadow.js';
@@ -17,6 +17,7 @@ import { buildLiner } from './cockpit/liner.js';
 import { LIGHT } from '../world.js';
 
 const D2R = Math.PI / 180;
+const CABIN_GLB_DEFAULT = true;       // the built cabin (assets/heli/cockpit/cabin.glb) is drawn unless the page asks for the code-built one (?cabin=code) or the file does not load
 const AO = { floor: 0.13, local: 0.35, gain: 1.25, gam: 1.2, print: 0.95, printAdd: 0.012, plate: 0.3 };      // how the two baked terms become shading: the cabin is lit by its windows and little else, as a camera exposed for the day outside sees it
 const mk = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 
@@ -88,7 +89,7 @@ function movingMaterial(atlas, sun) {
         vec2 tq = vQ;
         if (vFx.x > 1.5 && vFx.x < 2.5) tq = vec2(fract(vFx.y + (vQ.x - 0.5) * 0.2), vQ.y);
         else if (vFx.x > 0.5) { vec2 q = vQ * 2.0 - 1.0; if (dot(q, q) > 1.0) discard; float c = cos(vFx.y), s = sin(vFx.y); tq = vec2(c * q.x - s * q.y, s * q.x + c * q.y) * 0.2 + vec2(0.5, 0.5 + vFx.z); }
-        vec4 sampledDiffuseColor = texture2D(map, mix(vUvR.xy, vUvR.zw, tq));
+        vec4 sampledDiffuseColor = texture2D(map, mix(vUvR.xy, vUvR.zw, tq), -0.85);
         diffuseColor *= sampledDiffuseColor; diffuseColor.rgb *= vFx.w;
         if (vFx.x > 2.5) { diffuseColor.rgb = vec3(0.0); diffuseColor.a *= 0.5; }`);
   };
@@ -143,6 +144,30 @@ export async function buildCockpit(ctx, model) {
     cab.aoLoaded = ao;
   } catch (e) { console.log('[heli] cockpit shading bake not used: ' + (e && e.message)); }
 
+  // ---- the built cabin (items/cockpit/blender: modelled panel with cased, recessed instruments, hood, pedestal, overhead, seats, floor,
+  // trim; window light, colour, roughness and relief baked): assets/heli/cockpit/cabin.glb. With it, the code-built fixed cabin and the
+  // painted plate are not drawn from the seats, and the live parts (faces, needles, screens, compass card) go to the floors of its wells.
+  let glb = null; const wantGlb = (() => { try { const q = new URLSearchParams(location.search).get('cabin'); return q === 'code' ? false : q === 'glb' ? true : CABIN_GLB_DEFAULT; } catch (e) { return CABIN_GLB_DEFAULT; } })();
+  if (wantGlb && !(model && model.standIn)) try { const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js'); glb = await Promise.race([new GLTFLoader().loadAsync(new URL('../../assets/heli/cockpit/' + (new URLSearchParams(location.search).get('cabinfile') || 'cabin.glb'), import.meta.url).href), new Promise((_, no) => setTimeout(() => no(new Error('cabin.glb did not arrive in 30 s')), 30000))]); glb.scene.updateMatrixWorld(true);
+    for (const n of ['panel', 'hood', 'lower', 'trim', 'glass_dials']) { const o = glb.scene.getObjectByName(n); if (!o || !o.isMesh || !o.geometry.attributes.position || !o.geometry.attributes.position.count) throw new Error('no ' + n + ' in the file'); } } catch (e) { console.log('[heli] cockpit: built cabin not used (' + (e && e.message) + ')'); glb = null; }
+  const dW = {}; let glbCompass = null;
+  if (glb) { const bak = [cab.prints.attributes.position.array.slice(), cab.prints.index ? cab.prints.index.array.slice() : null, cab.screens.attributes.position.array.slice()]; try {
+    const PMi = PM.clone().invert(), zc = new THREE.Vector3().setFromMatrixColumn(PM, 2).normalize(), v = new THREE.Vector3(), ud = (n) => { const o = glb.scene.getObjectByName(n); return o ? o.userData : null; };
+    for (const d of DIALS) { const u = ud('well_' + d.id); dW[d.id] = (u && u.floor_w !== undefined ? u.floor_w : -0.008) + 0.0005 - 0.0010; }
+    // printed pieces: only the dial faces stay (the built panel carries its own lettering and placards), each sunk to its well's floor
+    { const g = cab.prints, pos = g.attributes.position, keep = new Uint8Array(pos.count);
+      for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).applyMatrix4(PMi); if (Math.abs(v.z) > 0.008) continue; for (const d of DIALS) if (Math.hypot(v.x - d.u, v.y - d.v) < d.r + 0.003) { const k = dW[d.id]; pos.setXYZ(i, pos.getX(i) + zc.x * k, pos.getY(i) + zc.y * k, pos.getZ(i) + zc.z * k); keep[i] = 1; break; } }
+      const ix = g.index ? Array.from(g.index.array) : Array.from({ length: pos.count }, (_, i) => i), out = []; for (let i = 0; i < ix.length; i += 3) if (keep[ix[i]] && keep[ix[i + 1]] && keep[ix[i + 2]]) out.push(ix[i], ix[i + 1], ix[i + 2]); g.setIndex(out); pos.needsUpdate = true; g.computeBoundingSphere(); }
+    // lit screens: to the floors of their recesses
+    { const g = cab.screens, pos = g.attributes.position, rects = [['screen_gps', UNITS.gps.screen], ['screen_com', UNITS.com.screen], ['screen_xpdr', UNITS.xpdr.screen], ['screen_cwp', UNITS.cwp]];
+      for (let i = 0; i < pos.count; i++) { v.fromBufferAttribute(pos, i).applyMatrix4(PMi); for (const [n, r] of rects) if (Math.abs(v.x - r.u) < r.w / 2 + 0.004 && Math.abs(v.y - r.v) < r.h / 2 + 0.004) { const u = ud(n), k = (u && u.floor_w !== undefined ? u.floor_w : 0.003) + 0.0004 - v.z; pos.setXYZ(i, pos.getX(i) + zc.x * k, pos.getY(i) + zc.y * k, pos.getZ(i) + zc.z * k); break; } }
+      pos.needsUpdate = true; g.computeBoundingSphere(); }
+    const cc = glb.scene.getObjectByName('compass_card'); if (cc) glbCompass = cc.matrixWorld.clone();
+  } catch (e) {      // anything wrong with the file's wells: the code-built cabin as it was
+    console.log('[heli] cockpit: built cabin not used (' + (e && e.message) + ')'); glb = null; glbCompass = null; for (const k in dW) delete dW[k];
+    cab.prints.attributes.position.array.set(bak[0]); cab.prints.attributes.position.needsUpdate = true; cab.prints.setIndex(bak[1] ? new THREE.BufferAttribute(bak[1], 1) : null); cab.screens.attributes.position.array.set(bak[2]); cab.screens.attributes.position.needsUpdate = true; } }
+  const builtTrim = !!(glb && glb.scene.getObjectByName('trim'));
+
   // ---- meshes
   const sun = new CabinSun(2048, 2.3), solid = solidMaterial(tGrain, sun); if (world && world.renderer) sun.prime(world.renderer);
   const fixed = new THREE.Mesh(cab.fixed, solid); fixed.receiveShadow = false; fixed.castShadow = false; root.add(fixed);
@@ -158,16 +183,19 @@ export async function buildCockpit(ctx, model) {
   const fixedLo = new THREE.Mesh(low.fixed, solid); fixedLo.receiveShadow = true; fixedLo.visible = false; root.add(fixedLo);
   const movingLo = new THREE.SkinnedMesh(low.moving, solid); movingLo.bind(skel, new THREE.Matrix4()); movingLo.frustumCulled = false; movingLo.receiveShadow = true; movingLo.visible = false; root.add(movingLo);
 
-  let liner = null, wglass = null; const uSunObj = { value: new THREE.Vector3(0, 1, 0) }, uHaze = { value: new THREE.Vector4(0.1, 0.03, 0.1, 0.7) }, uGl = { value: new THREE.Vector4(0.1, 0, 0, 0) };      // glass film: lit by the sun, lit by the sky, how much it veils, the hood's mirror
+  const ownPassOnlyLater = [];
+  let liner = null, wglass = null; const uSunObj = { value: new THREE.Vector3(0, 1, 0) }, uHaze = { value: new THREE.Vector4(0.1, 0.03, 0.1, 0.7) }, uGl = { value: new THREE.Vector4(0.2, 0, 0, 0) }, uEdgeK = { value: 1 };      // glass film: lit by the sun, lit by the sky, how much it veils, the hood's mirror
   if (lin) {
+    // with the built trim only the pilot's door keeps this skin (the built cabin leaves that opening to the door, which swings)
+    if (builtTrim) { const g = lin.liner, si = g.attributes.skinIndex, ix = g.index.array, out = []; for (let i = 0; i < ix.length; i += 3) if (si.getX(ix[i]) === BONES.doorR) out.push(ix[i], ix[i + 1], ix[i + 2]); g.setIndex(out); }
     liner = new THREE.SkinnedMesh(lin.liner, solidMaterial(tGrain, sun, true)); liner.bind(skel, new THREE.Matrix4()); liner.frustumCulled = false; liner.receiveShadow = false; liner.visible = false; root.add(liner);
     // the glass from inside: a little tint, a film of dust and fine scratches that light up in the sun (most of all looking toward it),
     // and a faint mirror of the cabin (the glareshield's top in the windscreen)
     const gm = new THREE.MeshBasicMaterial({ color: 0xffffff, map: tDust, transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendSrc: THREE.OneFactor, blendDst: THREE.OneMinusSrcAlphaFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor, side: THREE.FrontSide });
     gm.onBeforeCompile = (sh) => {
-      sh.uniforms.uSunObj = uSunObj; sh.uniforms.uHaze = uHaze;
+      sh.uniforms.uSunObj = uSunObj; sh.uniforms.uHaze = uHaze; sh.uniforms.uEdgeK = uEdgeK;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aCut; varying vec2 vCut; varying vec3 vVO; varying vec3 vNO; varying vec3 vPO;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvCut = aCut; vPO = position; vNO = normal; vVO = (inverse(modelMatrix) * vec4(cameraPosition, 1.0)).xyz - position;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uSunObj; uniform vec4 uHaze; varying vec2 vCut; varying vec3 vVO; varying vec3 vNO; varying vec3 vPO;')
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uSunObj; uniform vec4 uHaze; uniform float uEdgeK; varying vec2 vCut; varying vec3 vVO; varying vec3 vNO; varying vec3 vPO;')
         .replace('#include <map_fragment>', '')
         .replace('#include <envmap_fragment>', `
           if (vCut.x < -0.006 || vCut.y < 0.0) discard;
@@ -178,7 +206,7 @@ export async function buildCockpit(ctx, model) {
             vec2 wq = vec2(abs(vPO.z) - 0.2, (vPO.y - 1.16) * 1.5); float wr = length(wq), wa = atan(wq.x, wq.y);
             float swept = smoothstep(0.10, 0.13, wr) * (1.0 - smoothstep(0.60, 0.63, wr)) * (1.0 - smoothstep(0.95, 1.05, abs(wa)));
             film = film * (1.0 - 0.6 * swept) + 0.10 * (1.0 - smoothstep(0.0, 0.012, abs(wr - 0.62))) * (1.0 - smoothstep(0.95, 1.05, abs(wa))) + 0.04 * (1.0 - swept); }
-          float edge = 1.0 - smoothstep(0.0, 0.035, vCut.x);
+          float edge = (1.0 - smoothstep(0.0, 0.035, vCut.x)) * uEdgeK;
           float lit = cabSun1() * step(0.0, dot(-No, uSunObj)), fwd = pow(max(dot(-Vo, uSunObj), 0.0), 5.0);
           vec3 c = vec3(1.0, 0.97, 0.9) * film * lit * (0.5 + 3.5 * fwd) * uHaze.x + vec3(0.8, 0.9, 1.0) * film * uHaze.y;
           // mirror: the hood's top where the mirrored ray lands on it, dim cabin otherwise
@@ -190,7 +218,7 @@ export async function buildCockpit(ctx, model) {
     wglass = new THREE.SkinnedMesh(lin.glass, gm); wglass.bind(skel, new THREE.Matrix4()); wglass.frustumCulled = false; wglass.renderOrder = 3; wglass.visible = false; root.add(wglass);
   }
   // printed pieces: the open sky's mirror picture reaches them only as far as the baked sky term says (the renderer's own would veil every black face grey-blue)
-  const shaded = (m) => { m.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <aomap_fragment>', '#include <aomap_fragment>\n reflectedLight.indirectSpecular *= 0.3 * vColor.r * vColor.r;'); }; return m; };
+  const shaded = (m) => { m.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <aomap_fragment>', '#include <aomap_fragment>\n reflectedLight.indirectSpecular *= 0.3 * vColor.r * vColor.r;').replace('#include <map_fragment>', '#ifdef USE_MAP\n vec4 sampledDiffuseColor = texture2D( map, vMapUv, -0.85 ); diffuseColor *= sampledDiffuseColor;\n#endif'); }; return m; };      // print sampled one mip level sharper: at the seat the faces are minified four times and the default choice blurred the lettering beside the screens' digits
   const prints = new THREE.Mesh(cab.prints, sun.patch(shaded(new THREE.MeshStandardMaterial({ map: tAtlas, vertexColors: true, roughness: 0.78, metalness: 0, alphaTest: 0.5, envMapIntensity: 0.22 })))); prints.receiveShadow = false; root.add(prints);
   const panel = new THREE.Mesh(cab.panel, sun.patch(shaded(new THREE.MeshStandardMaterial({ map: tPanel, vertexColors: true, roughness: 0.72, metalness: 0, envMapIntensity: 0.22 })))); panel.receiveShadow = false; root.add(panel);
   const screens = new THREE.Mesh(cab.screens, sun.patch(new THREE.MeshLambertMaterial({ color: 0x050505, emissive: 0xffffff, emissiveMap: tDyn, emissiveIntensity: 0.38 }))); root.add(screens);
@@ -207,7 +235,7 @@ export async function buildCockpit(ctx, model) {
           // the mirrored ray is followed to the cabin's walls: where it leaves through a window the glass shows sky
           if (abs(Ro.z) > 0.04) { float t = (sign(Ro.z) * 0.9 - Pg.z) / Ro.z; vec3 H = Pg + Ro * t; float band = smoothstep(1.17, 1.24, H.y) * (1.0 - smoothstep(1.87, 1.94, H.y));
             win = max(win, band * max(smoothstep(0.32, 0.40, H.x) * (1.0 - smoothstep(1.55, 1.72, H.x)), smoothstep(-0.45, -0.38, H.x) * (1.0 - smoothstep(0.04, 0.11, H.x)))); }
-          if (Ro.y > 0.04) { float t = (2.12 - Pg.y) / Ro.y; vec3 H = Pg + Ro * t; win = max(win, smoothstep(0.80, 0.87, H.x) * (1.0 - smoothstep(1.50, 1.57, H.x)) * smoothstep(0.08, 0.13, abs(H.z)) * (1.0 - smoothstep(0.56, 0.62, abs(H.z)))); }
+          if (Ro.y > 0.04) { float t = (2.12 - Pg.y) / Ro.y; vec3 H = Pg + Ro * t; win = max(win, 0.3 * smoothstep(0.80, 0.87, H.x) * (1.0 - smoothstep(1.50, 1.57, H.x)) * smoothstep(0.08, 0.13, abs(H.z)) * (1.0 - smoothstep(0.56, 0.62, abs(H.z)))); /* the roof panes are tinted and seen at a steep angle: a third of a side window */ }
           win = max(win, smoothstep(0.45, 0.9, Ro.x) * smoothstep(-0.3, 0.1, Ro.y));
           float smear = 0.75 + 0.5 * sampledDiffuseColor.r * 8.0;
           totalEmissiveRadiance += min(fr, 0.4) * (0.008 + uGl.x * win) * vec3(0.92, 0.97, 1.05) * smear; }`)
@@ -215,6 +243,26 @@ export async function buildCockpit(ctx, model) {
   };
   sun.patch(glassMat);
   const glass = new THREE.Mesh(cab.glass, glassMat); glass.renderOrder = 4; glass.receiveShadow = false; root.add(glass);
+
+  // the built cabin's meshes: their own baked pictures, lit by the baked window light (the ORM picture's red) and the cabin's sun map
+  let built = null; const uBake = { value: 1 };
+  if (glb) {
+    built = new THREE.Group(); built.name = 'cockpit-built';
+    const bakedMat = (m) => { m.envMapIntensity = 1; m.onBeforeCompile = (sh) => { sh.uniforms.uCabAmb = uCabAmb; sh.uniforms.uBake = uBake;
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uCabAmb; uniform float uBake;').replace('#include <aomap_fragment>', `
+          { float aoB = 1.0;
+            #ifdef USE_AOMAP
+              aoB = texture2D(aoMap, vAoMapUv).r;
+            #endif
+            aoB *= uCabAmb * uBake; float sunVis = cabSun(), lum = dot(reflectedLight.indirectDiffuse, vec3(0.2126, 0.7152, 0.0722));
+            reflectedLight.indirectDiffuse = mix(vec3(lum) * vec3(1.06, 1.0, 0.93), reflectedLight.indirectDiffuse, 0.35) * aoB; reflectedLight.indirectSpecular *= min(aoB * aoB, 1.0);
+            reflectedLight.directDiffuse *= sunVis; reflectedLight.directSpecular *= sunVis; }`); }; return sun.patch(m); };
+    const take = []; glb.scene.traverse((o) => { if (o.isMesh) take.push(o); });
+    for (const o of take) { const m = new THREE.Mesh(o.geometry, o.name === 'glass_dials' ? glassMat : bakedMat(o.material)); m.name = o.name; m.applyMatrix4(o.matrixWorld); m.receiveShadow = false; m.castShadow = false;
+      if (o.name === 'glass_dials') { const g = o.geometry, p = g.attributes.position, uv = new THREE.BufferAttribute(new Float32Array(p.count * 2), 2); for (let i = 0; i < p.count; i++) uv.setXY(i, p.getZ(i) * 2.3 + p.getY(i) * 0.9, p.getY(i) * 2.9 + p.getX(i) * 1.3); g.setAttribute('uv', uv); m.renderOrder = 4; ownPassOnlyLater.push(m); }
+      built.add(m); }
+    built.visible = false; root.add(built);
+  }
 
   // the moving instrument parts
   // needles stand 3 to 5 mm off their faces and each drops a soft shadow on the face below it
@@ -225,13 +273,13 @@ export async function buildCockpit(ctx, model) {
     tachT: part('n_tachT', 'tach', 1, 0.0018), tachR: part('n_tachR', 'tach', 1, 0.0024), card: part('hsiCard', 'hsi', 0.86, 0.0020), ball: part('aiBall', 'ai', AI_WIN, 0.0016, 1), rollP: part('n_roll', 'ai', AI_WIN, 0.0024), slip: part('n_ball', 'ai', 0.066, 0.0038),
     tq: part('n_small', 'tq', 1, 0.0022), tot: part('n_small', 'tot', 1, 0.0022), fuel: part('n_small', 'fuel', 1, 0.0022), oilp: part('n_small', 'oilp', 1, 0.0022), oilt: part('n_small', 'oilt', 1, 0.0022), volt: part('n_small', 'volt', 1, 0.0022), oat: part('n_small', 'oat', 1, 0.0022),
     clkH: part('n_clockH', 'clock', 1, 0.0016), clkM: part('n_clockM', 'clock', 1, 0.0021), clkS: part('n_clockS', 'clock', 1, 0.0026) };
-  const iComp = PARTS.length; PARTS.push({ tile: 'compass', d: { id: 'compass', u: 0, v: 0, r: 0 }, size: 1, w: 0, mode: 2, custom: cab.info.compass });
+  const iComp = PARTS.length; PARTS.push({ tile: 'compass', d: { id: 'compass', u: 0, v: 0, r: 0 }, size: 1, w: 0, mode: 2, custom: glbCompass || cab.info.compass });
   const NP = PARTS.length, inst = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), movingMaterial(tAtlas, sun), NP); inst.frustumCulled = false; inst.receiveShadow = false;
   const aUvR = new THREE.InstancedBufferAttribute(new Float32Array(NP * 4), 4), aFx = new THREE.InstancedBufferAttribute(new Float32Array(NP * 4), 4); aFx.setUsage(THREE.DynamicDrawUsage);
   // each part is shaded like the face under it: the baked sky visibility at that dial (the prints carry it as their colour)
   const shadeAt = (d) => { const p = cab.prints.attributes.position, c = cab.prints.attributes.color, q = new THREE.Vector3(d.u, d.v, 0.001).applyMatrix4(PM); let best = 1e9, v = 1; for (let i = 0; i < p.count; i++) { const dd = (p.getX(i) - q.x) ** 2 + (p.getY(i) - q.y) ** 2 + (p.getZ(i) - q.z) ** 2; if (dd < best) { best = dd; v = c.getX(i); } } return v; };
   const shadeBy = new Map();
-  PARTS.forEach((p, i) => { const t = tiles[p.tile]; aUvR.setXYZW(i, t.u0, t.v0, t.u1, t.v1); if (!shadeBy.has(p.d.id)) shadeBy.set(p.d.id, p.custom ? 0.8 : shadeAt(p.d)); aFx.setXYZW(i, p.mode, 0, 0, shadeBy.get(p.d.id)); p.base = p.custom ? p.custom.clone() : new THREE.Matrix4().multiplyMatrices(PM, new THREE.Matrix4().makeTranslation(p.d.u + (p.off ? p.off[0] : 0), p.d.v + (p.off ? p.off[1] : 0), p.w)); p.ang = 1e9; });
+  PARTS.forEach((p, i) => { const t = tiles[p.tile]; aUvR.setXYZW(i, t.u0, t.v0, t.u1, t.v1); if (!shadeBy.has(p.d.id)) shadeBy.set(p.d.id, p.custom ? 0.8 : shadeAt(p.d)); aFx.setXYZW(i, p.mode, 0, 0, shadeBy.get(p.d.id)); p.base = p.custom ? p.custom.clone() : new THREE.Matrix4().multiplyMatrices(PM, new THREE.Matrix4().makeTranslation(p.d.u + (p.off ? p.off[0] : 0), p.d.v + (p.off ? p.off[1] : 0), p.w + (dW[p.d.id] || 0))); p.ang = 1e9; });
   inst.geometry.setAttribute('aUvR', aUvR); inst.geometry.setAttribute('aFx', aFx); inst.instanceMatrix.setUsage(THREE.DynamicDrawUsage); root.add(inst);
   const _m = new THREE.Matrix4(), _r = new THREE.Matrix4(), _s = new THREE.Vector3();
   let instDirty = true;
@@ -308,8 +356,15 @@ export async function buildCockpit(ctx, model) {
   // Glass stays out of every pass that draws the scene with one material for all (the game's ambient-occlusion pass draws depth and
   // normals that way): a pane half a metre from the eye over half the frame made that pass take the glass for a wall, shading the
   // view through it and, with its metre-wide search so near the eye, costing about 3 ms a frame on the M1 Pro.
-  const ownPassOnly = (mesh) => { if (mesh) mesh.onBeforeRender = (r, sc, c, geo, mat) => { geo.setDrawRange(0, mat === mesh.material ? Infinity : 0); }; };
-  ownPassOnly(wglass); ownPassOnly(glass);
+  // On the link the aircraft is drawn twice while the eye is in the cabin: by the game's camera (whose near plane the renderer moves out
+  // with height) and again, depth cleared, by the near camera (world.nearObject). The second covers the first exactly, so the cabin's
+  // own picture is drawn by the near camera only (api.skipMain): half the cabin's fill, and the glass's film is laid once, not twice.
+  api.skipMain = true; const gated = [];
+  const gate = (mesh, isGlass) => { if (!mesh) return; gated.push(mesh); mesh.onBeforeRender = (r, sc, c, geo, mat) => { const own = mat === mesh.material; let draw = own || !isGlass; if (draw && own && api.skipMain && world && world.nearObject && c === world.camera) draw = false; geo.setDrawRange(0, draw ? Infinity : 0); if (draw && own && mesh.userData.probe) mesh.userData.probe(0); };
+    mesh.onAfterRender = (r, sc, c, geo, mat) => { if (mesh.userData.probe && mat === mesh.material && geo.drawRange.count > 0) mesh.userData.probe(1); }; };
+  gate(wglass, true); gate(glass, true); for (const m of ownPassOnlyLater) gate(m, true);
+  for (const m of [fixed, moving, prints, panel, screens, inst, liner]) gate(m, false); if (built) for (const m of built.children) if (!gated.includes(m)) gate(m, false);
+  if (builtTrim) uEdgeK.value = 0;      // the built trim has its own seals and its own openings: the old skin's darkened glass edge would float inside them as a ghost outline
   // the same pass searches 0.8 m round every point: right for streets, far too wide inside a cabin 1.6 m across (everything shades
   // everything, and near the eye the search spans the frame, which is what it costs). From the seat it searches a hand's width.
   const gt = world && world.gtao, gtU = gt && gt.gtaoMaterial && gt.gtaoMaterial.uniforms.radius, AO_R0 = gtU ? gtU.value : 0; api.aoRadiusInside = 0.16; let aoIn = false;
@@ -320,13 +375,43 @@ export async function buildCockpit(ctx, model) {
   const KEY0 = LIGHT.key; api.keyInside = 0.5; api.ambOutside = 2.2; let keyOn = false;
   const setKey = (inside) => { if (inside !== keyOn) { keyOn = inside; LIGHT.key = inside ? KEY0 * api.keyInside : KEY0; } else if (inside) LIGHT.key = KEY0 * api.keyInside; };
   let lod = -1; const sunSkip = [inst, far, fixedLo, movingLo]; if (liner) sunSkip.push(liner);
+  // The shell's own panes (model.js) are made to be looked INTO: seen from the seat their back faces lay a pale veil over the view, hard-edged
+  // at glancing angles (the "milky band" across the door window). From inside, the glass is this module's inner face alone.
+  const shellGlass = []; if (model && model.root && wglass) model.root.traverse((o) => { const m = o.material; if (o.isMesh && m && m.transparent && m.isMeshPhysicalMaterial && m.side === THREE.DoubleSide) { let p = o, mine = false; while (p) { if (p === root) mine = true; p = p.parent; } if (!mine) shellGlass.push(o); } });
+  api.shellGlass = shellGlass; api.hideShellGlass = true;
+  // ---- Nothing in here may rest on a draw or a clear that happens once (a seat view once came up with no panel, hood or trim for a
+  // whole flight, every part reading "visible"). So: every visibility is set every frame; the sun map is cleared and redrawn each time
+  // an eye enters the cabin; and a second after it has entered the cabin checks itself: the sun map and the key pictures exist on the
+  // GPU, the parts are shown and on the camera's layer, and the panel's own draw raised no GL error. Anything missing is logged as
+  // `[heli] cockpit self-check` and rebuilt.
+  const R = world && world.renderer, chk = { inT: 0, was: false, next: 1e9, probe: 0, err: 0, runs: 0, fails: 0, tries: 0, last: null }; api.check = chk; api.hidden = false;
+  const keyMesh = built ? built.getObjectByName('panel') : fixed;
+  if (keyMesh && R) { const gl = R.getContext();      // called by the mesh's gate just before and just after a draw of its own picture that really draws
+    keyMesh.userData.probe = (after) => { if (!after) { if (chk.probe === 1) { let n = 0; while (gl.getError() && n++ < 16); chk.probe = 2; } } else if (chk.probe === 2) { chk.err = gl.getError(); chk.probe = 3; } }; }
+  const keyTex = () => { const t = [['dial print', tAtlas], ['screens', tDyn]]; if (built) { for (const m of built.children) { const mm = m.material; if (mm.map && mm.map !== tDust) t.push([m.name + ' colour', mm.map]); if (mm.aoMap) t.push([m.name + ' light', mm.aoMap]); if (mm.normalMap) t.push([m.name + ' relief', mm.normalMap]); } } else t.push(['grain', tGrain]); return t; };
+  const camNow = (view) => (world && world.nearObject && world.nearCam) ? world.nearCam : view.camera;
+  const rebuild = (view, hard) => { try {
+      sun.rebuild(R); for (const [, t] of keyTex()) t.needsUpdate = true; tGrain.needsUpdate = true; tDust.needsUpdate = true;
+      const cam = camNow(view); root.traverse((o) => { if (o.isMesh && cam && !o.layers.test(cam.layers)) o.layers.mask = cam.layers.mask; if (hard && o.material) o.material.needsUpdate = true; });
+    } catch (e) { console.log('[heli] cockpit self-check: rebuild failed (' + (e && e.message) + ')'); } };
+  const selfCheck = (view, sunUp) => { const miss = [], has = (t) => !!(t && R.properties.get(t).__webglTexture), cam = camNow(view); chk.runs++;
+    if (sun.u.tCabSh.value !== sun.rt.depthTexture || !has(sun.rt.depthTexture)) miss.push('sun map (never made)'); else if (sunUp && sun.u.uCabShOn.value < 0.5) miss.push('sun map (not drawn)');
+    if (chk.err) miss.push('panel draw refused (GL error 0x' + chk.err.toString(16) + ')');
+    for (const [n, t] of keyTex()) if (!has(t)) miss.push(n + ' picture');
+    for (const [n, m] of [['cabin', built || fixed], ['dial faces', prints], ['needles', inst], ['screens', screens], ['controls', moving]]) { if (!m.visible) miss.push(n + ' (hidden)'); const k = m.isMesh ? m : m.children[0]; if (k && cam && !k.layers.test(cam.layers)) miss.push(n + ' (off the camera\'s layer)'); }
+    for (let p = root; p; p = p.parent) if (!p.visible) miss.push((p.name || p.type) + ' (hidden above the cabin)');
+    chk.last = miss; if (miss.length) { chk.fails++; console.log('[heli] cockpit self-check: missing ' + miss.join(', ') + '; rebuilding'); rebuild(view, !!chk.err); } return miss; };
   function update(f, dt, view) {
-    { let eyeIn = !!view.inside; if (!eyeIn && view.camera && view.dist < 3) { root.worldToLocal(_sp.copy(view.camera.position)); eyeIn = _sp.x > -0.5 && _sp.x < 2.3 && Math.abs(_sp.z) < 0.74 && _sp.y > 0.75 && _sp.y < 2.0; } setKey(eyeIn); setAO(eyeIn); uCabAmb.value = eyeIn ? 1 : api.ambOutside; }      // any eye within the cabin, the pilot's or a free camera's
+    { let eyeIn = !!view.inside; if (!eyeIn && view.camera && view.dist < 3) { root.worldToLocal(_sp.copy(view.camera.position)); eyeIn = _sp.x > -0.5 && _sp.x < 2.3 && Math.abs(_sp.z) < 0.74 && _sp.y > 0.75 && _sp.y < 2.0; } setKey(eyeIn); setAO(eyeIn); uCabAmb.value = eyeIn ? 1 : api.ambOutside;      // any eye within the cabin, the pilot's or a free camera's
+      if (R) { if (eyeIn && !chk.was) { chk.inT = 0; chk.next = 1; chk.probe = 0; chk.err = 0; chk.tries = 0; sun.prime(R); sun.off(); }      // entering: the sun map is cleared again and redrawn this frame
+        chk.was = eyeIn;
+        if (eyeIn && chk.next < 1e8) { chk.inT += dt || 1 / 60; if (chk.probe === 0 && chk.inT > chk.next - 0.25) chk.probe = 1;
+          if (chk.inT >= chk.next) { if (chk.probe === 3) { const miss = selfCheck(view, ctx.shared.uSunDir.value.y > 0.05); chk.probe = 0; chk.err = 0; chk.next = miss.length && ++chk.tries < 3 ? chk.inT + 1 : 1e9; } else chk.next = chk.inT + 0.5; } } } }
     const d = view.inside ? 0 : view.dist, L = d < 60 ? 0 : d < 250 ? 1 : 2, full = view.inside || d < 3.2;      // full detail from the seats and from a head in the doorway
-    if (L !== lod) { lod = L; root.visible = L < 2; prints.visible = panel.visible = L === 0; if (shell) shell.visible = L === 0; far.visible = L === 1; }
-    fixed.visible = moving.visible = glass.visible = L === 0 && full;
+    lod = L; root.visible = L < 2 && !api.hidden; prints.visible = panel.visible = L === 0; if (shell) shell.visible = L === 0; far.visible = L === 1;
+    moving.visible = L === 0 && full; fixed.visible = glass.visible = L === 0 && full && !built; if (built) { built.visible = L === 0 && full; panel.visible = L === 0 && !full; }
     // the trim skin and the glass's inner face are for eyes inside the cabin; outside, the shell shows its own inner side
-    const within = view.inside || d < 1.55; if (liner) { liner.visible = wglass.visible = L === 0 && within; if (model && model.innerTrim) model.innerTrim.visible = !view.inside; } fixedLo.visible = movingLo.visible = L === 0 && !full;
+    const within = view.inside || d < 1.55; if (liner) { wglass.visible = L === 0 && within; liner.visible = L === 0 && within; } for (let i = 0; i < shellGlass.length; i++) shellGlass[i].visible = !(view.inside && api.hideShellGlass); if (model && model.innerTrim && (liner || builtTrim)) model.innerTrim.visible = !view.inside; fixedLo.visible = movingLo.visible = L === 0 && !full;
     const close = d < 22; inst.visible = L === 0 && d < 25; screens.visible = L === 0 && d < 40;
     if (L > 0) { sun.off(); return; }
     // controls (cheap: eight bones)
@@ -341,5 +426,5 @@ export async function buildCockpit(ctx, model) {
     if (ctx.shared && ctx.shared.uSunDir) { sceneT -= dt || 0; if (sceneT <= 0) { sceneT = 0.05; api.sceneSunTarget = sceneSunNow(f, ctx.shared.uSunDir.value); } sceneSun += (api.sceneSunTarget - sceneSun) * Math.min(1, (dt || 0.016) * 9); sun.u.uCabScene.value = sceneSun; }
     if (full && world && world.renderer && heli.root) sun.render(world.renderer, heli.root, f.pos, ctx.shared.uSunDir.value, sunSkip); else sun.off();
   }
-  Object.assign(api, { root, update, read, AO, shade: (A) => cab.shade && cab.shade(Object.assign(AO, A)), uHaze, uGl, sceneSunAt: (pos) => sceneSunNow({ pos }, ctx.shared.uSunDir.value), parts: { liner, wglass, fixed, moving, fixedLo, movingLo, prints, panel, screens, glass, inst, far, shell }, tris: cab.info.tris, textures: { tAtlas, tDyn, tGrain, tDust }, displays: disp, sun }); return api;
+  Object.assign(api, { root, update, read, AO, shade: (A) => cab.shade && cab.shade(Object.assign(AO, A)), uHaze, uGl, sceneSunAt: (pos) => sceneSunNow({ pos }, ctx.shared.uSunDir.value), built, uBake, parts: { built, liner, wglass, fixed, moving, fixedLo, movingLo, prints, panel, screens, glass, inst, far, shell }, tris: cab.info.tris, textures: { tAtlas, tDyn, tGrain, tDust }, displays: disp, sun }); return api;
 }

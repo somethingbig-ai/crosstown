@@ -62,3 +62,36 @@ export function splitDoor(pos, idx, field, box, opt = {}) {
     if (on) { tri[t] = 1; n++; } }
   return { tri, n, islands: roots.size };
 }
+// splitGen: the door of a kind that has NO source model with a door part (doors.json entries marked "gen": the streets lane's own built
+// kinds: pickup, box truck, step van, minivan cab, sport coupe). The door is cut out of the game's own body by drawn outlines in the
+// car's side view (x ahead, y up), written by lanes/gameplay/entry/tools/gendoors.mjs:
+//   d.outline  polygon [[x, y], ...]: the door's panel (shut lines, sill, belt, a wheel arch's notch)
+//   d.pane     polygon: its window (the side glass's own edge, a centimetre out), optional
+//   d.side     [[y, z], ...]: how far in from the left side still counts at each height (z <= that; the skin leans in going up)
+//   d.also     boxes [[x0, y0, x1, y1], ...]: loose parts whose middle is in one go with the door too (the mirror), optional
+// A triangle is door when its three corners (and its middle) are inside the panel or the pane, and near the side. A small loose part (handle, mirror: an
+// island of triangles welded by position, under `small` metres across) goes whole or not at all, by where its middle is.
+// Returns the same shape as splitDoor.
+export function splitGen(pos, idx, d, opt = {}) {
+  const small = opt.small ?? 0.5, polys = [d.outline, d.pane].filter((p) => p && p.length > 2), side = d.side, also = d.also || [];
+  const nv = pos.length / 3, nt = idx ? idx.length / 3 : nv / 3, tri = new Uint8Array(nt); if (!polys.length || !side || !side.length) return { tri, n: 0, islands: 0 };
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (const poly of polys) for (const p of poly) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; }
+  const zin = (y) => { if (y <= side[0][0]) return side[0][1]; for (let i = 1; i < side.length; i++) if (y <= side[i][0]) { const a = side[i - 1], b = side[i]; return a[1] + (b[1] - a[1]) * (y - a[0]) / (b[0] - a[0] || 1); } return side[side.length - 1][1]; };
+  const inPoly = (poly, x, y) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > y) !== (b[1] > y) && x < a[0] + (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1])) c = !c; } return c; };
+  const inDoor = (x, y) => { if (x < x0 || x > x1 || y < y0 || y > y1) return false; for (const poly of polys) if (inPoly(poly, x, y)) return true; return false; };
+  const V = (t, c) => (idx ? idx[t * 3 + c] : t * 3 + c);
+  const inb = new Uint8Array(nv); let nin = 0; for (let i = 0; i < nv; i++) { const y = pos[i * 3 + 1]; if (pos[i * 3 + 2] <= zin(y) && inDoor(pos[i * 3], y)) { inb[i] = 1; nin++; } }
+  // islands: weld by position, join along triangles
+  const par = new Int32Array(nv), key = new Map(), Q = 2000; for (let i = 0; i < nv; i++) { const k = (Math.round(pos[i * 3] * Q) + 40000) * 6400000000 + (Math.round(pos[i * 3 + 1] * Q) + 40000) * 80000 + (Math.round(pos[i * 3 + 2] * Q) + 40000); const j = key.get(k); if (j === undefined) { key.set(k, i); par[i] = i; } else par[i] = j; }
+  const find = (a) => { while (par[a] !== a) { par[a] = par[par[a]]; a = par[a]; } return a; };
+  for (let t = 0; t < nt; t++) { const a = find(V(t, 0)), b = find(V(t, 1)); if (b !== a) par[b] = a; const c = find(V(t, 2)); if (c !== a) par[c] = a; }
+  const bb = new Map(); for (let i = 0; i < nv; i++) { const r = find(i); let e = bb.get(r); if (!e) bb.set(r, (e = [1e9, 1e9, 1e9, -1e9, -1e9, -1e9, 0])); for (let k = 0; k < 3; k++) { const v = pos[i * 3 + k]; if (v < e[k]) e[k] = v; if (v > e[k + 3]) e[k + 3] = v; } }
+  // e[6]: 0 = a big piece (the shell, a pane, a long strip): triangle by triangle; 1 = a small part that goes with the door; 2 = one that stays
+  let islands = 0; for (const e of bb.values()) { if (Math.max(e[3] - e[0], e[4] - e[1], e[5] - e[2]) >= small) continue; const cx = (e[0] + e[3]) / 2, cy = (e[1] + e[4]) / 2, cz = (e[2] + e[5]) / 2; let on = cz <= zin(cy) + 0.03 && inDoor(cx, cy);
+    if (!on && cz <= zin(cy) + 0.03) for (const b of also) if (cx >= b[0] && cx <= b[2] && cy >= b[1] && cy <= b[3]) on = true; e[6] = on ? 1 : 2; if (on) islands++; }
+  let n = 0; if (nin || islands) for (let t = 0; t < nt; t++) { const a = V(t, 0), b = V(t, 1), c = V(t, 2), e = bb.get(find(a)), big = !e[6] && inb[a] && inb[b] && inb[c]; let on = e[6] === 1;
+    // corners in, but the triangle itself may still bridge the panel and the pane across a pillar, or span the arch's notch: its middle and its sides' middles must be in too
+    if (big) { const ax = pos[a * 3], ay = pos[a * 3 + 1], bx = pos[b * 3], by = pos[b * 3 + 1], cx = pos[c * 3], cy = pos[c * 3 + 1]; on = inDoor((ax + bx + cx) / 3, (ay + by + cy) / 3) && inDoor((ax + bx) / 2, (ay + by) / 2) && inDoor((bx + cx) / 2, (by + cy) / 2) && inDoor((cx + ax) / 2, (cy + ay) / 2); }
+    if (on) { tri[t] = 1; n++; } }
+  return { tri, n, islands };
+}

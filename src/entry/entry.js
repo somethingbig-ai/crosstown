@@ -14,14 +14,17 @@
 import * as THREE from 'three';
 import { clamp, lerp, wrapPi } from '../geo.js';
 import { EntryRig } from './rig.js';
-import { splitDoor, DoorField } from './doorsplit.js';
+import * as DS from './doorsplit.js';
+const { splitDoor, DoorField } = DS, splitGen = DS.splitGen || null;      // splitGen: only in the newer doorsplit.js; without it the five body-made doors are simply not cut
 
 const ss = (u, a, b) => { u = clamp((u - a) / (b - a), 0, 1); return u * u * (3 - 2 * u); };
 const bump = (u, a, b, c) => ss(u, a, b) * (1 - ss(u, b, c));
 const V3 = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
 const _v = V3(), _v2 = V3(), _v3 = V3(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _e = new THREE.Euler(), _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _one = V3(1, 1, 1), UP = V3(0, 1, 0);
 const TAXI_YELLOW = 0xf2b90c;       // streets/vehicles_rules.js
-const T_IN = 3.1;                   // seconds (at pace 1) from taking the handle to both hands on the wheel
+const FAR_K = 1.9;
+const T_IN = 3.1;
+const ND_A = 0.30, ND_B = 2.95;         // no door to open: from the hand on the handle straight to seated (and back)                   // seconds (at pace 1) from taking the handle to both hands on the wheel
 const OPEN = 1.0;                   // door's full swing, radians (57 degrees)
 
 // ---------------------------------------------------------------------------------------------------------------- per car kind
@@ -56,14 +59,14 @@ function entryPoseRaw(u, P, S, R, gy, out, doorOpen = -1) {
   const zs = P.zs, xr = P.xr, o = out || {};
   const P0 = _p0.set(xr + 0.0, 0, zs - 0.41), Pb = _pb.set(S.x - 0.02, 0, zs - 0.33), psi0 = -Math.PI / 2 + 0.4, psi1 = 0.32;
   const tall = S.y > 0.85;
-  const hyH = Math.min(P.belt - 0.07, 1.10), bendK = clamp((1.3 - hyH) / 0.42, 0.15, 1); const a1 = ss(u, 0.85, 1.35), a2 = ss(u, 1.28, 2.12), fk = clamp((u - 1.25) / 0.70, 0, 1), sit = fk < 0.72 ? 0.80 * Math.pow(fk / 0.72, 1.9) : 0.80 + 0.20 * ss(fk, 0.72, 1), give = bump(u, 0.35, 0.75, 1.3);
+  const hyH = Math.min(P.belt - 0.07, 1.10), bendK = clamp((1.3 - hyH) / 0.42, 0.15, 1); const a1 = ss(u, 0.85, 1.35), a2 = ss(u, 1.28, 2.12), fk = clamp((u - 1.19) / 0.70, 0, 1), sit = fk < 0.72 ? 0.80 * Math.pow(fk / 0.72, 1.9) : 0.80 + 0.20 * ss(fk, 0.72, 1), give = bump(u, 0.35, 0.75, 1.3);
   const hip = (o.hip ||= V3()); hip.lerpVectors(P0, Pb, a1).lerp(_v.set(S.x, 0, S.z), a2); hip.z -= 0.24 * give; hip.x -= 0.12 * give;       // gives way as the door comes past
   const g0 = gy(hip.x, Math.min(hip.z, zs - 0.3));
   hip.y = lerp(g0 + R.standH - 0.035 * bump(u, 0.8, 1.1, 1.4) - 0.02 - 0.06 * bendK * bump(u, 0.0, 0.3, 0.9), S.y, sit) - 0.045 * bump(u, 1.82, 1.97, 2.25) + 0.02 * bump(u, 2.1, 2.3, 2.6);
-  const lean = (o.lean = tall ? 0 : 0.15 * ss(u, 2.2, 2.8)); hip.x += 0.055 * (lean / 0.15);      // settles back into the seat: reclined, not bolt upright
+  const far = P.wheelC ? clamp(P.wheelC.x - S.x - 0.49, 0, 0.2) : 0, lean = (o.lean = tall ? 0 : (0.15 - FAR_K * far) * ss(u, 2.2, 2.8)); hip.x += (0.055 + 0.45 * far) * ss(u, 2.2, 2.8) * (tall ? 0 : 1);      // settles back into the seat: reclined, not bolt upright
   o.yaw = lerp(lerp(psi0, psi1, ss(u, 0.75, 1.4)), 0, ss(u, 1.55, 2.7));
   o.pitch = 0.46 * bendK * bump(u, 0.0, 0.3, 0.85) + 0.72 * bump(u, 1.15, 1.7, 2.3) + 0.18 * bump(u, 2.5, 2.95, 3.4) + 0.03 * ss(u, 2.0, 2.6);                    // lean to the handle; duck under the roof
-  o.roll = -0.26 * bendK * bump(u, 0.0, 0.3, 0.8) + 0.74 * bump(u, 1.2, 1.7, 2.3) - 0.40 * bump(u, 2.35, 2.8, 3.3) - 0.035 * ss(u, 3.2, 3.6);                  // toward the cabin going in; out toward the door to pull it shut
+  o.roll = -0.26 * bendK * bump(u, 0.0, 0.3, 0.8) + 0.62 * bump(u, 1.2, 1.7, 2.3) - 0.40 * bump(u, 2.35, 2.8, 3.3) - 0.035 * ss(u, 3.2, 3.6);                  // toward the cabin going in; out toward the door to pull it shut
   o.sit = sit; o.settle = ss(u, 2.0, 2.6);
   // a van's cab: up onto the step, stand in the doorway, then onto the seat
   // feet (ankles). Standing by the door: either side of the hips
@@ -181,14 +184,14 @@ class DoorCar {
     if (type in this.kinds) return this.kinds[type];
     let K = null;
     try {
-      const sv = this.sv(), T = sv && sv.types[type], L = T && T.lods[0], d = this.D[type]; if (!L || !d || !this.bin || this.off) return (this.kinds[type] = null);
-      const t0 = performance.now(), field = new DoorField(this.bin.subarray(d.tris[0], d.tris[0] + d.tris[1]));
+      const sv = this.sv(), T = sv && sv.types[type], L = T && T.lods[0], d = this.D[type]; if (!L || !d || (d.gen ? !splitGen : !this.bin) || this.off) return (this.kinds[type] = null);
+      const t0 = performance.now(), field = d.gen ? null : new DoorField(this.bin.subarray(d.tris[0], d.tris[0] + d.tris[1]));
       const attr = (n, size) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(n * size), size); a.setUsage(THREE.DynamicDrawUsage); return a; };
       K = { type, L, meta: T.meta, body: attr(1, 16), doorM: attr(1, 16), va: attr(1, 4), col: attr(1, 3), meshes: [], doorTris: 0, group: new THREE.Group() };
       const two = new Map(), both = (m) => { if (m.transparent) return m; let d = two.get(m); if (!d) { d = m.clone(); d.onBeforeCompile = m.onBeforeCompile; d.customProgramCacheKey = m.customProgramCacheKey; d.side = THREE.DoubleSide; d.shadowSide = THREE.DoubleSide; two.set(m, d); } return d; };      /* an open door is seen from behind: its skin must not be see-through from there */
       const mk = (src, geo, mat4, va, col, door) => { const g = new THREE.BufferGeometry(); for (const k in src.geometry.attributes) if (k !== 'aVar') g.setAttribute(k, src.geometry.attributes[k]); g.setAttribute('aVar', va); g.setIndex(geo); g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 8);
         const im = new THREE.InstancedMesh(g, door ? both(src.material) : src.material, 1); im.instanceMatrix = mat4; if (src.instanceColor && col) im.instanceColor = col; im.frustumCulled = false; im.castShadow = src.castShadow; im.receiveShadow = src.receiveShadow; im.renderOrder = src.renderOrder; im.matrixAutoUpdate = false; im.count = 1; K.group.add(im); return im; };
-      const split = (set, va, col) => { if (!set) return; for (const src of set.meshes) { const geo = src.geometry, pos = geo.attributes.position.array, idx = geo.index ? geo.index.array : null, r = splitDoor(pos, idx, field, d.world);
+      const split = (set, va, col) => { if (!set) return; for (const src of set.meshes) { const geo = src.geometry, pos = geo.attributes.position.array, idx = geo.index ? geo.index.array : null, r = d.gen ? splitGen(pos, idx, d) : splitDoor(pos, idx, field, d.world);
         const nt = r.tri.length, A = new (pos.length / 3 > 65535 ? Uint32Array : Uint16Array)((nt - r.n) * 3), Bd = new (pos.length / 3 > 65535 ? Uint32Array : Uint16Array)(r.n * 3); let ia = 0, ib = 0;
         for (let t = 0; t < nt; t++) { const a = idx ? idx[t * 3] : t * 3, b = idx ? idx[t * 3 + 1] : t * 3 + 1, c = idx ? idx[t * 3 + 2] : t * 3 + 2; if (r.tri[t]) { Bd[ib++] = a; Bd[ib++] = b; Bd[ib++] = c; } else { A[ia++] = a; A[ia++] = b; A[ia++] = c; } }
         if (A.length) mk(src, new THREE.BufferAttribute(A, 1), K.body, va, col); if (Bd.length) mk(src, new THREE.BufferAttribute(Bd, 1), K.doorM, va, col, true); K.doorTris += r.n; } };
@@ -296,13 +299,14 @@ class Entry {
   begin(v, kind, driver) {
     const g = this.g, pl = g.player, vis = pl.vis, P = this.params(v);
     const b = (pl.busy = { entry: true, kind, v, t: 0, dur: 99, z: 0, x: pl.x, y: pl.y, h: pl.h, phase: kind === 'in' ? 'walk' : 'act', u: kind === 'in' ? 0 : T_IN, w: kind === 'in' ? 0 : 1, moved: false, still: false, path: null, jack: null });
-    this.last = v; this.cars.kind(v.type); this.me.pose.doorMax = b.doorMax = this.doorRoom(v, P);
+    this.last = v; b.nodoor = !this.cars.kind(v.type); this.me.pose.doorMax = b.doorMax = this.doorRoom(v, P);
     if (kind === 'in') {
       b.path = this.route(v, P); b.wp = 0;
       if (!driver && g.P.has('edriver')) driver = { id: +g.P.get('edriver') || 1 };      // QA: someone sits in the parked car too
       if (driver && this.g.kit.person) this.seatDriver(v, driver, b); else if (this.npc && this.npc.v === v && this.npc.state === 'seated') b.jack = { t: 0 };
     } else { this.cam.k = 1; this.cam.on = true; if (vis.acts.drive) { g.playerAnim('drive'); } }
-    if (vis.mixer) vis.mixer.timeScale = 1;
+    if (vis.mixer) vis.mixer.timeScale = 1; if (vis.acts && vis.acts.drive) vis.acts.drive.setEffectiveTimeScale(1);
+    if (b.nodoor && kind === 'out') { b.u = ND_A; g.playerAnim('idle'); g.sound.door(); }      // no door to open: he is on his feet at the handle at once
   }
   // way to the spot by the door: straight if the car is not in the way, else round the nearer end
   route(v, P) {
@@ -364,10 +368,10 @@ class Entry {
     if (b.kind === 'in') {
       const j = b.jack, n = this.npc;
       if (j && n && n.state !== 'gone' && b.u >= 1.0 && j.t < 1) { j.t += dt / 1.7; this.stepJack(dt, b, j, n); if (j.t >= 1) { this.stats.jacks++; } }      // door open: the driver comes out before the player goes on
-      else { const u0 = b.u; b.u += dt; this.cues(u0, b.u, v, 1); }
+      else { const u0 = b.u; b.u += dt; if (b.nodoor && b.u >= ND_A && b.u < T_IN) { b.u = T_IN; this.skipJack(b); this.me.release(); this.hardDrive(); g.sound.door(); this.finish(b); return; } this.cues(u0, b.u, v, 1); }
       if (b.u >= T_IN) { this.finish(b); return; }
     } else {
-      const u0 = b.u; b.u -= dt; this.cues(b.u, u0, v, -1);
+      const u0 = b.u; b.u -= b.nodoor && b.u <= ND_A ? dt * 0.35 : dt; if (b.nodoor && b.u < ND_B && b.u > ND_A) b.u = ND_A; this.cues(b.u, u0, v, -1);
       if (b.u <= 0) { b.u = 0; this.finish(b); return; }
     }
     // the game's idea of where the player is follows the hips
@@ -392,6 +396,12 @@ class Entry {
   }
 
   // ------------------------------------------------------------------ someone at the wheel
+  // a car with no door to open and someone at the wheel: he is on his feet beside it at once, and runs
+  skipJack(b) {
+    const j = b.jack, n = this.npc; if (!j || !n || n.state !== 'seated') return; j.t = 1; this.stats.jacks++;
+    try { const v = n.v, P = this.params(v), vis = n.vis; this.toMap(v, P.xr + 0.55, P.zs - 0.85, _o); n.x = _o.x; n.y = _o.y; n.h = v.h + Math.PI / 2 + 0.15; n.state = 'flee'; n.t = 0.3; n.pup.release();
+      const run = vis.acts.jog ? 'jog' : vis.acts.run ? 'run' : null; if (run) { for (const k in vis.acts) if (k !== run) vis.acts[k].stop(); vis.acts[run].reset().play(); vis.cur = run; } n.away = v.h + Math.PI - 0.3; n.dir = n.h; } catch (e) { console.log('[entry] driver not put out: ' + (e && e.message)); }
+  }
   stepJack(dt, b, j, n) {
     if (n.state === 'seated' && j.t >= 0.2) { n.state = 'out'; n.t = 0; }
   }
@@ -410,6 +420,10 @@ class Entry {
   }
 
   // ------------------------------------------------------------------ drawing
+  hardDrive() { const vis = this.g.player.vis; if (!vis.acts || !vis.acts.drive) return; for (const k in vis.acts) if (k !== 'drive' && vis.acts[k] && vis.acts[k].stop) vis.acts[k].stop(); vis.acts.drive.reset().setEffectiveWeight(1).play(); vis.cur = 'drive'; if (vis.mixer) { vis.mixer.timeScale = 1; vis.mixer.update(0); } }
+  // calm at the wheel: the Drive take (a mocap take that sways trunk and head) is held near its first frame and only breathes
+  calm(dt) { const dr = this.g.player.vis.acts && this.g.player.vis.acts.drive; if (!dr) return; if (dr.getEffectiveTimeScale() !== 0) dr.setEffectiveTimeScale(0);
+    const want = 0.16 + 0.14 * Math.sin((this.g.t || 0) * 0.7); dr.time += (want - dr.time) * Math.min(1, (dt || 0.016) * 1.5); }
   sync(dt) {
     const g = this.g, pl = g.player, b = pl.busy, me = this.me;
     const n = this.npc;
@@ -427,9 +441,10 @@ class Entry {
     } else if (pl.vehicle && pl.vis.object.visible && me.rig && this.params(pl.vehicle).eye && g.P.get('eseat') !== '0') {
       // at the wheel: the same seated pose the entry ends in (feet at the pedals, hands on this car's own rim), carried by the car
       const v = pl.vehicle, CM = this.cars.matrix(v, _cm, _cq), pose = entryPose(T_IN, this.params(v), this.seat(v), me.rig, ZERO, me.pose);
-      const a = clamp(-(v.steer || 0) * 1.6, -0.6, 0.6); if (Math.abs(a) > 0.01 && this.params(v).wheelC) { const P = this.params(v); for (const h of [pose.hL, pose.hR]) { h.p.sub(P.wheelC).applyAxisAngle(P.wheelAx, a).add(P.wheelC); h.f.applyAxisAngle(P.wheelAx, a); h.n.applyAxisAngle(P.wheelAx, a); } }
+      this.calm(dt);
+      this._sa = (this._sa || 0) + (clamp(-(v.steer || 0) * 1.15, -0.42, 0.42) - (this._sa || 0)) * Math.min(1, (dt || 0.016) * 7); const a = this._sa; if (Math.abs(a) > 0.004 && this.params(v).wheelC) { const P = this.params(v); for (const h of [pose.hL, pose.hR]) { h.p.sub(P.wheelC).applyAxisAngle(P.wheelAx, a).add(P.wheelC); h.f.applyAxisAngle(P.wheelAx, a); h.n.applyAxisAngle(P.wheelAx, a); } }
       me.apply(pose, CM, _cq, 1);
-    } else me.release();
+    } else { me.release(); this._sa = 0; if (pl.vehicle && !b) this.calm(dt); }
     if (this.g.P.has('eview')) this.qaCam();
   }
 
@@ -438,10 +453,10 @@ class Entry {
     const g = this.g, pl = g.player, b = pl.busy, C = g.cam, c = this.cam;
     if (g.fly && g.fly.on) return false; if (g.heli && g.heli.hasCamera) return false;
     let v = null, want = 0;
-    if (b && b.entry && b.phase !== 'walk') { v = b.v; want = b.kind === 'in' ? ss(b.u, 1.5, T_IN + 0.5) : ss(b.u, 1.3, T_IN - 0.2); c.on = true; }
+    if (b && b.entry && (b.phase !== 'walk' || b.v.def.hgt > 1.9)) { v = b.v; want = b.phase === 'walk' ? 0 : b.kind === 'in' ? ss(b.u, 1.5, T_IN + 0.5) : ss(b.u, 1.3, T_IN - 0.2); c.on = true; }
     else if (c.on && pl.vehicle) { v = pl.vehicle; want = 1; }
     else { c.on = false; c.k = 0; return false; }
-    if (b && b.entry) c.k = want; else c.k = Math.min(1, c.k + dt / 0.9 * (1.02 - c.k) * 3);
+    if (b && b.entry) c.k = b.nodoor ? c.k + clamp(want - c.k, -dt * 2.4, dt * 2.4) : want; else c.k = Math.min(1, c.k + dt / 0.9 * (1.02 - c.k) * 3);
     const k = c.k; if (!b && k > 0.995) { c.on = false; c.k = 0; return false; }      // fully the driving view: the game's own camera carries on from the same numbers
     const big = v.def.len > 7 ? 1.9 : v.def.hgt > 2 ? 1.3 : 1, sp = Math.hypot(v.vx, v.vy);
     const foot = { x: pl.vehicle ? v.x : pl.x, y: pl.vehicle ? v.y : pl.y, z: (g.statics.onSidewalk(pl.x, pl.y) ? 0.15 : 0) + (b ? 1.2 : 1.5), dist: b ? 4.6 : 3.4, height: b ? 0.5 : 0.35, fov: 52 };      // while he gets in or out: a little further back and lower, so door, legs and feet stay in the picture
@@ -453,13 +468,17 @@ class Entry {
     const kk = Math.min(1, dt * 14); C.tx += (t.x - C.tx) * kk; C.ty += (t.y - C.ty) * kk; C.tz += (t.z - C.tz) * Math.min(1, dt * 8);
     C.dist += (t.dist - C.dist) * Math.min(1, dt * 5); C.fov += (t.fov - C.fov) * Math.min(1, dt * 5); C.h += (t.height - C.h) * Math.min(1, dt * 5);
     C.shake = Math.max(0, C.shake - dt * 2.2);
-    this.placeCam(dt, k); return true;
+    c.v = b && !pl.vehicle ? v : null; this.placeCam(dt, k); return true;
   }
   // the game's placeCamera with its on-foot / in-car differences blended by k
   placeCam(dt, k) {
     const g = this.g, C = g.cam, cam = g.world.camera; const pitch = lerp(Math.max(-0.25, C.pitch), clamp(C.pitch, 0.04, 0.9), k);
     let d = C.dist; const bx = -Math.cos(C.yaw), by = -Math.sin(C.yaw);
     const hd = d * Math.cos(pitch); let hit = 1; for (const sd of [0, 0.45, -0.45]) hit = Math.min(hit, g.statics.raycast(C.tx, C.ty, C.tx + bx * (hd + 0.6) - by * sd, C.ty + by * (hd + 0.6) + bx * sd));
+    { const v = this.cam.v; if (v && v.def && v.def.hgt > 1.9) {      // a van or truck between him and the camera: come in to its near side, never sit inside its body
+      const c = Math.cos(v.h), s = Math.sin(v.h), hl = (v.def.len || 4.6) / 2 + 0.3, hw = (v.def.wid || 1.85) / 2 + 0.3, ox = (C.tx - v.x) * c + (C.ty - v.y) * s, oz = (C.tx - v.x) * s - (C.ty - v.y) * c, ex = bx * hd, ey = by * hd, dx = ex * c + ey * s, dz = ex * s - ey * c;
+      if (Math.abs(ox) > hl || Math.abs(oz) > hw) { let t0 = 0, t1 = 1; for (const [o, dd, h] of [[ox, dx, hl], [oz, dz, hw]]) { if (Math.abs(dd) < 1e-6) { if (Math.abs(o) > h) t0 = 2; continue; } let a = (-h - o) / dd, e = (h - o) / dd; if (a > e) { const q = a; a = e; e = q; } if (a > t0) t0 = a; if (e < t1) t1 = e; }
+        if (t0 < t1 && C.tz + (C.h + d * Math.sin(pitch)) * t0 < (v.z || 0) + v.def.hgt + 0.3) hit = Math.min(hit, t0); } } }
     const want = hit < 1 ? Math.max(0.9, d * hit - 0.35) : d; if (!dt || C.clip === undefined) C.clip = want; else C.clip += (want - C.clip) * Math.min(1, dt * (want < C.clip ? 22 : 2.2)); d = Math.min(d, C.clip);
     const cx = C.tx + bx * d * Math.cos(pitch), cy = C.ty + by * d * Math.cos(pitch); let cz = C.tz + C.h + d * Math.sin(pitch); if (cz < 0.4) cz = 0.4;
     const sh = C.shake * C.shake * 0.25, n = g.frame; cam.position.set(cx + Math.sin(n * 1.7) * sh, cz + Math.sin(n * 2.3) * sh, -cy + Math.cos(n * 1.3) * sh);

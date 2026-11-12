@@ -98,7 +98,7 @@ const WIN_BODY = /* glsl */`
                 // every light is its own sheet: set a little off true, and bowed like a pillow (slope greatest at mid-edge), so each mirrors the street its own way
                 vec2 ls = wc / half_; if (ySp) ls.y = (wc.y - sign(wc.y - 0.02) * half_.y * 0.5) / (half_.y * 0.5); if (style > 2.5 && style < 3.5) ls.x = (wc.x - sign(wc.x) * half_.x * 0.5) / (half_.x * 0.5); ls = clamp(ls + (pj.yx - 0.5) * 0.9, -1.4, 1.4) * 1.2;      // the belly of the bow is never dead centre
                 vec2 bowv = (vec2(sin(ls.x) * cos(ls.y), cos(ls.x) * sin(ls.y)) + (vec2(vnoise(wc * 1.7 + pid * 5.0), vnoise(wc * 1.7 + pid * 5.0 + 31.0)) - 0.5) * 0.25) * (pj.z - 0.4) * 0.008;
-                fNrmT = normalize(vec3((hash32(id * 1.7 + 3.0).xy - 0.5) * vec2(0.05, 0.06) + (pj.xy - 0.5) * vec2(0.028, 0.031) + vec2(0.0, ySp ? (upH ? 0.012 : -0.009) : 0.0) + wav * vec2(0.004, 0.003) * (0.45 + 0.55 * old) + bowv, 1.0));
+                fNrmT = normalize(vec3((hash32(id * 1.7 + 3.0).xy - 0.5) * vec2(0.025, 0.03) + (pj.xy - 0.5) * vec2(0.017, 0.019) + vec2(0.0, ySp ? (upH ? 0.012 : -0.009) : 0.0) + wav * vec2(0.004, 0.003) * (0.45 + 0.55 * old) + bowv, 1.0));
                 { float sxs = pairS > 0.5 ? step(0.0, wc.x) : 0.0; float rh = hash21(id + sxs * 3.0); if (rh > 0.55 && rh < 0.59 && !upH && wc.y < -0.03 && (style < 1.5 || pairS > 0.5)) { alb = room * 0.6; fGlass = 0.12; fPane = vec3(0.0); } }      // a raised lower sash: open, no pane to reflect
                 alb *= 0.55 + 0.9 * hash21(id + 11.0); fRefl = (0.4 + 0.35 * pj.z) * (0.6 + 0.5 * hash21(id + 61.0)) * (0.78 + 0.22 * smoothstep(0.0, 0.35, half_.y - wc.y)) * (1.0 - 0.55 * bc.a * fFlat);
                 // dust and rain marks: a pale film that the sun lights, thickest in the lower corners
@@ -172,7 +172,7 @@ export function makeFacadeMaterial(shared) {
         float sdStar5(vec2 p, float r, float rf) { const vec2 k1 = vec2(0.809016994375, -0.587785252292); const vec2 k2 = vec2(-0.809016994375, -0.587785252292);
           p.x = abs(p.x); p -= 2.0 * max(dot(k1, p), 0.0) * k1; p -= 2.0 * max(dot(k2, p), 0.0) * k2; p.x = abs(p.x); p.y -= r;
           vec2 ba = rf * vec2(-k1.y, k1.x) - vec2(0.0, 1.0); float h = clamp(dot(p, ba) / dot(ba, ba), 0.0, r); return length(p - ba * h) * sign(p.y * ba.x - p.x * ba.y); }
-        vec4 panelTex(vec2 uvp, float plp, vec2 dxp, vec2 dyp) { float hl = uPanelH[int(plp)]; if (hl > -0.5) return textureGrad(tPanelH, vec3(uvp, hl), dxp, dyp); return textureGrad(tPanel, vec3(uvp, plp), dxp, dyp); }
+        vec4 panelTex(vec2 uvp, float plp, vec2 dxp, vec2 dyp) { float hl = uPanelH[int(plp)]; if (hl > -0.5) return textureGrad(tPanelH, vec3(uvp, hl), dxp * 0.6, dyp * 0.6); return textureGrad(tPanel, vec3(uvp, plp), dxp, dyp); }
         // the members of a window at p (metres from its centre): returns the outer layer (casing, upper sash, mullions, bars), low = the lower sash of a double-hung window.
         // wk: 0 one double-hung sash pair, 1 two side by side, 2 two casements, 3 loft (three lights and a transom), 4 ribbon
         float winFr(vec2 p, vec2 hf, float fb, float wk, float ap, out float low) {
@@ -366,14 +366,14 @@ export function makeFacadeMaterial(shared) {
               float pl = sp.x + floor(hash21(vec2(sq, 7.0)) * sp.y * 0.999); vec4 pm = uPanel[int(pl)];
               float pr = bw / pm.z; float pk = pr >= 0.75 ? clamp(floor(pr + 0.5), 1.0, 3.0) : 1.0 / clamp(floor(pm.z / bw + 0.5), 1.0, 4.0); float cx = bayx * pk; float ci = floor(cx);   // a photo bay may be a group of windows: then it spans several layout bays
               vec3 ch = hash32(vec2(ci + sq * 3.0, fi + sq));
-              float pcol = mod(ci + floor(hash21(vec2(sq, 11.0)) * pm.x * 0.999), pm.x), prow = mod(floor(hash21(vec2(sq, 13.0)) * pm.y * 0.999) - fi + 64.0 * pm.y, pm.y);      // glass47: bays and storeys in the photo's own order (a bay keeps its photographed neighbours: no seam, sills and courses run through)
+              float pcol = mod(ci + floor(hash21(vec2(sq, 11.0)) * pm.x * 0.999), pm.x), prow = mod(floor(hash21(vec2(sq, 13.0)) * pm.y * 0.999) - fi + ((style < 1.5 && uPanelH[int(pl)] > -0.5) ? pcol : 0.0) + 64.0 * pm.y, pm.y);      // glass47: bays and storeys in the photo's own order (a bay keeps its photographed neighbours: no seam, sills and courses run through)
               vec2 puv = vec2((pcol + fract(cx)) / pm.x, (prow + 1.0 - fract(fl)) / pm.y);
               vec2 pc0 = vec2(cx / pm.x, -fl / pm.y); vec2 pdx = dFdx(pc0), pdy = dFdy(pc0);
               vec4 pc = panelTex(puv, pl, pdx, pdy);
               vec3 t0 = mix(vec3(0.86), vec3(1.1), h3.x) * (1.0 + (h3.yzx - 0.5) * 0.07);
               float t1 = (0.9 + 0.16 * grime) * mix(1.0, 0.86, smoothstep(0.5, 0.9, streak)) * (1.0 - 0.3 * smoothstep(2.5, 0.0, top) * (0.4 + 0.6 * streak)) * (1.0 - 0.3 * smoothstep(capZone + 1.6, capZone, top) * step(capZone, top));
               float lodD = smoothstep(0.03, 0.10, fPx);      // glass56 (coordinator, wide spots): photographed masonry gets the soot washes, paler patches and storey-to-storey tone the drawn walls have, and at 150-300 m it greys and darkens (a clean red panel read as toy brick there)
-              if (style < 1.5 || style > 2.5) t1 *= (1.0 - 0.34 * smoothstep(0.45, 0.8, soot) * (0.35 + 0.45 * lodD)) * (0.93 + 0.14 * hash11(fi + seed * 91.0)) * (1.0 - 0.14 * lodD) * (1.0 + 0.10 * (smoothstep(0.62, 0.8, big) - 0.3) * (0.4 + 0.6 * lodD));
+              if (style < 1.5 || style > 2.5) t1 *= (1.0 - 0.34 * smoothstep(0.45, 0.8, soot) * ((style < 1.5 ? 0.15 : 0.35) + 0.45 * lodD)) * (0.93 + 0.14 * hash11(fi + seed * 91.0)) * (1.0 - 0.14 * lodD) * (1.0 + 0.10 * (smoothstep(0.62, 0.8, big) - 0.3) * (0.4 + 0.6 * lodD));
               vec3 pa = pc.rgb * t0; pa = mix(vec3(dot(pa, vec3(0.333))), pa, (style < 1.5 || style > 2.5) ? 0.85 - 0.32 * lodD : 0.85) * t1;
               float pg = pc.a; vec3 pgs = pa; fAvg = vec3(-1.0); fNrmT = vec3(0.0, 0.0, 1.0);
               vec2 pnb = vec2(0.0); vec3 pbr = vec3(1.0); float pbk = 0.0; float trns = 0.0;
@@ -392,18 +392,19 @@ export function makeFacadeMaterial(shared) {
                   // glass61: sills and lintels are stones standing in front of the wall (sill 7.5 cm, lintel 2.8 cm): the eye's ray is met by the stone's face, its underside or its end before it reaches the wall,
                   // so the stone hides the wall beyond it and the foot of the window, and shows its own underside from below. The face is the photographed stone (panels.json "sill" / "lintel").
                   if (lodP < 0.9) { vec2 dV = vec2(clamp(par.x, -2.5, 2.5), clamp(-par.y, -2.5, 2.5));
-                    for (int k = 0; k < 2; k++) { vec4 bx; float P;
-                      if (k == 0) { if (R2.x <= 0.0) continue; bx = vec4(crs ? -1e3 : x0s, r1.y, crs ? 1e3 : x1s, R2.x * pmc.y); P = 0.075; }
-                      else { if (R3.w <= 0.0) continue; bx = vec4(R3.y * pmc.x, R3.x * pmc.y, R3.z * pmc.x, R3.w * pmc.y); P = 0.028; }
-                      if (bx.w - bx.y < 0.02) continue;
+                    for (int k = 0; k < 3; k++) { vec4 bx; float P;      // glass63: 0 = the window's own sill stone (10 cm proud where the front has a sill course, which is then box 2 at 4 cm), 1 = the lintel
+                      if (k == 0) { if (R2.x <= 0.0) continue; bx = vec4(x0s, r1.y - (crs ? 0.03 : 0.0), x1s, crs ? r1.y + 0.55 * (R2.x * pmc.y - r1.y) : R2.x * pmc.y); P = crs ? 0.14 : 0.075; }
+                      else if (k == 2) { if (R2.x <= 0.0 || !crs) continue; bx = vec4(-1e3, r1.y + 0.02, 1e3, R2.x * pmc.y); P = 0.06; }
+                      else { if (R3.w <= 0.0) continue; bx = vec4(R3.y * pmc.x, R3.x * pmc.y, R3.z * pmc.x, R3.w * pmc.y); P = 0.10; }
+                      if (bx.w - bx.y < 0.02) continue; if (k != 2) { float wr = vnoise(vec2(pM.x * 9.0 + sq, float(k) * 7.0 + fi)) - 0.5; bx.y += 0.010 * wr; bx.w += 0.014 * (vnoise(vec2(pM.x * 13.0 + sq * 3.0, float(k) * 5.0 + fi)) - 0.5); }
                       vec3 hb = proudBox(pM, dV, bx, P); vec2 F = pM + dV * P; vec2 bc2 = (bx.xy + bx.zw) * 0.5, bh = (bx.zw - bx.xy) * 0.5;
                       float sdb = min(sdBox2(pM - bc2, bh), sdBox2(F - bc2, bh));
                       if (hb.x > 0.5 || sdb < apS) {
-                        vec2 sp2 = clamp(hb.x > 0.5 ? hb.yz : F, bx.xy + 0.012, bx.zw - 0.012);
-                        if (k == 0 && crs) { float wS = x1s - x0s; sp2.x = clamp(x0s + abs(mod(sp2.x - x0s, 2.0 * wS) - wS), x0s + 0.03, x1s - 0.03); }
+                        vec2 sp2 = clamp(hb.x > 0.5 ? hb.yz : F, bx.xy + 0.012, bx.zw - 0.012); if (k == 0) sp2.y = max(sp2.y, r1.y + 0.012);
                         vec3 sc = panelTex(sp2 / pmc, pl, pdx, pdy).rgb * t0; sc = mix(vec3(dot(sc, vec3(0.333))), sc, 0.85) * t1;
-                        sc *= (0.88 + 0.2 * vnoise(vec2(sp2.x * 14.0 + sq, sp2.y * 1.5))) * (0.92 + 0.14 * vnoise(vec2(sp2.x * 3.1 + sq * 1.7, sp2.y * 9.0)));
+                        sc *= (k == 2 ? 1.0 : 0.82 + 0.3 * hash21(vec2(floor(R.x * 29.0) + ci * 3.0, fi * 7.0 + sq + float(k)))) * (k == 0 ? 1.2 : 1.0) * ((k == 2 && sp2.x > x0s - 0.02 && sp2.x < x1s + 0.02) ? 1.0 - 0.55 * (1.0 - smoothstep(0.0, 0.06, sp2.y - (r1.y + 0.55 * (R2.x * pmc.y - r1.y)))) : 1.0) * (0.93 + 0.14 * vnoise(vec2(sp2.x * 90.0, sp2.y * 5.0 + sq))) * (0.88 + 0.2 * vnoise(vec2(sp2.x * 14.0 + sq, sp2.y * 1.5))) * (0.92 + 0.14 * vnoise(vec2(sp2.x * 3.1 + sq * 1.7, sp2.y * 9.0)));
                         sc *= hb.x > 2.5 ? 0.6 * (1.0 + 0.3 * sign(dV.x) * sign(st3.x)) : (hb.x > 1.5 ? (dV.y > 0.0 ? 0.26 + 0.1 * smoothstep(0.0, P, length(hb.yz - F)) : 1.15) : 1.0);
+                        if (k == 1 && hb.x > 0.5 && hb.x < 1.5) sc *= 1.0 - 0.32 * smoothstep(0.04, 0.0, bx.w - hb.z);      // the lintel's chamfered lower arris turns from the sky
                         if (k == 0 && hb.x > 0.5 && hb.x < 1.5) sc *= 1.0 - 0.18 * smoothstep(0.03, 0.0, hb.z - bx.y) * step(0.0, dV.y);      // the top arris of the sill under the window's own wooden sill: a shade line
                         if (hb.x > 0.5) { fAlb = mix(pa, sc, nearS > 0.5 ? 1.0 : nearS * 2.0); fRough = 0.88; fNrmT = vec3(0.0, 0.0, 1.0); return; }
                         if (sdb < sdSt) { sdSt = sdb; stC = sc; } } } }
@@ -416,31 +417,45 @@ export function makeFacadeMaterial(shared) {
                       if (R2.x > 0.0 || sTop) { float e = sTop ? eT : pM.y - R2.x * pmc.y; float xa = (sTop || crs) ? -1e3 : x0s, xb = (sTop || crs) ? 1e3 : x1s;
                         float inx = smoothstep(xa - 0.05, xa + 0.02, pM.x) * (1.0 - smoothstep(xb - 0.02, xb + 0.05, pM.x));
                         float con = inx * smoothstep(-apS, apS, e) * (0.62 * (1.0 - smoothstep(0.0, 0.17, e)) + 0.3 * (1.0 - smoothstep(0.0, 0.035, e)));      // the wall under the stone sees less sky: darkest in the corner
-                        float drp = inx * smoothstep(0.0, 0.05, e) * (1.0 - smoothstep(0.1, st0 < 1.5 ? 1.1 : 0.7, e)) * smoothstep(0.45, 0.8, vnoise(vec2(pM.x * 9.0 + sq, e * 0.6)));      // dirt washed off the sill runs down the wall under it
-                        pa *= (1.0 - con * nearS) * (1.0 - (st0 < 1.5 ? 0.42 : 0.3) * drp);
-                        yb = e; sxo = 1.0; float Ls = 0.075 * clamp(spar.y, 0.0, 4.0); float xs = pM.x + 0.075 * clamp(spar.x, -3.0, 3.0); float inxs = step(xa, xs) * step(xs, xb);
+                        float drp = inx * smoothstep(0.0, 0.05, e) * exp(-e / (0.12 + 0.5 * vnoise(vec2(pM.x * 2.3 + sq, 3.0)))) * smoothstep(0.3, 0.9, 0.6 * vnoise(vec2(pM.x * 5.0 + sq, e * 0.5)) + 0.4 * vnoise(vec2(pM.x * 23.0 + sq, e * 1.5)));      // dirt washed off the sill runs down the wall under it
+                        pa *= (1.0 - con * nearS) * (1.0 - 0.26 * drp);
+                        yb = e; sxo = 1.0; float Ls = 0.14 * clamp(spar.y, 0.0, 4.0); float xs = pM.x + 0.14 * clamp(spar.x, -3.0, 3.0); float inxs = step(xa, xs) * step(xs, xb);
                         float ss2 = step(0.02, st3.z) * inxs * smoothstep(-0.01, 0.01, e) * (1.0 - smoothstep(Ls - 0.012, Ls + 0.012, e));
                         fShade = 1.0 - 0.8 * ss2 * nearS; } }
                     if (sxo < 0.5) { float ss = step(0.02, st3.z) * step(abs(wp.x + 0.07 * clamp(spar.x, -3.0, 3.0)), half_.x + 0.06) * smoothstep(-0.01, 0.01, yb) * (1.0 - smoothstep(0.02 + sl, 0.05 + sl, yb));
                       fShade = 1.0 - 0.6 * ss * (1.0 - lodP); }
                     if (R3.w > 0.0) { float e2 = pM.y - R3.w * pmc.y; float x0l = R3.y * pmc.x, x1l = R3.z * pmc.x;      // the lintel over this opening: [top, x0, x1, underside]
                         float inl = smoothstep(x0l - apS, x0l + apS, pM.x) * (1.0 - smoothstep(x1l - apS, x1l + apS, pM.x)) * step(half_.x, abs(wp.x));      // its ends beside the opening (over the opening its underside is the head of the reveal)
-                        float conl = inl * smoothstep(-apS, apS, e2) * (1.0 - smoothstep(0.0, 0.07, e2));
+                        float conl = inl * smoothstep(-apS, apS, e2) * (1.0 - smoothstep(0.0, 0.16, e2));
                         float eTop = pM.y - R3.x * pmc.y; float ledge = step(x0l, pM.x) * step(pM.x, x1l) * smoothstep(-0.05, 0.0, eTop) * (1.0 - smoothstep(0.0, apS + 0.004, eTop));      // dirt lying on the top of the stone
-                        pa *= (1.0 - 0.4 * conl * nearS) * (1.0 - 0.2 * ledge * nearS);
-                        float Ll = 0.028 * clamp(spar.y, 0.0, 4.0); float xl = pM.x + 0.028 * clamp(spar.x, -3.0, 3.0);
+                        float runl = step(x0l - 0.03, pM.x) * step(pM.x, x1l + 0.03) * step(half_.x + 0.02, abs(wp.x)) * smoothstep(0.0, 0.06, e2) * exp(-e2 / (0.25 + 0.6 * hash21(vec2(floor(R.x * 29.0) + ci, fi + sq)))) * smoothstep(0.35, 0.8, vnoise(vec2(pM.x * 16.0 + sq, e2 * 0.7)));
+                        pa *= (1.0 - 0.55 * conl * nearS) * (1.0 - 0.2 * ledge * nearS) * (1.0 - 0.3 * runl * nearS);
+                        float Ll = 0.10 * clamp(spar.y, 0.0, 4.0); float xl = pM.x + 0.10 * clamp(spar.x, -3.0, 3.0);
                         float ssl = step(0.02, st3.z) * step(x0l, xl) * step(xl, x1l) * step(half_.x, abs(wp.x)) * smoothstep(-0.01, 0.01, e2) * (1.0 - smoothstep(Ll - 0.012, Ll + 0.012, e2));
                         fShade = min(fShade, 1.0 - 0.7 * ssl * nearS); }
+                    if (st0 < 1.5 && nearS > 0.01) {      // glass64: the photographed brick is one even field: drift from course to course and brick to brick, a few burnt bricks, lime bloom, a repointed patch
+                      float crv = vnoise(vec2(pM.x * 0.7 + sq, pM.y * 14.7)), brv = vnoise(vec2(pM.x * 4.65 + sq, pM.y * 14.7 + 3.0));
+                      vec3 pv = pa * (0.97 + 0.06 * crv) * (0.96 + 0.08 * brv) * mix(vec3(1.0), vec3(0.72, 0.70, 0.80), smoothstep(0.78, 0.9, brv)) * mix(vec3(1.0), vec3(1.12, 0.98, 0.9), smoothstep(0.25, 0.1, brv));
+                      pa = mix(pa, pv, nearS); }
                     if (st0 < 1.5 && nearS > 0.01) {      // glass61: iron anchor plates of the floor ties, between the window heads: a five-pointed cast star 3 cm proud of the brick with a hard shadow, rust washed down under it
-                      vec2 dA2 = vec2(clamp(par.x, -2.5, 2.5), clamp(-par.y, -2.5, 2.5)) * 0.03; float bxA = (fract(cx + 0.5) - 0.5) * cm.x + dA2.x, yyA = pM.y - (r0.y - 0.5) + dA2.y; vec3 hA = hash32(vec2(floor(cx + 0.5) + sq * 5.0, fi * 3.0 + 1.0));
-                      if (hA.x < 0.85 && abs(bxA) < 0.5 && abs(yyA) < 1.1) { float sdA = sdStar5(vec2(bxA, -yyA), 0.165, 0.46); float plA = 1.0 - smoothstep(-apS, apS, sdA);
+                      vec2 dA2 = vec2(clamp(par.x, -2.5, 2.5), clamp(-par.y, -2.5, 2.5)) * 0.03; float bxA = (fract(cx + 0.5) - 0.5) * cm.x + dA2.x, yyA = (1.0 - fract(fl)) * cm.y - 0.32 + dA2.y; vec3 hA = hash32(vec2(floor(cx + 0.5) + sq * 5.0, fi * 3.0 + 1.0));
+                      if (hA.x < 0.85 && abs(bxA) < 0.5 && abs(yyA) < 1.1) { float aA = (hA.z - 0.5) * 0.7, rS = 0.135 + 0.05 * hA.y; mat2 mA = mat2(cos(aA), -sin(aA), sin(aA), cos(aA)); float sdA = sdStar5(mA * vec2(bxA, -yyA), rS, 0.46); float plA = 1.0 - smoothstep(-apS, apS, sdA);
                         vec2 soA = st3.z > 0.02 ? vec2(0.03 * clamp(spar.x, -3.0, 3.0), -0.03 * clamp(spar.y, 0.0, 4.0)) : vec2(0.0, -0.022); vec2 pSh = vec2(bxA, yyA) - dA2 + vec2(soA.x, soA.y);
-                        float shA = (1.0 - smoothstep(-apS, apS + (st3.z > 0.02 ? 0.0 : 0.02), sdStar5(vec2(pSh.x, -pSh.y), 0.165, 0.46))) * (1.0 - plA);
-                        float rnA = smoothstep(0.06, 0.0, abs(bxA + 0.03 * (hA.y - 0.5))) * smoothstep(0.05, 0.2, yyA) * (1.0 - smoothstep(0.3, 0.95, yyA)) * 0.3 * hA.z;
-                        vec3 irA = vec3(0.020, 0.018, 0.017) * (0.8 + 0.5 * vnoise(vec2(bxA, yyA) * 40.0 + sq)) + vec3(0.022, 0.009, 0.004) * smoothstep(0.4, 0.8, vnoise(vec2(bxA, yyA) * 17.0 + sq));
+                        float shA = (1.0 - smoothstep(-apS, apS + (st3.z > 0.02 ? 0.0 : 0.02), sdStar5(mA * vec2(pSh.x, -pSh.y), rS, 0.46))) * (1.0 - plA);
+                        float rnA = smoothstep(0.06, 0.0, abs(bxA + 0.03 * (hA.y - 0.5))) * smoothstep(0.05, 0.2, yyA) * (1.0 - smoothstep(0.3, 0.95, yyA)) * 0.5 * hA.z;
+                        vec3 irA = (0.75 + 0.9 * smoothstep(0.1, -0.1, yyA)) * vec3(0.036, 0.033, 0.031) * (0.8 + 0.5 * vnoise(vec2(bxA, yyA) * 40.0 + sq)) + vec3(0.022, 0.009, 0.004) * smoothstep(0.4, 0.8, vnoise(vec2(bxA, yyA) * 17.0 + sq));
                         float rA = length(vec2(bxA, yyA)); irA *= 1.0 + 1.2 * smoothstep(0.03, 0.0, abs(sdA + 0.012)) * step(yyA, 0.02) + 0.9 * smoothstep(0.035 + apS, 0.035 - apS, rA) - 0.5 * smoothstep(0.012, 0.0, abs(rA - 0.05));      // lit upper arrises, the nut, the ring round it
                         if (st3.z > 0.02) fShade = min(fShade, 1.0 - 0.8 * shA * nearS); else pa *= 1.0 - 0.6 * shA * nearS;
                         pa = mix(pa * (1.0 - rnA * nearS), irA, plA * nearS); } }
+                    if (st0 < 1.5 && R3.w > 0.0 && nearS > 0.01) {      // glass63: stone quoin blocks down both jambs, long and short in turn, cut from the panel's own lintel stone; a joint between blocks, the brick beside them in their contact shade
+                      vec2 dQ = vec2(clamp(par.x, -2.5, 2.5), clamp(par.y, -2.5, 2.5)) * 0.06; float jxw = abs(wp.x) - half_.x; float jx = abs(wp.x + dQ.x) - half_.x, jy = wp.y + dQ.y + half_.y;
+                      if (min(jx, jxw) > -apS && jx < 0.36 && jy > 0.0 && jy < 2.0 * half_.y) { float jo = jy + 0.2 * hash21(vec2(sq + fi, floor(R.x * 29.0) + sign(wp.x))); float bq = floor(jo / 0.31), fy = fract(jo / 0.31); float hq0 = hash21(vec2(bq * 3.0 + sign(wp.x), sq + fi * 5.0)); float wq = (mod(bq, 2.0) < 0.5 ? 0.25 : 0.14) + 0.03 * (hq0 - 0.5) + 0.01 * (vnoise(vec2(jy * 30.0, sq)) - 0.5);
+                        float inq = 1.0 - smoothstep(wq - apS, wq + apS, jx); float sdq = (1.0 - smoothstep(wq - apS, wq + apS, jxw)) * (1.0 - inq); float jt = 1.0 - smoothstep(0.004, 0.012 + apS, min(fy, 1.0 - fy) * 0.31);
+                        vec2 lo = vec2(R3.y * pmc.x, R3.x * pmc.y), lsz = vec2(R3.z * pmc.x, R3.w * pmc.y) - lo; float hq = hash21(vec2(bq + sign(wp.x) * 7.0, sq + fi));
+                        vec2 qs = lo + vec2(0.06 + hq * max(lsz.x - 0.40, 0.0) + clamp(jx, 0.0, wq), 0.02 + fy * (lsz.y - 0.04));
+                        vec3 qc = panelTex(qs / pmc, pl, pdx, pdy).rgb * t0; qc = mix(vec3(dot(qc, vec3(0.333))), qc, 0.85) * t1 * (0.66 + 0.34 * hq) * mix(vec3(1.0), vec3(0.9, 0.84, 0.78), hq0) * (0.93 + 0.14 * vnoise(vec2(jx * 90.0, jy * 5.0 + sq))) * (0.8 + 0.3 * vnoise(vec2(jx * 11.0 + sq, jy * 4.0))) * (1.0 - 0.75 * jt) * (1.0 - 0.3 * smoothstep(0.05, 0.0, fy * 0.31)) * (1.0 + 0.12 * smoothstep(0.05, 0.0, (1.0 - fy) * 0.31)) * (1.0 - 0.3 * smoothstep(0.55, 0.0, 2.0 * half_.y - jy) * vnoise(vec2(jx * 20.0 + sq, jy * 2.0)));
+                        float cs = smoothstep(wq + 0.12, wq, max(jx, jxw)) * (1.0 - inq);
+                        pa = mix(pa * (1.0 - 0.45 * cs * nearS), mix(qc, qc * 0.5, sdq), max(inq, sdq) * nearS); } }
                     if (sdSt < apS) pa = mix(pa, stC, 0.5 * (1.0 - clamp(sdSt / apS, 0.0, 1.0)) * nearS);
                     fNrmT = normalize(vec3(pnb * 0.9 * (1.0 - sof), 1.0));
                     if (!(pg > 0.02 && d2 > 0.1)) { fAlb = mix(pa, mix(vec3(0.04), pa, lodP), smoothstep(0.35, 0.65, pg) * step(d2, 0.45)); fRough = 0.9; return; } trns = 1.0; pa *= 1.0 - 0.85 * smoothstep(0.0, 0.6, pg);      // (its soft edge is the frame's shadow line, not a rim of the photo's sky)      // glass57: a transom light (panels.json glass_transoms) falls through to the photographed-pane code below
@@ -452,9 +467,9 @@ export function makeFacadeMaterial(shared) {
                     float din = hv ? (abs(q.y) - half_.y) / max(abs(par.y), 0.05) : (abs(q.x) - half_.x) / max(abs(par.x), 0.05); float dr = clamp(din, 0.0, pdep);
                     vec2 eo = hv ? vec2(wp.x, sign(q.y) * (half_.y + 0.12 + pdep - dr)) : vec2(sign(q.x) * (half_.x + 0.16 + pdep - dr), wp.y);
                     vec2 euv = vec2((r0.x + r1.x) * 0.5 + eo.x, (r0.y + r1.y) * 0.5 - eo.y) / cm / pm.xy;
-                    vec4 er4 = panelTex(clamp(euv, 0.002, 0.998), pl, pdx, pdy); vec3 er = er4.rgb * t0; er = mix(vec3(dot(er, vec3(0.333))), er, 0.85) * t1; er = mix(er, frameCol * 1.1 + 0.015, smoothstep(0.25, 0.6, er4.a)); if (st0 < 1.5) er = mix(er, mix(er * 0.7, frameCol * 2.4 + 0.008, 0.8), smoothstep(0.58, 0.46, clamp(din / pdep, 0.0, 1.0)));      // glass59: the outer half of the return is the brick itself (a half-brick), the inner half the dark brick-mould      // glass57: on brick flats the return is the window's own dark brick-mould: a recess with a hard edge, not a band of more brick      // where the photo beside the opening is more glass, the reveal is lined in the frame's colour
+                    vec4 er4 = panelTex(clamp(euv, 0.002, 0.998), pl, pdx, pdy); vec3 er = er4.rgb * t0; er = mix(vec3(dot(er, vec3(0.333))), er, 0.85) * t1; er = mix(er, frameCol * 1.1 + 0.015, smoothstep(0.25, 0.6, er4.a)); if (st0 < 1.5) er = mix(er, mix(er * 0.7, frameCol * 2.4 + 0.008, 0.8), smoothstep(0.40, 0.30, clamp(din / pdep, 0.0, 1.0)));      // glass59: the outer half of the return is the brick itself (a half-brick), the inner half the dark brick-mould      // glass57: on brick flats the return is the window's own dark brick-mould: a recess with a hard edge, not a band of more brick      // where the photo beside the opening is more glass, the reveal is lined in the frame's colour
                     { float dn = clamp(din / pdep, 0.0, 1.0); float hwv = hash21(vec2(ci * 3.0 + floor(R.x * 29.0), fi) + sq);
-                      er *= (hv ? (q.y > 0.0 ? mix(st0 < 1.5 ? 0.36 : 0.26, st0 < 1.5 ? 0.70 : 0.5, dn) * (0.9 + 0.2 * hwv) : mix(0.85, 1.06, dn)) : mix(0.36, 0.66, dn) * (0.9 + 0.2 * hwv) * (1.0 + 0.1 * sign(q.x) * sign(st3.x))) * (1.0 - 0.5 * smoothstep(0.035, 0.0, din))
+                      er *= (hv ? (q.y > 0.0 ? mix(st0 < 1.5 ? 0.50 : 0.26, st0 < 1.5 ? 0.82 : 0.5, dn) * (0.9 + 0.2 * hwv) : mix(0.85, 1.06, dn)) : mix(st0 < 1.5 ? 0.52 : 0.36, st0 < 1.5 ? 0.86 : 0.66, dn) * (0.9 + 0.2 * hwv) * (1.0 + 0.1 * sign(q.x) * sign(st3.x))) * (1.0 - 0.5 * smoothstep(0.035, 0.0, din))
                         * (0.9 + 0.2 * vnoise(vec2(wp.x + wp.y, din * 9.0) * 3.0 + sq)); }
                     vec3 rn = hv ? (q.y > 0.0 ? vec3(0.0, -0.5, 0.85) : vec3(0.0, 1.0, 0.15)) : vec3(-sign(q.x) * 0.6, 0.0, 0.8);      // head and jambs take most of their light as the wall does (a soffit normal goes black under the sky probe); their shade is in the colour
                     float cwr = clamp(0.5 + d2 / fPx, 0.0, 0.5);
@@ -677,7 +692,7 @@ ${WIN_BODY}
           float mOpen = smoothstep(0.5, 0.9, clamp(vBake.r * 2.0, 0.0, 1.0));      // a wall that sees much sky faces a square, not a street wall
           float mW = mix(24.0, 34.0, mOpen); float tR = mW / max(dot(mR, fN), 0.25);
           vec3 mQ = vWPos + mR * tR; float sS = dot(mQ, fT);
-          vec2 wv = vec2(vnoise(vFuv * vec2(0.9, 0.5) + 3.0), vnoise(vFuv * vec2(0.6, 1.1) + 11.0)) - 0.5; wv += (vec2(vnoise(vFuv * vec2(7.0, 4.0)), vnoise(vFuv * vec2(5.0, 8.0) + 5.0)) - 0.5) * 0.12; float wvA = 0.08 + 0.15 * fFlat; if (fFlat > 0.5) wv += (vec2(vnoise(vFuv * vec2(3.1, 2.3) + 7.0), vnoise(vFuv * vec2(2.6, 3.4) + 13.0)) - 0.5) * 0.35; mQ.y += wv.y * wvA; sS += wv.x * wvA;      // glass56: old drawn glass on the brick flats: the picture wavers      // glass is never flat: across the street that is metres
+          vec2 wv = vec2(vnoise(vFuv * vec2(0.9, 0.5) + 3.0), vnoise(vFuv * vec2(0.6, 1.1) + 11.0)) - 0.5; wv += (vec2(vnoise(vFuv * vec2(7.0, 4.0)), vnoise(vFuv * vec2(5.0, 8.0) + 5.0)) - 0.5) * 0.12; float wvA = 0.08; mQ.y += wv.y * wvA; sS += wv.x * wvA;      // glass56: old drawn glass on the brick flats: the picture wavers      // glass is never flat: across the street that is metres
           float aw = clamp(fwidth(mQ.y), 0.03, 30.0), awx = clamp(fwidth(sS), 0.03, 30.0);
           vec3 zen = min(texture(tStreet, vec3(0.03, 1.0, 0.02)).rgb, vec3(2.5)); float zl = dot(zen, vec3(0.3333)); zen = mix(zen, zl * vec3(0.45, 0.80, 1.45), 0.65);
           float el = clamp(mR.y + fNrmT.y * 4.0 + wv.y * 0.12, 0.0, 1.0);
@@ -733,6 +748,6 @@ ${WIN_BODY}
         material.specularColor = mix(material.specularColor, vec3(0.05), fGlass); material.specularF90 = 1.0 - 0.92 * fFrm * (1.0 - fGlass); material.specularColor *= 1.0 - 0.7 * fFrm * (1.0 - fGlass);`)
       .replace('#include <aomap_fragment>', BAKE_LIGHT_GLSL + ' { vec3 gR = reflect(-normalize(cameraPosition - vWPos), bakeN); reflectedLight.indirectSpecular *= mix(1.0, mix(0.0, 0.15, smoothstep(0.12, 0.6, gR.y)), max(fGlass, fRough < 0.2 ? 1.0 : 0.0)); } { float sT = 1.0 - min(0.08 + 0.92 * pow(1.0 - clamp(dot(uSunDir, fN), 0.0, 1.0), 3.0), 1.0); reflectedLight.directDiffuse *= fShade * mix(1.0, sT * sqrt(sT), fGlass); } reflectedLight.directSpecular *= fShade;      // at a grazing sun the glass throws most of it back: what stands behind is barely lit');
   };
-  m.customProgramCacheKey = () => 'facade-l27-glass61';
+  m.customProgramCacheKey = () => 'facade-l27-glass73';
   return m;
 }

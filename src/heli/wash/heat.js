@@ -21,7 +21,7 @@ export class Heat {
     const m = (this.mat = new THREE.ShaderMaterial({ uniforms: this.uniforms, transparent: true, depthWrite: false,
       vertexShader: `attribute vec4 aA; attribute vec4 aB; varying vec2 vUv; varying vec3 vB;
         void main() { vec3 c = aA.xyz; vec3 toCam = normalize(cameraPosition - c), r = normalize(cross(vec3(0.0, 1.0, 0.0), toCam)), u = cross(toCam, r);
-          vec4 mv = viewMatrix * vec4(c + (r * position.x + u * position.y) * aA.w, 1.0); vUv = position.xy; vB = vec3(aB.x, aB.y, 0.02 * projectionMatrix[1][1] / max(-mv.z, 0.5)); gl_Position = projectionMatrix * mv; }`,
+          vec4 mv = viewMatrix * vec4(c + (r * position.x + u * position.y) * aA.w, 1.0); vUv = position.xy; vB = vec3(aB.x, aB.y, max(0.02 * projectionMatrix[1][1] / max(-mv.z, 0.5), 0.0045)); gl_Position = projectionMatrix * mv; }`,
       fragmentShader: `uniform sampler2D tPrev; uniform vec2 uRes; uniform float uTime; varying vec2 vUv; varying vec3 vB;
         float hh(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
         float nn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f); return mix(mix(hh(i), hh(i + vec2(1, 0)), f.x), mix(hh(i + vec2(0, 1)), hh(i + vec2(1, 1)), f.x), f.y); }

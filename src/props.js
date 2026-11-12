@@ -31,44 +31,58 @@ export function install(game, opts = {}) {
   const hash = new Map(), hk = (x, y) => Math.floor(x / CELL) * 100003 + Math.floor(y / CELL), byName = new Map();
   for (const m of F.meshes) { let a = byName.get(m.name); if (!a) byName.set(m.name, (a = [])); a.push(m); }
   const shapes = new Map();
-  function shapeOf(name) {       // the model's own outline: its box, and the vertex furthest out in each of 26 directions
-    let sh = shapes.get(name); if (sh !== undefined) return sh;
-    const K = F.kinds[name], box = new THREE.Box3(), best = DIRS.map(() => ({ d: -1e9, p: new THREE.Vector3() })); let any = false;
-    for (const part of K.parts || []) { const pos = part.geometry && part.geometry.attributes.position; if (!pos) continue; const stp = Math.max(1, Math.floor(pos.count / 4000));
+  function shapeFrom(geos, k) {       // a model's own outline: its box, and the vertex furthest out in each of 26 directions
+    const box = new THREE.Box3(), best = DIRS.map(() => ({ d: -1e9, p: new THREE.Vector3() })); let any = false;
+    for (const geo of geos) { const pos = geo && geo.attributes.position; if (!pos) continue; const stp = Math.max(1, Math.floor(pos.count / 4000));
       for (let i = 0; i < pos.count; i += stp) { _v.fromBufferAttribute(pos, i); box.expandByPoint(_v); any = true; for (let k = 0; k < DIRS.length; k++) { const d = _v.dot(DIRS[k]); if (d > best[k].d) { best[k].d = d; best[k].p.copy(_v); } } } }
-    if (!any) { shapes.set(name, null); return null; }
+    if (!any) return null;
     const pts = []; for (const b of best) if (!pts.some((p) => p.distanceToSquared(b.p) < 1e-4)) pts.push(b.p.clone());
     const size = box.getSize(new THREE.Vector3()), cen = box.getCenter(new THREE.Vector3()); cen.y = box.min.y + size.y * 0.42;      // a little bottom-heavy, as furniture is
-    sh = { pts, size, cen, k: K.scale || 1, minY: box.min.y }; shapes.set(name, sh); return sh;
+    return { pts, size, cen, k: k || 1, minY: box.min.y };
   }
+  function shapeOf(name) { let sh = shapes.get(name); if (sh === undefined) { const K = F.kinds[name]; sh = K ? shapeFrom((K.parts || []).map((q) => q.geometry), K.scale || 1) : null; shapes.set(name, sh); } return sh; }
+  const shOf = (rec) => rec.sh || shapeOf(rec.name);
   for (const name of LOOSE) { const K = F.kinds[name]; if (!K || !K.list || !K.list.length || !shapeOf(name)) continue;
     for (const it of K.list) { const o = it[4]; if (o && o.tilt && Math.abs(o.tilt[0]) > 1) continue;       // (already lying on its side as set dressing: left as it is)
       const rec = { name, x: it[0], y: it[1], z: it[2], h: it[3], o, body: null }, k = hk(rec.x, rec.y); let a = hash.get(k); if (!a) hash.set(k, (a = [])); a.push(rec); S.recs++; } }
+  const add = (rec) => { const k = hk(rec.x, rec.y); let a = hash.get(k); if (!a) hash.set(k, (a = [])); a.push(rec); S.recs++; };
+  // the streets lane's clutter.js draws its own bins, boxes, crates, cans and cones in the hero blocks (parts.clutter.dyn): those are loose too
+  const CL = game.streets.parts.clutter; S.clutter = 0;
+  if (CL && CL.dyn && CL.take) for (const D of CL.dyn) { if (!/^(basket|crate|cbox|can|barrel|cone|newsbox|box|bottle|cup|bucket|pail|pallet)/i.test(D.name) || !D.hi || !D.hi.ms || !D.hi.ms.length) continue; const sh = shapeFrom(D.hi.ms.map((m) => m.geometry), 1); if (!sh) continue;
+    for (let i = 0; i < D.n; i++) { const M = D.M; if (M[i * 16 + 15] === 0 || (M[i * 16] === 0 && M[i * 16 + 1] === 0 && M[i * 16 + 2] === 0)) continue; const sy = Math.hypot(M[i * 16 + 4], M[i * 16 + 5], M[i * 16 + 6]); if (Math.abs(M[i * 16 + 5]) < sy * 0.6) continue;       /* lying on its side as dressing: left */
+      add({ name: D.name, x: D.P[i * 2], y: -D.P[i * 2 + 1], z: M[i * 16 + 13], h: 0, o: null, body: null, cl: D, ci: i, sh: Object.assign({}, sh, { k: Math.hypot(M[i * 16], M[i * 16 + 1], M[i * 16 + 2]) }) }); S.clutter++; } }
+  // the streets lane's plaza.js draws its own chairs and tables in the hero plazas (parts.plaza.loose): found by place like furniture's, in meshes with no tile
+  const PZ = game.streets.parts.plaza, noTile = new WeakSet(); S.plaza = 0;
+  if (PZ && PZ.loose) for (const e of PZ.loose) for (const m of e.meshes || []) { noTile.add(m); let a = byName.get('st_' + e.name); if (!a) byName.set('st_' + e.name, (a = [])); if (!a.includes(m)) { a.push(m); S.plaza++; } }
   const near = (x, y, r, fn) => { const i0 = Math.floor((x - r) / CELL), i1 = Math.floor((x + r) / CELL), j0 = Math.floor((y - r) / CELL), j1 = Math.floor((y + r) / CELL); for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) { const a = hash.get(i * 100003 + j); if (a) for (let q = a.length - 1; q >= 0; q--) fn(a[q], a, q); } };
 
   // ---------------------------------------------------------------- our own instances of a kind (same geometry, material and tint as the game's)
   const pools = new Map();
   function poolOf(name, srcMeshes) {
-    let P = pools.get(name); if (P) return P;
-    P = { name, n: 0, cap: 16, parts: [] };
-    for (const src of srcMeshes) { const g = new THREE.BufferGeometry(), sg = src.geometry; for (const a in sg.attributes) if (a !== 'aTint' && a !== 'aCell') g.setAttribute(a, sg.attributes[a]); g.setIndex(sg.index); g.boundingSphere = sg.boundingSphere; g.boundingBox = sg.boundingBox;
-      const hasT = !!sg.attributes.aTint, part = { g, src, hasT, im: null, tint: null, cell: null }; P.parts.push(part); }
-    grow(P, P.cap); pools.set(name, P); return P;
+    const key = name + '|' + srcMeshes[0].uuid; let P = pools.get(key); if (P) return P;
+    P = { name, n: 0, cap: 16, parts: [], sh: shapeFrom(srcMeshes.map((m) => m.geometry), 1) };
+    for (const src of srcMeshes) { const g = new THREE.BufferGeometry(), sg = src.geometry, inst = [];
+      for (const a in sg.attributes) { const at = sg.attributes[a]; if (at.isInstancedBufferAttribute) inst.push({ name: a, size: at.itemSize, norm: at.normalized, data: null }); else g.setAttribute(a, at); }
+      g.setIndex(sg.index); for (const gr of sg.groups || []) g.addGroup(gr.start, gr.count, gr.materialIndex); g.boundingSphere = sg.boundingSphere; g.boundingBox = sg.boundingBox;
+      P.parts.push({ g, src, inst, im: null }); }
+    grow(P, P.cap); pools.set(key, P); return P;
   }
   function grow(P, cap) {
     for (const part of P.parts) { const old = part.im, im = new THREE.InstancedMesh(part.g, part.src.material, cap);
-      if (part.hasT) { const t = new Float32Array(cap * 3).fill(1), c = new Float32Array(cap * 2); if (part.tint) { t.set(part.tint); c.set(part.cell); } part.tint = t; part.cell = c; part.g.setAttribute('aTint', new THREE.InstancedBufferAttribute(t, 3)); part.g.setAttribute('aCell', new THREE.InstancedBufferAttribute(c, 2)); }
+      for (const a of part.inst) { const d = new Float32Array(cap * a.size); if (a.data) d.set(a.data); a.data = d; part.g.setAttribute(a.name, new THREE.InstancedBufferAttribute(d, a.size, a.norm)); }
       if (old) { im.instanceMatrix.array.set(old.instanceMatrix.array); world.scene.remove(old); old.dispose(); }
       im.count = P.n; im.frustumCulled = false; im.castShadow = part.src.castShadow; im.receiveShadow = true; im.renderOrder = part.src.renderOrder; im.name = 'props_' + P.name; im.userData = { kind: part.src.userData.kind, looseProp: true }; im.matrixAutoUpdate = false;
+      if (part.src.customDepthMaterial) im.customDepthMaterial = part.src.customDepthMaterial; if (part.src.onBeforeRender !== THREE.Object3D.prototype.onBeforeRender) im.onBeforeRender = part.src.onBeforeRender;
       world.scene.add(im); part.im = im; }
     P.cap = cap;
   }
   // take the game's instance at (x, z) out of every batch that draws it (the kind's own parts, its far stand-in, its blob and sun shadow)
-  const inTile = (m, x, z) => { const u = m.userData, hf = (u.r || 1e9) / 1.4142 + 0.05; return Math.abs(x - u.cx) <= hf && Math.abs(z - u.cz) <= hf; };
+  const inTile = (m, x, z) => { if (noTile.has(m)) return true; const u = m.userData, hf = (u.r || 1e9) / 1.4142 + 0.05; return Math.abs(x - u.cx) <= hf && Math.abs(z - u.cz) <= hf; };
   function findIn(m, x, z, tol) { if (!inTile(m, x, z)) return -1; const a = m.instanceMatrix.array, t2 = tol * tol; for (let i = 0; i < m.count; i++) { const dx = a[i * 16 + 12] - x, dz = a[i * 16 + 14] - z; if (dx * dx + dz * dz < t2 && (a[i * 16] !== 0 || a[i * 16 + 1] !== 0 || a[i * 16 + 2] !== 0)) return i; } return -1; }
   const zero = (m, i) => { const a = m.instanceMatrix.array; for (let k = 0; k < 12; k++) a[i * 16 + k] = 0; m.instanceMatrix.needsUpdate = true; };
   const sunR = { pchair: 0.24, ptable: 0.33 };
   function takeOut(rec) {
+    if (rec.cl) { const D = rec.cl, i = rec.ci, M = CL.take(D.name, i); if (!M) return null; return { meshes: D.hi.ms, M, attr: (j, name, size) => { const a = (D.attrs || []).find((q) => q.name === name); return a && a.data ? a.data.subarray(i * a.size, i * a.size + a.size) : null; } }; }
     const x = rec.x, z = -rec.y, own = [];
     for (const m of byName.get('st_' + rec.name) || []) { const i = findIn(m, x, z, 0.02); if (i >= 0) { own.push([m, i]); } }
     if (!own.length) return null;
@@ -77,19 +91,20 @@ export function install(game, opts = {}) {
     for (const [nm, list] of byName) { if (nm !== 'st_blob' && !nm.startsWith('st_sh_')) continue; for (const m of list) { const i = findIn(m, x, z, 0.02); if (i >= 0) zero(m, i); } }
     if (sunR[rec.name]) for (const m of byName.get('st_sunsh') || []) { if (!inTile(m, x, z)) continue; const a = m.instanceMatrix.array;       // the sun shadow lies off to one side: its near end is the prop
       for (let i = 0; i < m.count; i++) { const sx = Math.hypot(a[i * 16], a[i * 16 + 1], a[i * 16 + 2]); if (!sx) continue; const hl = sx - sunR[rec.name], ox = a[i * 16 + 12] - a[i * 16] / sx * hl, oz = a[i * 16 + 14] - a[i * 16 + 2] / sx * hl; if ((ox - x) * (ox - x) + (oz - z) * (oz - z) < 0.01) { zero(m, i); break; } } }
-    return own;
+    const M = own[0][0].instanceMatrix.array.slice(own[0][1] * 16, own[0][1] * 16 + 16), vals = own.map(([m, i]) => { const o = {}; for (const a in m.geometry.attributes) { const at = m.geometry.attributes[a]; if (at.isInstancedBufferAttribute) o[a] = at.array.slice(i * at.itemSize, i * at.itemSize + at.itemSize); } return o; });
+    for (const [m, i] of own) zero(m, i); if (own.some(([m]) => noTile.has(m)) && PZ && PZ.refresh) { try { PZ.refresh(world.camera); } catch (e) {} }
+    return { meshes: own.map((q) => q[0]), M, attr: (j, name) => (vals[j] || vals[0])[name] || null };
   }
 
   // ---------------------------------------------------------------- a body
   function wake(rec) {
     if (rec.body) { const b = rec.body; if (!b.awake) { b.awake = true; b.rest = 0; S.awake++; if (b.circle) { b.circle.on = false; b.circle = null; } } return b; }
     if (S.bodies.length >= MAXB && !retire()) return null;
-    const sh = shapeOf(rec.name), own = takeOut(rec); if (!own) { rec.dead = true; return null; }
-    const P = poolOf(rec.name, own.map((x) => x[0])); if (P.n >= P.cap) grow(P, P.cap * 2);
+    const own = takeOut(rec); if (!own) { if (PZ && PZ.loose && (rec.name === 'pchair' || rec.name === 'ptable') && (rec.miss = (rec.miss || 0) + 1) < 40) return null;      /* a hero-plaza piece is only in its near mesh close to the camera: try again later */ rec.dead = true; return null; }
+    const P = poolOf(rec.name, own.meshes); if (P.n >= P.cap) grow(P, P.cap * 2); const sh = P.sh || shOf(rec);
     // the instance as the game drew it
-    _m.fromArray(own[0][0].instanceMatrix.array, own[0][1] * 16); const pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(); _m.decompose(pos, q, sc);
-    for (const [m, i] of own) zero(m, i);
-    const slot = P.n++; for (let k = 0; k < P.parts.length; k++) { const part = P.parts[k], src = own[k] || own[0]; if (part.hasT && src[0].geometry.attributes.aTint) { const t = src[0].geometry.attributes.aTint.array, c = src[0].geometry.attributes.aCell.array, i = src[1]; part.tint.set([t[i * 3], t[i * 3 + 1], t[i * 3 + 2]], slot * 3); part.cell.set([c[i * 2], c[i * 2 + 1]], slot * 2); part.g.attributes.aTint.needsUpdate = true; part.g.attributes.aCell.needsUpdate = true; } part.im.count = P.n; }
+    _m.fromArray(own.M); const pos = new THREE.Vector3(), q = new THREE.Quaternion(), sc = new THREE.Vector3(); _m.decompose(pos, q, sc);
+    const slot = P.n++; for (let k = 0; k < P.parts.length; k++) { const part = P.parts[k]; for (const a of part.inst) { const v = own.attr(k, a.name, a.size); if (v) { a.data.set(v, slot * a.size); part.g.attributes[a.name].needsUpdate = true; } } part.im.count = P.n; }
     const size = sh.size.clone().multiply(sc), vol = Math.max(0.004, size.x * size.y * size.z), m = Math.min(60, Math.max(2.5, vol * (rec.name === 'newsbox' ? 180 : rec.name === 'bag' ? 60 : 38)));
     const oc = sh.cen.clone().multiply(sc), pts = sh.pts.map((p) => p.clone().multiply(sc).sub(oc));
     const I = new THREE.Vector3(m * (size.y * size.y + size.z * size.z) / 12, m * (size.x * size.x + size.z * size.z) / 12, m * (size.x * size.x + size.y * size.y) / 12).multiplyScalar(0.8);
@@ -97,7 +112,7 @@ export function install(game, opts = {}) {
       awake: true, rest: 0, circle: null, sw: st.onSidewalk(rec.x, rec.y), g0: 0, t: 0, mu: rec.name === 'bag' ? 0.9 : 0.55, e: rec.name === 'bag' ? 0.02 : 0.22 };
     let lo = 1e9; for (const p of pts) { const y = _v.copy(p).applyQuaternion(q).y; if (y < lo) lo = y; } b.g0 = b.p.y + lo;       // the ground it stands on is where its lowest point is
     // its static circle(s) go
-    const R = b.rh + 0.25, c = st.cell; for (let i = Math.floor((rec.x - R) / c); i <= Math.floor((rec.x + R) / c); i++) for (let j = Math.floor((rec.y - R) / c); j <= Math.floor((rec.y + R) / c); j++) { const a = st.circ.get(st.key(i, j)); if (a) for (const o of a) if (o.on && o.tag === 'furniture' && Math.hypot(o.x - rec.x, o.y - rec.y) < R && o.r < 0.7) o.on = false; }
+    const R = b.rh + 0.25, c = st.cell; for (let i = Math.floor((rec.x - R) / c); i <= Math.floor((rec.x + R) / c); i++) for (let j = Math.floor((rec.y - R) / c); j <= Math.floor((rec.y + R) / c); j++) { const a = st.circ.get(st.key(i, j)); if (a) for (const o of a) if (o.on && (o.tag === 'furniture' || o.tag === 'clutter') && Math.hypot(o.x - rec.x, o.y - rec.y) < R && o.r < 0.7) o.on = false; }
     rec.body = b; S.bodies.push(b); S.awake++; S.woken++; write(b); return b;
   }
   function retire() {       // room for one more: the body at rest furthest from the player goes (never one in view range)
@@ -140,7 +155,7 @@ export function install(game, opts = {}) {
   // before the game moves anything: props about to be touched wake up (their circles go, so the car or the player is not stopped dead)
   function pre() {
     const pl = game.player;
-    if (!pl.vehicle) { const sp = pl.speed || 0; if (sp > 0.05) { const fx = Math.cos(pl.h), fy = Math.sin(pl.h); near(pl.x, pl.y, 1.6, (rec) => { if (rec.body || rec.dead) return; const sh = shapeOf(rec.name), dx = rec.x - pl.x, dy = rec.y - pl.y, d = Math.hypot(dx, dy), rr = 0.5 * Math.max(sh.size.x, sh.size.z) * sh.k; if (d < Math.max(rr, 0.32) + PLAYER_R + 0.16 && dx * fx + dy * fy > 0) wake(rec); }); } }
+    if (!pl.vehicle) { const sp = pl.speed || 0; if (sp > 0.05) { const fx = Math.cos(pl.h), fy = Math.sin(pl.h); near(pl.x, pl.y, 1.6, (rec) => { if (rec.body || rec.dead) return; const sh = shOf(rec), dx = rec.x - pl.x, dy = rec.y - pl.y, d = Math.hypot(dx, dy), rr = 0.5 * Math.max(sh.size.x, sh.size.z) * sh.k; if (d < Math.max(rr, 0.32) + PLAYER_R + 0.16 && dx * fx + dy * fy > 0) wake(rec); }); } }
     carList();
     for (const k of cars) { const sp = Math.hypot(k.vx, k.vy); if (sp < 0.4) continue; const c = k.c, L = (c.def ? c.def.len : 4.4) / 2 + 0.5 + sp * 0.12, W = (c.def ? c.def.wid : 1.8) / 2 + 0.45, ch = Math.cos(c.h), shn = Math.sin(c.h);
       near(c.x, c.y, L + 1, (rec) => { if (rec.body || rec.dead) return; const dx = rec.x - c.x, dy = rec.y - c.y, lx = dx * ch + dy * shn, ly = -dx * shn + dy * ch; if (Math.abs(lx) < L && Math.abs(ly) < W) wake(rec); }); }
@@ -168,7 +183,7 @@ export function install(game, opts = {}) {
       for (let j = 0; j < B.length; j++) { if (j === i) continue; const b = B[j]; if (b.awake && j < i) continue; _n.copy(b.p).sub(a.p); const d = _n.length(), R = (a.r + b.r) * 0.62; if (d >= R || d < 1e-4) continue; _n.multiplyScalar(1 / d);
         const rel = _v.copy(a.v).sub(b.v).dot(_n); if (!b.awake) { if (rel < 0.5) continue; wake(b.rec); }
         const ma = a.m, mb = b.m, pn = (R - d); a.p.addScaledVector(_n, -pn * mb / (ma + mb)); b.p.addScaledVector(_n, pn * ma / (ma + mb)); if (rel > 0) { const J = 1.3 * rel * ma * mb / (ma + mb); _d.copy(_n).multiplyScalar(J); _a.copy(a.p).addScaledVector(_n, a.r * 0.6); push(b, _d, _a); _d.multiplyScalar(-1); push(a, _d, _a); } }
-      if (a.v.lengthSq() > 0.6) near(a.p.x, -a.p.z, a.r + 0.6, (rec) => { if (rec.body || rec.dead) return; const sh = shapeOf(rec.name), d = Math.hypot(rec.x - a.p.x, rec.y + a.p.z); if (d < a.rh + 0.5 * Math.max(sh.size.x, sh.size.z) * sh.k && a.p.y - rec.z < sh.size.y * sh.k + a.r) wake(rec); }); }
+      if (a.v.lengthSq() > 0.6) near(a.p.x, -a.p.z, a.r + 0.6, (rec) => { if (rec.body || rec.dead) return; const sh = shOf(rec), d = Math.hypot(rec.x - a.p.x, rec.y + a.p.z); if (d < a.rh + 0.5 * Math.max(sh.size.x, sh.size.z) * sh.k && a.p.y - rec.z < sh.size.y * sh.k + a.r) wake(rec); }); }
   }
   function walls(b) {       // buildings, fences, trees, posts and props still standing
     const r = Math.min(0.3, b.rh * 0.6), x = b.p.x, y = -b.p.z; if (!st.resolve(x, y, r, _o)) return; const nx = _o.x - x, ny = _o.y - y, d = Math.hypot(nx, ny); if (d < 1e-5) return;
@@ -186,20 +201,20 @@ export function install(game, opts = {}) {
   }
   const gstep = game.step.bind(game);
   game.step = (dt) => { if (!S.on) return gstep(dt); try { pre(); } catch (e) { fail(e); } gstep(dt); try { post(dt); } catch (e) { fail(e); } };
-  let fails = 0; const fail = (e) => { if (fails++ < 3) console.warn('[props]', e); if (fails > 20) S.on = false; };
+  let fails = 0; const fail = (e) => { if (fails++ < 3) console.warn('[props] ' + String((e && e.stack) || e).slice(0, 400)); if (fails > 20) S.on = false; };
 
   // ---------------------------------------------------------------- for guns, breaks and explosions (world coordinates)
-  const wakeNear = (p, r) => { near(p.x, -p.z, r + 1, (rec) => { if (rec.body || rec.dead) return; const sh = shapeOf(rec.name), hy = sh.size.y * sh.k; if (Math.hypot(rec.x - p.x, rec.y + p.z) < r + 0.5 * Math.max(sh.size.x, sh.size.z) * sh.k && p.y > rec.z - r && p.y < rec.z + hy + r) wake(rec); }); };
+  const wakeNear = (p, r) => { near(p.x, -p.z, r + 1, (rec) => { if (rec.body || rec.dead) return; const sh = shOf(rec), hy = sh.size.y * sh.k; if (Math.hypot(rec.x - p.x, rec.y + p.z) < r + 0.5 * Math.max(sh.size.x, sh.size.z) * sh.k && p.y > rec.z - r && p.y < rec.z + hy + r) wake(rec); }); };
   S.impulse = (point, vec, radius = 0.6) => { if (!S.on) return 0; wakeNear(point, radius); let n = 0; for (const b of S.bodies) { if (b.p.distanceTo(point) > radius + b.r) continue; if (!b.awake) wake(b.rec); push(b, vec, point); n++; } return n; };
   S.blast = (point, power = 1, radius = 6) => { if (!S.on) return 0; wakeNear(point, radius); let n = 0;
     for (const b of S.bodies) { _n.copy(b.p).sub(point); const d = _n.length(); if (d > radius) continue; if (!b.awake) wake(b.rec); _n.y = Math.abs(_n.y) + 0.6 * Math.max(0.3, d); _n.normalize(); const f = power * 9 * Math.pow(1 - d / radius, 1.5) * Math.min(b.m, 14); _d.copy(_n).multiplyScalar(f); _a.copy(b.p).addScaledVector(_n, -b.r * 0.4); _a.y -= b.hgt * 0.2; push(b, _d, _a); n++; } return n; };
   S.ray = (origin, dir, impulse = 40, maxDist = 80) => { if (!S.on) return null; const d = _b.copy(dir).normalize(); let best = null, bt = maxDist;
     const test = (cx, cy, cz, r, what) => { _v.set(cx - origin.x, cy - origin.y, cz - origin.z); const t = _v.dot(d); if (t < 0 || t > bt) return; const m2 = _v.lengthSq() - t * t; if (m2 > r * r) return; bt = t - Math.sqrt(r * r - m2) * 0.5; best = what; };
     for (const b of S.bodies) test(b.p.x, b.p.y, b.p.z, b.r * 0.8, b);
-    for (let t = 0; t < maxDist; t += CELL) { const x = origin.x + d.x * t, y = -(origin.z + d.z * t); near(x, y, CELL * 0.6, (rec) => { if (rec.body || rec.dead) return; const sh = shapeOf(rec.name), hy = sh.size.y * sh.k; test(rec.x, rec.z + hy * 0.5, -rec.y, 0.4 * Math.hypot(sh.size.x * sh.k, hy, sh.size.z * sh.k), rec); }); if (t > bt + CELL) break; }
+    for (let t = 0; t < maxDist; t += CELL) { const x = origin.x + d.x * t, y = -(origin.z + d.z * t); near(x, y, CELL * 0.6, (rec) => { if (rec.body || rec.dead) return; const sh = shOf(rec), hy = sh.size.y * sh.k; test(rec.x, rec.z + hy * 0.5, -rec.y, 0.4 * Math.hypot(sh.size.x * sh.k, hy, sh.size.z * sh.k), rec); }); if (t > bt + CELL) break; }
     if (!best) return null; const b = best.rec ? (best.awake ? best : wake(best.rec)) : wake(best); if (!b) return null; const at = new THREE.Vector3().copy(origin).addScaledVector(d, bt); push(b, _d.copy(d).multiplyScalar(impulse), at); return { point: at, kind: b.rec.name }; };
   // a break at `point` (the breakable pass calls this): true when a loose prop took the blow
   S.strike = (point, dir, power = 2) => { if (!S.on) return false; const n = S.impulse(point, _c.copy(dir).normalize().multiplyScalar(30 * power).setY(8 * power), 0.25); if (power >= 3) S.blast(point, power * 0.5, 2 + power); return n > 0; };
-  S.stats = () => ({ recs: S.recs, bodies: S.bodies.length, awake: S.awake, woken: S.woken, pools: pools.size });
+  S.stats = () => ({ recs: S.recs, clutter: S.clutter, plazaMeshes: S.plaza, bodies: S.bodies.length, awake: S.awake, woken: S.woken, pools: pools.size });
   return S;
 }

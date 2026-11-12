@@ -5,10 +5,11 @@
 // lie on (their own ground height travels with them), so no card cuts the ground with a hard line.
 import * as THREE from 'three';
 
-export const DUST = 0, MIST = 1, SMOKE = 2, LEAF = 3, SPARK = 4, DROP = 5, GRIT = 6;
-const CLS = [0, 0, 0, 1, 2, 2, 1];              // drawn as: 0 puff, 1 flat scrap, 2 streak
-const RESP = [2.6, 3.2, 2.0, 0, 0, 0, 0];       // how fast a puff takes up the speed of the air around it, 1/s
-const BUOY = [-0.12, -0.5, 1.3, 0, 0, 0, 0];    // rise (+) or settle (-), m/s2
+export const DUST = 0, MIST = 1, SMOKE = 2, LEAF = 3, SPARK = 4, DROP = 5, GRIT = 6, PAPER = 7, CHAFF = 8;
+const CLS = [0, 0, 0, 1, 2, 2, 1, 1, 1];              // drawn as: 0 puff, 1 flat scrap, 2 streak
+const SHAPE = [0, 0, 0, 0, 0, 0, 0.3, 0.1, 0.2];      // a scrap's outline: leaf, paper, a sliver of dry grass, a crumb of grit (rides in the fraction of the class)
+const RESP = [2.6, 3.2, 2.0, 0, 0, 0, 0, 0, 0];       // how fast a puff takes up the speed of the air around it, 1/s
+const BUOY = [-0.12, -0.5, 1.3, 0, 0, 0, 0, 0, 0];    // rise (+) or settle (-), m/s2
 const STRIDE = 16;
 
 // four puffs of billowing density with a normal for each, drawn once at load: R, G = normal x, y; B = density; A = fine grain
@@ -112,12 +113,27 @@ const FRAG = /* glsl */`
       float a = dens * vCol.a * vS.y * smoothstep(0.0, 1.0, (vW.y - vP.z) / (0.28 * vS.x + 0.04));
       o = vec4(col * a, a);
     } else if (cls < 1.5) {
-      vec2 p = vUv * 2.0; float sh = fract(vP.y * 3.7), ang = atan(p.y, p.x);
-      float rr = length(p * vec2(1.0, 1.25 + 0.9 * sh)) + 0.13 * sin(ang * (3.0 + floor(sh * 4.0)) + vP.y * 40.0) * (0.4 + sh);
-      float a = smoothstep(1.0, 0.82, rr) * vCol.a * vS.y;
-      vec3 N = normalize(cross(vR, vU)); float ndl = dot(N, uSunDir), face = dot(N, V);
-      float lit = abs(ndl) * (ndl * face > 0.0 ? 1.0 : 0.55);                             // seen from its unlit side a scrap still passes some light
-      vec3 col = vCol.rgb * (uSunColor * sun * (0.12 + 0.88 * lit) + amb) * (1.0 - 0.25 * smoothstep(0.12, 0.0, abs(p.y)) * step(sh, 0.6));
+      // a flat scrap seen as what it is: p.x runs along it (stalk to tip), p.y across
+      vec2 p = vUv * 2.0; float sh = fract(vP.y * 3.7), shp = floor(fract(cls) * 10.0 + 0.5), a, rib = 0.0, curl = 0.0;
+      if (shp < 0.5) {            // a leaf: a pointed oval, widest behind the middle, toothed or lobed, a midrib; no two alike
+        float w = (0.40 + 0.34 * sh) * sqrt(max(1.0 - p.x * p.x, 0.0)) * (1.0 - 0.38 * p.x);
+        w *= 1.0 + (0.06 + 0.22 * step(0.55, sh)) * sin(p.x * (5.0 + floor(sh * 5.0) * 2.0) + vP.y * 40.0);
+        a = smoothstep(w, w - 0.07, abs(p.y)); rib = smoothstep(0.07, 0.0, abs(p.y)) * 0.3; curl = p.y * (sh - 0.4) * 1.6;
+      } else if (shp < 1.5) {     // paper, a wrapper, a bag: a creased rectangle with a corner gone
+        float w = 0.5 + 0.38 * sh, cut = p.x * (sh - 0.5) * 0.5; a = smoothstep(0.96, 0.9, abs(p.x)) * smoothstep(w, w - 0.06, abs(p.y + cut)) * smoothstep(-1.75, -1.6, -(abs(p.x) + abs(p.y)) * (0.9 + 0.2 * sh));
+        curl = 0.7 * sin(p.x * (3.0 + 4.0 * sh) + vP.y * 31.0) + 0.4 * sin(p.y * 5.0 + vP.y * 17.0);
+      } else if (shp < 2.5) {     // a sliver of dry grass
+        a = smoothstep(1.0, 0.85, abs(p.x)) * smoothstep(0.2, 0.1, abs(p.y + 0.12 * sin(p.x * 2.0 + vP.y * 9.0)));
+      } else {                    // grit: a crumb
+        a = smoothstep(0.95, 0.7, length(p * vec2(1.0, 1.1 + 0.5 * sh)) + 0.18 * sin(atan(p.y, p.x) * 3.0 + vP.y * 40.0));
+      }
+      a *= vCol.a * vS.y;
+      vec3 N = normalize(cross(vR, vU) + vU * curl * 0.5); float ndl = dot(N, uSunDir), face = dot(N, V), same = ndl * face > 0.0 ? 1.0 : 0.0;
+      // lit on the side the sun is on; seen from the other side a leaf glows with the light that comes through it, paper a little, grit not at all
+      float thru = shp < 0.5 ? 0.62 : shp < 2.5 ? 0.4 : 0.0;
+      vec3 tint = same > 0.5 ? vec3(1.0) : (shp < 0.5 ? vec3(1.12, 1.1, 0.5) : vec3(1.0, 0.97, 0.9));
+      float lit = abs(ndl) * mix(thru, 1.0, same);
+      vec3 col = vCol.rgb * tint * (uSunColor * sun * (0.08 + 0.92 * lit) + amb * (0.75 + 0.25 * abs(N.y))) * (1.0 - rib);
       o = vec4(col * a, a);
     } else {
       float a = smoothstep(0.5, 0.05, abs(vUv.x)) * smoothstep(0.5, 0.15, abs(vUv.y)) * vCol.a, em = step(2.5, cls);
@@ -194,7 +210,7 @@ export class Particles {
           const rh = Math.sqrt(rx * rx + rz * rz), need = (k === GRIT ? 7 : 2.2) + sd * 3.5;
           if (rh > need) {      // it skitters: dragged along, catching and letting go, hopping when a gust gets under it
             const kk = 1.5 * heavy * dt; vx += rx * kk; vz += rz * kk; vx *= 1 - 1.2 * dt; vz *= 1 - 1.2 * dt;
-            if (Math.random() < dt * (rh - need) * 0.5) vy = 0.4 + Math.random() * rh * 0.16 * heavy;
+            if (Math.random() < dt * (rh - need) * 0.5) vy = (0.4 + Math.random() * rh * 0.16 * heavy) * (k !== GRIT && sd > 0.72 ? 3.2 : 1);      // (grass_01) some leaves are caught and go up well above the rotor
             this.rest[i] = 0;
           } else { vx *= 1 - Math.min(1, 7 * dt); vz *= 1 - Math.min(1, 7 * dt); this.rest[i] += dt; if (this.rest[i] > 1.2 && this.life[i] > age + 1.2) this.life[i] = age + 1.2; }
           if (vy < 0) vy = 0; this.py[i] = g + 0.02 + (vy > 0 ? vy * dt : 0);
@@ -234,7 +250,7 @@ export class Particles {
       let a = this.al[i];
       B[o] = this.px[i]; B[o + 1] = this.py[i]; B[o + 2] = this.pz[i]; B[o + 3] = s;
       B[o + 4] = this.cr[i]; B[o + 5] = this.cg[i]; B[o + 6] = this.cb[i];
-      B[o + 8] = cls; B[o + 9] = sd; B[o + 10] = this.gnd[i]; B[o + 11] = u;
+      B[o + 8] = cls + SHAPE[k]; B[o + 9] = sd; B[o + 10] = this.gnd[i]; B[o + 11] = u;
       if (cls === 0) {
         a *= Math.min(1, u * 9 + 0.05) * (1 - u) * (1 - u * u) * 1.6;
         const sk = 0.16 * (1 - u); B[o + 12] = this.vx[i] * sk; B[o + 13] = this.vy[i] * sk; B[o + 14] = this.vz[i] * sk; B[o + 15] = sd * 6.283 + u * (sd - 0.5) * 1.6;

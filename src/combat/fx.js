@@ -38,13 +38,15 @@ function decalTex(kind) {
     x.filter = 'blur(0.6px)'; x.fillStyle = 'rgba(18,16,15,0.97)'; jag(9, 16, 9); x.fill(); x.filter = 'none';
     x.strokeStyle = 'rgba(30,28,26,0.55)'; x.lineWidth = 1; for (let k = 0; k < 4; k++) { const a = rnd() * 6.283; x.beginPath(); x.moveTo(64 + Math.cos(a) * 12, 64 + Math.sin(a) * 12); x.lineTo(64 + Math.cos(a + rs(0.2)) * rr(34, 58), 64 + Math.sin(a + rs(0.2)) * rr(34, 58)); x.stroke(); }
   } else if (kind === 'metal') {
-    x.filter = 'blur(1px)'; x.fillStyle = 'rgba(30,30,32,0.7)'; jag(24, 36, 14); x.fill(); x.fillStyle = 'rgba(214,216,220,0.96)'; jag(13, 19, 14); x.fill();
-    x.filter = 'blur(0.5px)'; x.fillStyle = 'rgba(8,8,9,0.98)'; jag(7, 10, 12); x.fill(); x.filter = 'none';
+    { const g = x.createRadialGradient(64, 64, 10, 64, 64, 58); g.addColorStop(0, 'rgba(0,0,0,0.42)'); g.addColorStop(0.45, 'rgba(0,0,0,0.16)'); g.addColorStop(0.7, 'rgba(255,255,255,0.05)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, S, S); }      /* the dish the round pushes into the panel */
+    x.filter = 'blur(1px)'; x.fillStyle = 'rgba(24,24,26,0.78)'; jag(22, 34, 14); x.fill(); x.fillStyle = 'rgba(150,152,156,0.95)'; jag(15, 21, 16); x.fill();
+    { x.filter = 'none'; for (let k = 0; k < 7; k++) { const a = rnd() * 6.283, r = rr(19, 34), w = rr(2, 6); x.fillStyle = rnd() < 0.5 ? 'rgba(186,188,192,0.9)' : 'rgba(96,98,102,0.85)'; x.beginPath(); x.moveTo(64 + Math.cos(a) * r, 64 + Math.sin(a) * r); x.lineTo(64 + Math.cos(a + 0.12) * (r + w), 64 + Math.sin(a + 0.12) * (r + w)); x.lineTo(64 + Math.cos(a + rr(0.2, 0.45)) * (r + rs(2)), 64 + Math.sin(a + 0.3) * (r + rs(2))); x.closePath(); x.fill(); } }      /* paint chipped off round the hole: bare metal and primer flecks */ x.filter = 'blur(0.5px)'; x.fillStyle = 'rgba(4,4,5,0.99)'; jag(10, 14.5, 12); x.fill(); x.filter = 'none';
+    x.strokeStyle = 'rgba(14,14,15,0.6)'; x.lineWidth = 1.1; for (let k = 0; k < 5; k++) { const a = rnd() * 6.283; x.beginPath(); x.moveTo(64 + Math.cos(a) * 20, 64 + Math.sin(a) * 20); x.lineTo(64 + Math.cos(a + rs(0.25)) * rr(30, 46), 64 + Math.sin(a + rs(0.25)) * rr(30, 46)); x.stroke(); }
   } else {      // glass: a small hole, a crushed white ring, radial and ring cracks
-    const g = x.createRadialGradient(64, 64, 4, 64, 64, 24); g.addColorStop(0, 'rgba(235,240,244,0.55)'); g.addColorStop(0.4, 'rgba(225,232,238,0.22)'); g.addColorStop(1, 'rgba(255,255,255,0)'); x.fillStyle = g; x.fillRect(0, 0, S, S);
-    x.strokeStyle = 'rgba(225,232,238,0.7)'; x.lineWidth = 1.2; const n = 11 + Math.floor(rnd() * 5), A = []; for (let k = 0; k < n; k++) { const a = (k / n) * 6.283 + rs(0.2), L = rr(30, 62); A.push([a, L]); x.beginPath(); x.moveTo(64 + Math.cos(a) * 5, 64 + Math.sin(a) * 5); x.lineTo(64 + Math.cos(a + rs(0.08)) * L, 64 + Math.sin(a + rs(0.08)) * L); x.stroke(); }
-    x.lineWidth = 0.9; for (const r of [9, 15, 27, 41]) for (let k = 0; k < n; k++) { if (rnd() < 0.35) continue; const a = A[k], b = A[(k + 1) % n]; if (a[1] < r || b[1] < r) continue; x.beginPath(); x.moveTo(64 + Math.cos(a[0]) * r, 64 + Math.sin(a[0]) * r); x.lineTo(64 + Math.cos(b[0]) * r * rr(0.92, 1.08), 64 + Math.sin(b[0]) * r * rr(0.92, 1.08)); x.stroke(); }
-    x.fillStyle = 'rgba(5,6,8,0.97)'; jag(5, 8.5, 9); x.fill();
+    const g = x.createRadialGradient(64, 64, 6, 64, 64, 30); g.addColorStop(0, 'rgba(150,160,166,0.62)'); g.addColorStop(0.45, 'rgba(140,150,156,0.3)'); g.addColorStop(1, 'rgba(150,160,166,0)'); x.fillStyle = g; x.fillRect(0, 0, S, S);
+    x.strokeStyle = 'rgba(168,178,184,0.5)'; x.lineWidth = 0.8; const n = 11 + Math.floor(rnd() * 5), A = []; for (let k = 0; k < n; k++) { const a = (k / n) * 6.283 + rs(0.2), L = rnd() < 0.3 ? rr(44, 62) : rr(20, 38); A.push([a, L]); x.beginPath(); x.moveTo(64 + Math.cos(a) * 5, 64 + Math.sin(a) * 5); x.lineTo(64 + Math.cos(a + rs(0.08)) * L, 64 + Math.sin(a + rs(0.08)) * L); x.stroke(); }
+    x.lineWidth = 0.7; for (const r of [13, 18, 25, 36]) for (let k = 0; k < n; k++) { if (rnd() < 0.35) continue; const a = A[k], b = A[(k + 1) % n]; if (a[1] < r || b[1] < r) continue; x.beginPath(); x.moveTo(64 + Math.cos(a[0]) * r, 64 + Math.sin(a[0]) * r); x.lineTo(64 + Math.cos(b[0]) * r * rr(0.92, 1.08), 64 + Math.sin(b[0]) * r * rr(0.92, 1.08)); x.stroke(); }
+    x.fillStyle = 'rgba(3,4,5,0.98)'; jag(8, 12.5, 10); x.fill(); x.strokeStyle = 'rgba(200,208,212,0.6)'; x.lineWidth = 1; jag(11, 14, 12); x.stroke();
   }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
@@ -152,7 +154,7 @@ export class Fx {
     const D = this.decals[kind]; if (!D) return; const i = D.i; D.i = (D.i + 1) % D.cap;
     _q.setFromUnitVectors(Z, _v.copy(n).normalize()); _q2.setFromAxisAngle(Z, rnd() * 6.283); _q.multiply(_q2);
     const old = D.rec[i]; if (old && old.attach) { const k = this.riding.indexOf(old); if (k >= 0) this.riding.splice(k, 1); }
-    const rec = { D, i, attach, local: new THREE.Matrix4().compose(_v2.copy(pos).addScaledVector(n, 0.004), _q, _s.set(size, size, size)) }; D.rec[i] = rec;
+    const rec = { D, i, attach, local: new THREE.Matrix4().compose(_v2.copy(pos).addScaledVector(n, 0.004), _q, (kind === 'glass' ? _s.set(size, size, size) : _s.set(size * (0.7 + rnd() * 0.7), size * (0.8 + rnd() * 0.45), size))) }      /* wall and metal holes are stretched unevenly, each its own shape (judged, rounds 14-15) */; D.rec[i] = rec;
     if (attach) this.riding.push(rec); else { D.im.setMatrixAt(i, rec.local); D.im.instanceMatrix.needsUpdate = true; }
   }
   dropDecals(attach) { for (let k = this.riding.length - 1; k >= 0; k--) { const r = this.riding[k]; if (r.attach === attach) { _m.makeScale(0, 0, 0); r.D.im.setMatrixAt(r.i, _m); r.D.im.instanceMatrix.needsUpdate = true; r.D.rec[r.i] = null; this.riding.splice(k, 1); } } }

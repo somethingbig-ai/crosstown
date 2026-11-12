@@ -1,7 +1,8 @@
 // wash.js: the air the helicopter moves, made visible. Driven by the flight state (flight.js): the downwash at the disc (f.vi) comes down
 // the wake (leaning with the disc, trailing behind in forward flight), meets the surface below and spreads along it (wash/field.js).
-//   dust              a sheet of dust scoured outward along the ground, rolling up at its rim, with a haze above: thick over gravel roofs, thin over
-//                     lawns and clean paving (which is soon swept bare). A volume, not sprites (wash/dustvol.js: one draw call)
+//   dust, spray       a real volume: a density carried outward by the air model in a grid fixed to the world, lit by the sun with its own shade, drawn by one
+//                     quarter-size off-screen pass cut by the scene's depth (wash/cloud.js). Thick over gritty roofs and bare soil, thin over grass and
+//                     paving, white over water. Where the renderer offers no depth to cut it by, the older slab volume stands in (wash/dustvol.js)
 //   debris            leaves, litter, clippings and grit skittering and flying away, smeared by their own speed (wash/particles.js: one draw call)
 //   trees             crowns near the aircraft lean away, toss and shiver; a gentle sway from the wind everywhere (uniforms of the tree
 //                     shader in src/streets/trees.js: TREE_WIND)
@@ -13,21 +14,24 @@
 import * as THREE from 'three';
 import { pointInPoly } from '../geo.js';
 import { WashField } from './wash/field.js';
-import { Particles, DUST, MIST, SMOKE, LEAF, SPARK, DROP, GRIT } from './wash/particles.js';
+import { Particles, DUST, MIST, SMOKE, LEAF, SPARK, DROP, GRIT, PAPER as SCRAP, CHAFF } from './wash/particles.js';
 import { DustVolume } from './wash/dustvol.js';
+import { Cloud } from './wash/cloud.js';
 import { Heat } from './wash/heat.js';
 import { GroundWash } from './wash/ground.js';
 import { buildFountain, waterUniforms, washWater } from './wash/fountain.js';
+import { Windsocks } from './wash/windsock.js';
 
 // the turbine's exhaust: not on the lane's measurement sheet (dims.js), so kept here: aft of the engine cowl on top, blowing back and a little up
 const EXHAUST = [-3.02, 2.40, 0], EXH_DIR = [-0.985, 0.17, 0];      // where model/shape.js ends its exhaust pipe (used unless the model says: model.exhaust = [x, y, z] in model space)
 const PAVED = 0, PARK = 1, ROOF = 2, WATER = 3;
-const DUSTY = [0.14, 0.012, 1.0], SUPPLY_MIN = [0.4, 0.5, 0.8], DEPLETE = [0.02, 0.006, 0.004];     // how much loose dust a surface has, how far it can be swept, how fast
+const DUSTY = [0.05, 0.008, 0.03], SUPPLY_MIN = [0.3, 0.5, 0.4], DEPLETE = [0.02, 0.006, 0.01];     // how much loose dust a surface has (a city's paving, lawns and roofs: next to none), how far it can be swept, how fast
+const LITTER = [1.0, 1.0, 0.5];      // loose things lying about per surface, relative: they are blown away once and do not come back for minutes
 const DCOL = [[0.29, 0.28, 0.26], [0.32, 0.27, 0.2], [0.30, 0.29, 0.27]], DALPHA = [0.26, 0.28, 0.36];
 const LEAFC = [[0.16, 0.22, 0.07], [0.2, 0.25, 0.08], [0.42, 0.34, 0.09], [0.3, 0.2, 0.09], [0.22, 0.16, 0.09]];      // seen tumbling, a leaf shows its pale side as often as not
 const PAPER = [[0.62, 0.62, 0.58], [0.55, 0.53, 0.46], [0.36, 0.28, 0.18], [0.5, 0.12, 0.1], [0.14, 0.26, 0.42], [0.66, 0.62, 0.2]];
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v), rnd = Math.random;
-const _p = new THREE.Vector3(), _e = new THREE.Vector3(), _d = new THREE.Vector3(), _u = new THREE.Vector3();
+const _a3 = { x: 0, y: 0, z: 0 }; const _p = new THREE.Vector3(), _e = new THREE.Vector3(), _d = new THREE.Vector3(), _u = new THREE.Vector3();
 
 export class Wash {
   constructor(ctx) {
@@ -35,11 +39,14 @@ export class Wash {
     this.field = new WashField(ctx.DIMS.rotorR, ctx.SPEC.hubY);
     this.P = new Particles(world, 4096); world.scene.add(this.P.mesh);
     this.vol = new DustVolume(world, false); world.scene.add(this.vol.mesh); this.spray = new DustVolume(world, true); world.scene.add(this.spray.mesh);
+    this.cloud = new Cloud(world, this);
     this.amps = new Float32Array(16); this.edges = new Float32Array(16).fill(5); this.dcol = [0.4, 0.38, 0.34]; this.dustS = 0; this.sprayS = 0; this.sprayW = null; this.sec = 0;
     this.solids = [];                   // for the flight model: things of ours an aircraft should not pass through, [{ x, y, radius, top }] in map metres (filled when the fountain is placed)
     this.heat = new Heat(world); world.scene.add(this.heat.mesh);
     this.ground = new GroundWash(world); world.scene.add(this.ground.mesh); this.gKind = 0;
-    this.flat = (x, z) => { const k = this.surface(x, z); return k >= 0 && k !== WATER && Math.abs(this.sy - this.field.cy) < 0.3; };
+    this.flat = (x, z) => this.surface(x, z) === PARK && Math.abs(this.sy - this.field.cy) < 0.4;      // lawn, at the height the wash runs along
+    this.lawnNear = false; this.wet = 0; this.dustAmp = 0;
+    this.lit = new Float32Array(4096).fill(1); this.litId = new Int32Array(4096);
     this.waterU = waterUniforms(); this.washWater = washWater; this.waters = []; this.fountain = null; this.fountainTried = false;
     this.parks = (g.city.parks || []).filter((p) => p.ext).map((p) => { let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const q of p.ext) { x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]); } return { ext: p.ext, x0, y0, x1, y1 }; });
     this.sup = new Float32Array(4096).fill(1); this.supId = new Int32Array(4096); this.supN = 0;
@@ -70,6 +77,13 @@ export class Wash {
     const ix = Math.floor(x / 3), iz = Math.floor(z / 3), i = ((ix & 63) << 6) | (iz & 63), id = (ix * 73856093) ^ (iz * 19349663);
     if (this.supId[i] !== id) { this.supId[i] = id; this.sup[i] = 1; }
     const s = this.sup[i]; this.sup[i] = Math.max(SUPPLY_MIN[kind], s - DEPLETE[kind]); return s;
+  }
+
+  // loose things (leaves, litter, grit) left on a 3 m patch (1 = undisturbed); each one blown away is one fewer
+  litter(x, z, cost) {
+    const ix = Math.floor(x / 3), iz = Math.floor(z / 3), i = ((ix & 63) << 6) | (iz & 63), id = (ix * 73856093) ^ (iz * 19349663);
+    if (this.litId[i] !== id) { this.litId[i] = id; this.lit[i] = 1; }
+    const s = this.lit[i]; this.lit[i] = Math.max(0, s - cost); return s;
   }
 
   placeFountain(heli) {
@@ -106,15 +120,18 @@ export class Wash {
     if (!this.groundAt) { const H = heli.heights, Wt = this.waters;      // the ground as the wash meets it: over a basin of ours that is the water, not the stone the flight model lands on
       this.groundAt = (x, z, yq) => { for (let i = 0; i < Wt.length; i++) { const w = Wt[i], dx = x - w.x, dz = z - w.zt; if (dx * dx + dz * dz < (w.radius + 0.6) * (w.radius + 0.6)) return w.level; } return H.top(x, -z, yq); }; }
     if (!this.fountainTried && heli.pads) this.placeFountain(heli);
+    if (this.socks === undefined && heli.pads) { this.socks = null; try { this.socks = new Windsocks(this.world, heli.pads, (x, y, q) => heli.heights.top(x, y, q), this.solids); this.sockWind = (x, y, z) => heli.wind.at(_p.set(x, y, z), this.P.t, 3, heli.heights.skyline(x, -z)); } catch (e) { console.log('[heli] wash: windsocks not built: ' + (e && (e.stack || e.message))); } }
     this.live = 4; this.uS += ((this.field.on ? this.field.U : 0) - this.uS) * Math.min(1, dt * 2.5); if (this.uS < 0.05) this.uS = 0;      // (fl.on is last step's here: near enough)
     const fl = this.field, P = this.P; fl.update(f, this.groundAt);
     this.dustS = fl.on ? clamp((fl.U - 4) / 9, 0, 1) : 0; if (!fl.on) this.sprayW = null;
-    if (this.dustS > 0 || this.vol.s > 0) this.vol.step(dt, fl, this.dustS, this.amps, this.dcol, null, this.edges);
-    if (this.sprayW || this.spray.s > 0) this.spray.step(dt, fl, this.sprayW ? this.dustS : 0, null, SPRAYC, this.sprayW);
+    const C = this.cloud, useC = C.ok && C.mode > 0; if (C.ok) C.step(dt, fl, this.dustS);      // the volume; the slabs only where there is no depth to cut it by
+    if (this.dustS > 0 || this.vol.s > 0) this.vol.step(dt, fl, useC || this.dustAmp < 0.05 ? 0 : this.dustS, this.amps, this.dcol, null, this.edges);      // (a clean roof or lawn: no slabs at all)
+    { const sp = fl.on && this.sprayW && Math.hypot(this.sprayW.x - fl.cx, this.sprayW.zt - fl.cz) < this.sprayW.radius + 1.5 * fl.R ? this.dustS : 0; this.wet += sp > 0.2 ? (1 - this.wet) * Math.min(1, dt * 0.25 * sp) : -this.wet * Math.min(1, dt / 90); }      // spray wets the stone round a basin in a few seconds; it dries over minutes
+    if (this.sprayW || this.spray.s > 0) this.spray.step(dt, fl, this.sprayW && !useC ? this.dustS : 0, null, SPRAYC, this.sprayW);
     const busy = fl.on || P.n > 0 || this.heat.n > 0 || f.n1 > 0.02 || f.damage > 0.6 || (this.fountain && this.camFountain < 70);
     if (!busy) return;
     const w = heli.wind.at(_p.set(f.pos.x, f.surface + 2, f.pos.z), f.t, 2, heli.heights.skyline(f.pos.x, -f.pos.z)); this.wx = w.x; this.wy = w.y * 0.3; this.wz = w.z;
-    if ((this.supN++ & 31) === 0) { const s = this.sup; for (let i = 0; i < 4096; i++) s[i] += (1 - s[i]) * 0.012; }      // dust settles back over half a minute
+    if ((this.supN++ & 31) === 0) { const s = this.sup, l = this.lit; for (let i = 0; i < 4096; i++) { s[i] += (1 - s[i]) * 0.012; l[i] += (1 - l[i]) * 0.0015; } }      // dust settles back over half a minute; leaves and litter take minutes to gather again
     if (fl.on && fl.U > 4) { this.emit(f, dt); if ((this.sec++ & 7) === 0) this.sectors(); }
     this.engine(f, dt);
     if (f.onGround && f.nr > 0.2) this.scrape(f, dt);
@@ -126,7 +143,7 @@ export class Wash {
     const fl = this.field, P = this.P, R = fl.R, tt = P.t, e0 = Math.min(1, (fl.U - 4) / 12) * (0.7 + 0.45 * Math.sin(tt * 1.9 + 2 * Math.sin(tt * 0.7)));      // it comes in surges, as the air does
     this.lobe += dt * 0.7;
     // billows inside the dust volume: where the outwash slows and rolls up, a few lit lumps that tumble and thin (the volume gives the continuous veil, these its relief)
-    this.accD += 60 * dt * e0;
+    if (this.cloud.ok && this.cloud.mode > 0) this.accD = 0; else this.accD += 60 * dt * e0;      // (the real volume has its own billows)
     while (this.accD >= 1) {
       this.accD -= 1;
       const th = rnd() * 6.2832, r = R * (1.3 + 1.6 * rnd()), c = Math.cos(th), s = Math.sin(th), x = fl.cx + c * r, z = fl.cz + s * r, kind = this.surface(x, z);
@@ -135,47 +152,65 @@ export class Wash {
       const col = this.dcol, k = 0.85 + 0.3 * rnd(), D = Math.pow(DUSTY[kind] * this.take(x, z, kind), 0.7); if (D < 0.1) continue;
       P.spawn(DUST, x, this.sy + 0.5, z, c * u * 0.4 + (rnd() - 0.5) * 1.5, 0.8 + rnd() * 1.6, s * u * 0.4 + (rnd() - 0.5) * 1.5, 2.2 + rnd() * 2, 1.2 + rnd() * 0.6, 3.0 + rnd() * 2, col[0] * k, col[1] * k, col[2] * k, 0.42 * D * (0.7 + 0.6 * rnd()), this.sy);
     }
-    // on a lawn: clippings and chaff, small and many, whipped out from under the rotor
-    if (this.gKind === PARK) { this.accC += 260 * dt * e0;
+    // on a lawn: the odd dry clipping and bit of chaff from the thatch, whipped out low from under the rotor (a kept lawn has few; a patch soon has none)
+    if (this.gKind === PARK) { this.accC += 70 * dt * e0;
       while (this.accC >= 1) { this.accC -= 1; if (P.n > P.cap - 300) break;
-        const th = rnd() * 6.2832, r = R * (0.3 + 2.0 * rnd()), c = Math.cos(th), s = Math.sin(th), x = fl.cx + c * r, z = fl.cz + s * r, u = fl.speedAt(x, z); if (u < 5 || this.surface(x, z) !== PARK) continue;
-        const k = 0.6 + 0.8 * rnd(), sz = 0.018 + 0.03 * rnd(), y = rnd() < 0.5;
-        P.spawn(LEAF, x, this.sy + 0.05, z, c * u * 0.5, 0.8 + rnd() * 2.6, s * u * 0.5, 1.0 + rnd() * 1.2, sz, sz, (y ? 0.3 : 0.1) * k, (y ? 0.27 : 0.16) * k, (y ? 0.1 : 0.05) * k, 1, this.sy); } }
-    // leaves, litter, grit: lying there until the air gets under them
-    this.accL += (this.gKind === PARK ? 160 : this.gKind === ROOF ? 170 : 60) * dt * e0;
+        const th = rnd() * 6.2832, r = R * (0.3 + 2.0 * rnd()), c = Math.cos(th), s = Math.sin(th), x = fl.cx + c * r, z = fl.cz + s * r, u = fl.speedAt(x, z); if (u < 6 || this.surface(x, z) !== PARK) continue;
+        if (rnd() > this.litter(x, z, 0.02)) continue;
+        const k = 0.6 + 0.8 * rnd(), sz = 0.014 + 0.022 * rnd(), y = rnd() < 0.6;
+        P.spawn(CHAFF, x, this.sy + 0.03, z, c * u * 0.5, 0.5 + rnd() * 1.8, s * u * 0.5, 0.8 + rnd() * 1.0, sz, sz, (y ? 0.34 : 0.12) * k, (y ? 0.3 : 0.2) * k, (y ? 0.14 : 0.06) * k, 1, this.sy); } }
+    // leaves, litter, grit: lying there until the air gets under them. A patch of ground has only so many: the first seconds over a place clear it
+    this.accL += (this.gKind === PARK ? 90 : this.gKind === ROOF ? 60 : 80) * dt * e0;
     while (this.accL >= 1) {
       this.accL -= 1; if (P.n > P.cap - 500) break;
       const th = rnd() * 6.2832, r = R * (0.5 + 2.4 * rnd()), x = fl.cx + Math.cos(th) * r, z = fl.cz + Math.sin(th) * r, kind = this.surface(x, z);
       if (kind < 0 || kind === WATER || fl.speedAt(x, z) < 4.5) continue;
+      if (rnd() > this.litter(x, z, 0.07) * LITTER[kind]) continue;
       const q = rnd(), y = this.sy + 0.02;
-      if (kind === PARK ? q < 0.9 : kind === PAVED ? q < 0.3 : q < 0.12) { const c = LEAFC[(rnd() * LEAFC.length) | 0], k = 0.7 + 0.6 * rnd(), s = 0.04 + 0.05 * rnd(); P.spawn(LEAF, x, y, z, 0, 0, 0, 2.5 + rnd() * 2.5, s, s, c[0] * k, c[1] * k, c[2] * k, 1, this.sy); }
-      else if (kind === PAVED && q < 0.62) { const c = PAPER[(rnd() * rnd() * PAPER.length) | 0], k = 0.75 + 0.4 * rnd(), s = 0.09 + 0.16 * rnd() * rnd(); P.spawn(LEAF, x, y, z, 0, 0, 0, 3.5 + rnd() * 3, s, s, c[0] * k, c[1] * k, c[2] * k, 1, this.sy); }
-      else if (kind === ROOF && q > 0.9) { const c = PAPER[(rnd() * rnd() * 3) | 0], k = 0.6 + 0.4 * rnd(), s = 0.05 + 0.08 * rnd() * rnd(); P.spawn(LEAF, x, y, z, 0, 0, 0, 3 + rnd() * 3, s, s, c[0] * k, c[1] * k, c[2] * k, 1, this.sy); }
-      else if (kind === ROOF && q < 0.8) { const k = 0.05 + 0.1 * rnd(), s = 0.03 + 0.03 * rnd(); P.spawn(GRIT, x, y, z, 0, 0, 0, 3 + rnd() * 3, s, s, k * 1.05, k, k * 0.92, 1, this.sy); }
+      if (kind === PARK ? q < 0.92 : kind === PAVED ? q < 0.45 : q < 0.15) { const c = LEAFC[(rnd() * LEAFC.length) | 0], k = 0.7 + 0.6 * rnd(), s = 0.035 + 0.05 * rnd(); P.spawn(LEAF, x, y, z, 0, 0, 0, 3 + rnd() * 3, s, s, c[0] * k, c[1] * k, c[2] * k, 1, this.sy); }
+      else if (kind === PAVED && q < 0.7) { const c = PAPER[(rnd() * rnd() * PAPER.length) | 0], k = 0.75 + 0.4 * rnd(), s = 0.07 + 0.14 * rnd() * rnd(); P.spawn(SCRAP, x, y, z, 0, 0, 0, 3.5 + rnd() * 3, s, s, c[0] * k, c[1] * k, c[2] * k, 1, this.sy); }
+      else if (kind === ROOF && q > 0.93) { const c = PAPER[(rnd() * rnd() * 3) | 0], k = 0.6 + 0.4 * rnd(), s = 0.05 + 0.08 * rnd() * rnd(); P.spawn(SCRAP, x, y, z, 0, 0, 0, 3 + rnd() * 3, s, s, c[0] * k, c[1] * k, c[2] * k, 1, this.sy); }
+      else if (kind !== PARK) { const k = 0.05 + 0.1 * rnd(), s = 0.012 + 0.02 * rnd(); P.spawn(GRIT, x, y, z, 0, 0, 0, 2 + rnd() * 2.5, s, s, k * 1.05, k, k * 0.92, 1, this.sy); }
     }
+    // leaves stripped from the crowns the wash reaches: a tree in the outwash sheds a steady few, carried out and down with the air (this needs no change to the trees themselves)
+    if ((this.treeN = (this.treeN || 0) + 1) % 30 === 1) { const near = (this.treesNear || (this.treesNear = [])); near.length = 0; const st = this.g.streets && this.g.streets.parts && this.g.streets.parts.trees && this.g.streets.parts.trees.trees;
+      if (st) for (let i = 0; i < st.length && near.length < 12; i++) { const q = st[i]; if (!q.skip && Math.abs(q.x - fl.cx) < 3.4 * R && Math.abs(-q.y - fl.cz) < 3.4 * R && Math.abs(fl.cy - (this.lawnY || 0)) < 3) near.push(q); } }
+    if (this.treesNear && this.treesNear.length) { this.accT = (this.accT || 0) + 5 * this.treesNear.length * dt * e0;
+      while (this.accT >= 1) { this.accT -= 1; if (P.n > P.cap - 400) break;
+        const q = this.treesNear[(rnd() * this.treesNear.length) | 0], sc = q.s || 1, a = rnd() * 6.2832, rr = (0.8 + 2.6 * Math.sqrt(rnd())) * sc, x = q.x + Math.cos(a) * rr, z = -q.y + Math.sin(a) * rr, y = fl.cy + (3.2 + 4.5 * rnd()) * sc;
+        fl.vel(x, y, z, _a3); const sp = Math.hypot(_a3.x, _a3.y, _a3.z); if (sp < 4 || rnd() > (sp - 4) / 9) continue;
+        const c = LEAFC[(rnd() * 3) | 0], k = 0.8 + 0.6 * rnd(), s = 0.04 + 0.045 * rnd();
+        P.spawn(LEAF, x, y, z, _a3.x * 0.5, _a3.y * 0.5, _a3.z * 0.5, 2.5 + rnd() * 2.5, s, s, c[0] * k, c[1] * k, c[2] * k, 1, fl.cy); } }
     // spray off any water the wash reaches
     for (const w of this.waters) {
       if (Math.hypot(w.x - fl.cx, w.zt - fl.cz) > w.radius + 4 * R || Math.abs(w.level - fl.cy) > 2.5) continue;
-      this.accW += 420 * dt * e0 * Math.min(1, w.radius * w.radius / 12);
+      this.accW += 900 * dt * e0 * Math.min(1, w.radius * w.radius / 12);      // the spray is drops, many and fine, torn off the chop all over the basin and carried out over the rim
       while (this.accW >= 1) {
         this.accW -= 1;
         const a = rnd() * 6.2832, rr = w.radius * Math.sqrt(rnd()); if (rr < w.hole) continue;
         const x = w.x + Math.cos(a) * rr, z = w.zt + Math.sin(a) * rr, u = fl.speedAt(x, z); if (u < 4.5) continue;
         const e = Math.min(1, (u - 4.5) / 8); if (rnd() > e * e) continue;
         const dx = x - fl.cx, dz = z - fl.cz, dl = Math.hypot(dx, dz) || 1, ex = dx / dl, ez = dz / dl, k = 0.9 + 0.2 * rnd();
-        P.spawn(DROP, x, w.level + 0.03, z, ex * u * 0.5 + (rnd() - 0.5) * 3, 1.0 + rnd() * 2.2, ez * u * 0.5 + (rnd() - 0.5) * 3, 0.3 + rnd() * 0.4, 0.008 + 0.01 * rnd(), 0.012, 0.62 * k, 0.66 * k, 0.68 * k, 0.2, w.level);
+        P.spawn(DROP, x, w.level + 0.03, z, ex * u * 0.5 + (rnd() - 0.5) * 3, 1.0 + rnd() * 2.2, ez * u * 0.5 + (rnd() - 0.5) * 3, 0.35 + rnd() * 0.6, 0.004 + 0.008 * rnd(), 0.008, 0.66 * k, 0.7 * k, 0.72 * k, 0.22, w.level - 0.4);
       }
+      // the water is driven against the rim and slops over it: every half second or so, at some bearing (mostly away from the aircraft), a sheet of it is thrown out and torn into drops
+      this.slopT = (this.slopT || 0) - dt;
+      if (this.slopT <= 0 && e0 > 0.25) { this.slopT = 0.2 + rnd() * 0.55;
+        const ox = w.x - fl.cx, oz = w.zt - fl.cz, od = Math.hypot(ox, oz), a0 = (od > 1.2 ? Math.atan2(oz, ox) + (rnd() - 0.5) * 2.2 : rnd() * 6.2832), n = 14 + ((rnd() * 26) | 0), sp = 0.5 + rnd() * 0.9;
+        for (let i = 0; i < n; i++) { const a = a0 + (rnd() - 0.5) * sp, c = Math.cos(a), s = Math.sin(a), rr = w.radius - 0.05 - rnd() * 0.35, v = 2.0 + rnd() * 3.5 * e0, k = 0.9 + 0.2 * rnd();
+          P.spawn(DROP, w.x + c * rr, w.level + 0.05 + rnd() * 0.1, w.zt + s * rr, c * v + (rnd() - 0.5), 1.4 + rnd() * 2.4, s * v + (rnd() - 0.5), 0.5 + rnd() * 0.5, 0.006 + 0.014 * rnd() * rnd(), 0.01, 0.7 * k, 0.74 * k, 0.76 * k, 0.3, w.level - 0.4); } }
     }
   }
 
   // how much loose dust lies each way round the compass (and its colour), for the dust volume; and whether there is water to lift spray from
   sectors() {
-    const fl = this.field, R = fl.R, A = this.amps, C = this.dcol; let cr = 0, cg = 0, cb = 0, cw = 0;
+    const fl = this.field, R = fl.R, A = this.amps, C = this.dcol; let cr = 0, cg = 0, cb = 0, cw = 0, am = 0, lawn = false;
     for (let i = 0; i < 16; i++) { const th = i * Math.PI / 8, c = Math.cos(th), s = Math.sin(th); let a = 0, edge = 5;
       for (let j = 0; j < 6; j++) { const r = R * (0.5 + 0.75 * j), x = fl.cx + c * r, z = fl.cz + s * r, kind = this.surface(x, z); if (kind < 0) { edge = 0.5 + 0.75 * j - 0.4; break; }
         if (kind === WATER || j < 1 || j > 2) continue;
         const d = 0.5 * Math.pow(DUSTY[kind] * this.take(x, z, kind), 0.7), col = DCOL[kind]; a += d; cr += col[0] * d; cg += col[1] * d; cb += col[2] * d; cw += d; }
-      A[i] = a; this.edges[i] = edge; }
+      A[i] = a; this.edges[i] = edge; am = Math.max(am, a); if (!lawn && this.flat(fl.cx + c * R * 1.4, fl.cz + s * R * 1.4)) lawn = true; }
+    this.dustAmp = am; this.lawnNear = lawn || this.flat(fl.cx, fl.cz);
     if (cw > 0) { C[0] = cr / cw; C[1] = cg / cw; C[2] = cb / cw; }
     this.sprayW = null; for (const w of this.waters) if (Math.hypot(w.x - fl.cx, w.zt - fl.cz) < w.radius + 3 * R && Math.abs(w.level - fl.cy) < 2.5) { this.sprayW = w; break; }
   }
@@ -189,7 +224,7 @@ export class Wash {
     _d.set(EXH_DIR[0], EXH_DIR[1], EXH_DIR[2]).applyQuaternion(f.quat); _u.set(0, 1, 0).applyQuaternion(f.quat);
     const lit = f.engine === 'run' || f.engine === 'starting', hot = lit ? clamp((f.n1 - 0.12) / 0.5, 0, 1) : clamp(f.n1 * 1.5 - 0.25, 0, 0.5), gas = 5 + 15 * f.n1, dw = f.nr > 0.3 ? f.vi * 0.7 : 0;
     const vx = f.vel.x + _d.x * gas - _u.x * dw, vy = f.vel.y + _d.y * gas - _u.y * dw, vz = f.vel.z + _d.z * gas - _u.z * dw;
-    this.heat.step(dt, _e.x, _e.y, _e.z, vx, vy, vz, this.viewDist < 40 ? hot : 0);
+    this.heat.step(dt, _e.x, _e.y, _e.z, vx, vy, vz, this.viewDist < 70 ? hot : 0);
     if (!near) return;
     if (f.engine === 'starting' && f.startT > 0.8 && f.startT < 5.5) {
       this.accS += 26 * dt;
@@ -230,33 +265,37 @@ export class Wash {
   // the fountain's own jet: water thrown up from the nozzle, falling back into the bowl; the wash bends it and tears it away like any other drop
   jet(dt) {
     const F = this.fountain, P = this.P, fl = this.field; let jx = 0, jz = 0, ju = 0;
-    if (fl.on) { const dx = F.nozzle.x - fl.cx, dz = F.nozzle.z - fl.cz, dl = Math.hypot(dx, dz) || 1; ju = fl.speedAt(F.nozzle.x, F.nozzle.z); jx = dx / dl * ju * 0.6; jz = dz / dl * ju * 0.6; }
-    const torn = clamp((ju - 3) / 7, 0, 1), sp = 0.45 + 2.2 * torn; this.accJ += (110 + 260 * torn) * dt;      // blown, the column breaks into a fan of finer drops
+    if (fl.on) { const dx = F.nozzle.x - fl.cx, dz = F.nozzle.z - fl.cz, dl = Math.hypot(dx, dz) || 1; ju = fl.speedAt(F.nozzle.x, F.nozzle.z); if (dl < 1.2 * fl.R) ju = Math.max(ju, 0.55 * fl.U);      // under the disc the air comes down on the jet and spills outward: it is beaten flat and thrown about whichever way the gusts go
+      let ex = dx / dl, ez = dz / dl; if (dl < 2) { const a = this.P.t * 0.9 + 2 * Math.sin(this.P.t * 0.37); ex = Math.cos(a); ez = Math.sin(a); } jx = ex * ju * 0.6; jz = ez * ju * 0.6; }
+    const torn = clamp((ju - 3) / 7, 0, 1), sp = 0.45 + 2.2 * torn; this.accJ += (260 + 300 * torn) * dt;      // blown, the column breaks into a fan of finer drops
     while (this.accJ >= 1) { this.accJ -= 1; const k = 0.9 + 0.1 * rnd();
-      P.spawn(DROP, F.nozzle.x, F.nozzle.y, F.nozzle.z, jx * (0.4 + 1.2 * rnd()) + (rnd() - 0.5) * sp, Math.max(1.2, 5.0 - ju * 0.3) * (1 - 0.5 * torn * rnd()) + rnd() * 0.7, jz * (0.4 + 1.2 * rnd()) + (rnd() - 0.5) * sp, 1.4, (0.06 + 0.04 * rnd()) * (1 - 0.6 * torn), 0.08, 0.86 * k, 0.9 * k, 0.93 * k, 0.6 - 0.25 * torn, F.bowlY); }
+      P.spawn(DROP, F.nozzle.x, F.nozzle.y, F.nozzle.z, jx * (0.4 + 1.2 * rnd()) + (rnd() - 0.5) * sp, Math.max(1.2, 5.0 - ju * 0.3) * (1 - 0.5 * torn * rnd()) + rnd() * 0.7, jz * (0.4 + 1.2 * rnd()) + (rnd() - 0.5) * sp, 1.4, (0.018 + 0.022 * rnd()) * (1 - 0.5 * torn), 0.03, 0.8 * k, 0.84 * k, 0.87 * k, 0.4 - 0.15 * torn, F.bowlY); }
   }
 
   // ------------------------------------------------------------------ every drawn frame
   update(f, dt, view) {
     const fl = this.field, cam = view.camera, heli = this.ctx.heli, R = fl.R;
-    if (this.live > 0) this.live--; else { if (fl.on) { fl.on = false; fl.U = 0; this.dustS = 0; } if (this.vol.s > 0) this.vol.step(dt, fl, 0); if (this.spray.s > 0) this.spray.step(dt, fl, 0); this.uS *= Math.max(0, 1 - dt * 2.5); if (this.uS < 0.05) this.uS = 0; }      // a parked aircraft is not stepped: its wash has stopped
+    if (this.live > 0) this.live--; else { if (fl.on) { fl.on = false; fl.U = 0; this.dustS = 0; } if (this.vol.s > 0) this.vol.step(dt, fl, 0); if (this.spray.s > 0) this.spray.step(dt, fl, 0); if (this.cloud.ok) this.cloud.idle(dt); this.uS *= Math.max(0, 1 - dt * 2.5); if (this.uS < 0.05) this.uS = 0; }      // a parked aircraft is not stepped: its wash has stopped
     this.viewDist = view.dist; if (this.fountain) this.camFountain = Math.hypot(cam.position.x - this.fountain.x, cam.position.y - this.fountain.groundY, cam.position.z - this.fountain.z);
-    this.P.fill(cam); this.heat.fill(view.dist < 40);
-    this.vol.update(cam, view.t); this.spray.update(cam, view.t);
+    this.P.fill(cam); this.heat.fill(view.dist < 70);
+    const C = this.cloud; if (C.ok) C.update(cam, view.t);
+    if (C.ok && C.mode > 0) { this.vol.mesh.visible = false; this.spray.mesh.visible = false; } else { this.vol.update(cam, view.t); this.spray.update(cam, view.t); }
     if (this.fountain) this.fountain.group.visible = this.camFountain < 260;
+    if (this.socks) this.socks.update(cam, dt, view.t, fl, this.sockWind);
     const tw = this.treeWind;
     if (tw) {
       // the wind at tree-top height near the camera, its quick turbulence smoothed away (every tree shares it; the shader gives each its own phase)
       const w = heli.wind.at(_p.set(cam.position.x, 12, cam.position.z), view.t, 6, heli.heights.skyline(cam.position.x, -cam.position.z)), k = Math.min(1, dt * 0.5);
       this.tw.x += (w.x - this.tw.x) * k; this.tw.y += (w.z - this.tw.y) * k;
       tw.uWind.value.set(this.tw.x, this.tw.y, view.t, 0);
-      if (fl.on) tw.uWashA.value.set(fl.cx, fl.cy, fl.cz, this.uS); else tw.uWashA.value.w = this.uS;
+      const ts = this.uS * TREE_K;      // (reference study, Nov 11: big crowns by a real light helicopter barely move; a sapling's outline shivers) the shader's push goes with the square of this
+      if (fl.on) tw.uWashA.value.set(fl.cx, fl.cy, fl.cz, ts); else tw.uWashA.value.w = ts;
       tw.uWashB.value.set(R, fl.on ? fl.h : tw.uWashB.value.y, 0, 0);
     }
-    if (this.groundAt) { if (fl.on) this.gKind = this.surface(fl.cx, fl.cz); const k = this.gKind; this.ground.update(fl, k >= 0 && k !== WATER ? this.uS : 0, view.t, k === PARK ? 1 : 0, k >= 0 && k < 3 ? DUSTY[k] : 0, this.flat, k === PARK ? Math.max(0, (this.lawnY || 0) - fl.cy) : 0); }
+    if (this.groundAt) { if (fl.on) this.gKind = this.surface(fl.cx, fl.cz); const k = this.gKind; this.ground.update(fl, this.uS, view.t, this.lawnNear ? 1 : 0, 0, this.flat, this.lawnNear ? Math.max(0, (this.lawnY || 0) - fl.cy) : 0); }
     const W = this.waterU; if (fl.on) W.uWashW.value.set(fl.cx, fl.cz, this.uS, R); else W.uWashW.value.z = this.uS;
-    W.uWashV.value.set(fl.lx, fl.lz, view.t, 0);
+    W.uWashV.value.set(fl.lx, fl.lz, view.t, this.wet);
   }
 }
-const SPRAYC = [0.6, 0.63, 0.65];
+const SPRAYC = [0.6, 0.63, 0.65], TREE_K = 1.35;      // (r32: at 1 the crowns 'hold their shape'; the shader caps its own push)
 const OFF = { on: false, vel(x, y, z, o) { o.x = o.y = o.z = 0; } };

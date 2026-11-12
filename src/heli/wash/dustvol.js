@@ -11,7 +11,7 @@ import * as THREE from 'three';
 
 const KMAX = 14;
 
-function noise3D() {
+export function noise3D() { if (NOISE) return NOISE;
   const N = 48, data = new Uint8Array(N * N * N * 4);
   let seed = 1234567; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
   const CH = [[3, 6, 12], [6, 12, 24], [4, 8, 16], [8, 16, 24]], WT = [0.5, 0.3, 0.2], tmp = new Float32Array(N * N * N);
@@ -32,7 +32,7 @@ function noise3D() {
   }
   const t = new THREE.Data3DTexture(data, N, N, N); t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType; t.minFilter = t.magFilter = THREE.LinearFilter;
   t.wrapS = t.wrapT = t.wrapR = THREE.RepeatWrapping; t.unpackAlignment = 1; t.generateMipmaps = false; t.colorSpace = THREE.NoColorSpace; t.needsUpdate = true;
-  return t;
+  return (NOISE = t);
 }
 let NOISE = null;
 

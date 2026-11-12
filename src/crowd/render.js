@@ -100,10 +100,34 @@ function patch(mat, U, v) {
 }
 
 // ---------------------------------------------------------------- the animation texture
-export function bake(renderer, cast, clipNames) {
-  const t0 = performance.now(), chars = cast.chars, accs = cast.accs || [];
+// Public feedback ("the update interval of objects is too low and the stuttering of animations is distracting"; people/crowd-fb, Nov 11).
+// What moved in steps was the cast's clips themselves: they are keyed 10 times a second, joined by straight lines, and 13 of the 27 stop short
+// of their own cycle (the export cut each to a whole number of tenths: WalkBrisk has keys to 0.8 s of a 0.867 s stride, Jog to 0.7 of 0.767),
+// so the pose at the last key was pulled to the first within one column: a foot 28 cm out of place, every stride. loopTrack() makes a track a
+// closed loop of the clip's real cycle (crowd.json's duration) and a smooth curve through its keys (cubic Hermite, slopes from the neighbours'
+// real times), sampled at the texture's columns; walking and running clips get 30 columns a second (20 if they are 1.6 s or longer).
+// Nothing is added per frame: the same texture reads. ?crowdsmooth=0 bakes as before; ?crowdsmooth=20 keeps short clips at 20 columns a second.
+function loopTrack(t, P, F) {
+  const n0 = t.times.length, k = t.getValueSize(), T = t.times, V = t.values; if (n0 < 3 || t.getInterpolation() === THREE.InterpolateDiscrete) return t;
+  let n = n0; if (P - T[n0 - 1] < 0.01) { for (let c = 0; c < k; c++) if (Math.abs(V[c] - V[(n0 - 1) * k + c]) > 4e-3 && Math.abs(V[c] + V[(n0 - 1) * k + c]) > 4e-3) return t; n = n0 - 1; }      // closed in the file (last key = first), or not a loop at all
+  const times = new Float32Array(F + 1), vals = new Float32Array((F + 1) * k), tm = (j) => T[((j % n) + n) % n] + Math.floor(j / n) * P, P0 = [0, 0, 0, 0], P1 = [0, 0, 0, 0], P2 = [0, 0, 0, 0], P3 = [0, 0, 0, 0];
+  const key = (j, o) => { const q = (((j % n) + n) % n) * k; for (let c = 0; c < k; c++) o[c] = V[q + c]; }, same = (Q, R) => { let d = 0; for (let c = 0; c < 4; c++) d += Q[c] * R[c]; if (d < 0) for (let c = 0; c < 4; c++) Q[c] = -Q[c]; };
+  for (let f = 0, i = 0; f <= F; f++) {
+    const x = f === F ? 0 : (f / F) * P; times[f] = (f / F) * P; if (f === F) i = 0; while (i < n - 1 && T[i + 1] <= x) i++;
+    const t0 = tm(i - 1), t1 = tm(i), t2 = tm(i + 1), t3 = tm(i + 2), h = t2 - t1, u = (x - t1) / h, u2 = u * u, u3 = u2 * u; key(i - 1, P0); key(i, P1); key(i + 1, P2); key(i + 2, P3);
+    if (k === 4) { same(P0, P1); same(P2, P1); same(P3, P2); }
+    let L = 0; for (let c = 0; c < k; c++) { const m1 = ((P2[c] - P0[c]) / (t2 - t0)) * h, m2 = ((P3[c] - P1[c]) / (t3 - t1)) * h, v = (2 * u3 - 3 * u2 + 1) * P1[c] + (u3 - 2 * u2 + u) * m1 + (-2 * u3 + 3 * u2) * P2[c] + (u3 - u2) * m2; vals[f * k + c] = v; L += v * v; }
+    if (k === 4) { L = Math.sqrt(L) || 1; for (let c = 0; c < 4; c++) vals[f * k + c] /= L; }
+  }
+  return new t.constructor(t.name, times, vals);
+}
+export function bake(renderer, cast, clipNames, smooth = 0) {
+  const t0 = performance.now(), chars = cast.chars, accs = cast.accs || [], meta = (cast.sim && cast.sim.clips) || {};
   const NB = Math.max(...chars.map((c) => c.skeleton.bones.length)), ROWS = (NB + accs.length) * 3;
-  const clips = clipNames.map((n) => { const c = cast.animations.find((a) => a.name.toLowerCase() === n.toLowerCase()); return c ? { name: n, clip: c, F: Math.max(2, Math.round(c.duration * (c.duration < 1.6 ? 2 * FPS : FPS))) } : null; });
+  const clips = clipNames.map((n) => { const c = cast.animations.find((a) => a.name.toLowerCase() === n.toLowerCase()); if (!c) return null; const o = { name: n, clip: c, dur: c.duration, F: Math.max(2, Math.round(c.duration * (c.duration < 1.6 ? 2 * FPS : FPS))) };
+    if (smooth) { const m = meta[n] || {}, P = m.duration >= c.duration - 1e-3 && m.duration - c.duration < 0.12 ? m.duration : c.duration, moving = m.speed > 0;
+      if (moving || P - c.duration > 0.01) { o.loop = true; o.dur = P; o.F = Math.max(2, Math.round(P * (moving ? (P < 1.6 ? smooth : 2 * FPS) : P < 1.6 ? 2 * FPS : FPS))); } }
+    return o; });
   let W = 0; for (const c of clips) if (c) { c.x0 = W; W += c.F + 1; }
   const first = clips.find((c) => c); for (let i = 0; i < clips.length; i++) if (!clips[i]) clips[i] = Object.assign({}, first, { name: clipNames[i], missing: true });
   const H = chars.length * ROWS, data = new Float32Array(W * H * 4), m = new THREE.Matrix4(), sc = new THREE.Matrix4();
@@ -116,9 +140,10 @@ export function bake(renderer, cast, clipNames) {
     for (const c of clips) {
       if (c.missing) continue;
       let tracks = c.clip.tracks.filter((t) => t.name.startsWith(pre[0]) || t.name.startsWith(pre[1])); if (!tracks.length) continue;
-      const act = mixer.clipAction(new THREE.AnimationClip(c.name + '_' + ch.name, c.clip.duration, tracks)); act.play();
+      if (c.loop) tracks = tracks.map((t) => loopTrack(t, c.dur, c.F));
+      const act = mixer.clipAction(new THREE.AnimationClip(c.name + '_' + ch.name, c.dur, tracks)); act.play();
       for (let f = 0; f < c.F; f++) {
-        mixer.setTime((f / c.F) * c.clip.duration); root.updateMatrixWorld(true);
+        mixer.setTime((f / c.F) * c.dur); root.updateMatrixWorld(true);
         for (let b = 0; b < bones.length; b++) { m.multiplyMatrices(bones[b].matrixWorld, inv[b]).multiply(bind); put(c.x0 + f, y0 + b * 3, m.elements); }
         for (let k = 0; k < accs.length; k++) if (ab[k]) { m.multiplyMatrices(ab[k].matrixWorld, sc).multiply(accs[k].local); put(c.x0 + f, y0 + (NB + k) * 3, m.elements); }
       }
@@ -149,14 +174,15 @@ class Batch {       // one instance buffer, shared by the draws of one character
 export class CrowdRender {
   constructor(game, sim, cast, opts = {}) {
     const world = game.world, R = world.renderer; this.g = game; this.sim = sim; this.cast = cast;
-    const B = (this.baked = bake(R, cast, sim.clipNames));
+    { const P = game.P, v = P && P.get('crowdsmooth'); this.smooth = P && (v === '0' || P.get('crowdfb') === '0') ? 0 : v === '20' ? 20 : 30; }      // people/crowd-fb: closed, smooth clip loops (see bake)
+    const B = (this.baked = bake(R, cast, sim.clipNames, this.smooth));
     const U = (this.U = { tAnim: { value: B.tex }, uAnimInv: { value: new THREE.Vector2(1 / B.W, 1 / B.H) }, shared: world.shared || {} });
     this.group = new THREE.Group(); this.group.name = 'crowd'; this.normalGroup = new THREE.Group(); this.batches = []; this.chars = [];
     const noop = new THREE.ShaderMaterial({ vertexShader: 'void main(){ gl_Position = vec4(2.0, 2.0, 2.0, 1.0); }', fragmentShader: 'void main(){ gl_FragColor = vec4(0.0); }', colorWrite: false, depthWrite: false, depthTest: false, side: THREE.DoubleSide });
     const depthMat = patch(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), U, { bones: 1 });
     const nrm = (v) => { const m = patch(new THREE.MeshNormalMaterial(), U, v); m.blending = THREE.NoBlending; return m; };
     const nrmNear = nrm({ bones: 4 }); nrmNear.side = THREE.DoubleSide;
-    const rep = (this.report = { chars: cast.chars.length, clips: B.clips.length - B.missing.length, anim_tex: B.W + 'x' + B.H, anim_mb: +(B.W * B.H * 8 / 1048576).toFixed(1), bake_ms: B.ms, tris_near: 0, tris_mid: 0, tris_far: 0, tris_shadow: 0, parts: 0 });
+    const rep = (this.report = { chars: cast.chars.length, clips: B.clips.length - B.missing.length, anim_tex: B.W + 'x' + B.H, anim_mb: +(B.W * B.H * 8 / 1048576).toFixed(1), bake_ms: B.ms, smooth: this.smooth, tris_near: 0, tris_mid: 0, tris_far: 0, tris_shadow: 0, parts: 0 });
     if (B.missing.length) rep.clips_missing = B.missing.join(',');
     const capN = opts.capNear || 64, capM = opts.capMid || 160, capF = opts.capFar || 320, capS = opts.capShadow || 128;
     // Past the middle distance a figure is thirty pixels tall: there the cast is drawn with a few stand-in bodies (for each character
@@ -202,6 +228,7 @@ export class CrowdRender {
       const me = new THREE.Mesh(g, m); me.frustumCulled = false; me.matrixAutoUpdate = false; me.renderOrder = 3; this.group.add(me); this.blob = { arr, ib, g, me, cap, n: 0 }; }
     world.scene.add(this.group);
     this.stats = { drawn: 0, near: 0, mid: 0, far: 0, shadow: 0, acc: 0, dropped: 0 }; this.nearR = opts.nearR || NEAR_R; this.midR = opts.midR || MID_R; this.shadowR = opts.shadowR || SHADOW_R;
+    sim.farOf = farOf; sim.farR = this.midR;      // people/crowd-fb: past midR a figure is its stand-in body, so the sim may change who it is there without a change on screen
   }
   // what the camera sees of the sim, written into the instance buffers
   update() {

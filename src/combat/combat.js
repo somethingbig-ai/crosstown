@@ -5,6 +5,12 @@
 // nearestCar, readInput, hud.draw), never edited.   ?guns=0 (or none)  off     ?script=<name>  a scripted player (scripts.js) for filming
 // GUNS V1 (Nov 10, for the lead's game at 1ffa163): a pistol in the hand at spawn and a rifle. People shot down fall as the lead's pedhit ragdolls.
 //   Mouse: left fire, right aim, wheel switch.  Keys: 1 pistol, 2 rifle, Q put away / take out, R reload.  ?gall=1 adds 3 SMG, 4 shotgun.
+//   Controller, on foot only: LT aim, RT fire, X reload, RB / LB next / previous weapon, B put away / take out (driving keeps RT gas, LT brake, A handbrake, Y in or out).
+//   PUBLIC FIXES Nov 11 (players' reports): camera shake, kick and recoil climb turned well down (?gshake=0..1 scales what is left; 0 = a still camera);
+//   shots through a traffic car's glass hurt or kill its driver (he slumps, the car rolls to a stop), a driver whose car is hit brakes, then bolts;
+//   a ding and a gold marker on a headshot; the further-back aim camera, hip pull-in and varied bullet holes from the judged loop (rounds 13-15).
+//   WORLD REACTS Nov 11 evening: bullets shove and topple the loose street props and a car explosion throws them (game.__props, if there);
+//   a car damaged in crashes pulls to one side, steams, smokes and stalls (game.onCrash wrapped; ?gcrash=0 off); bystanders react (scare.js, ?scare=0 off).
 //   Not loaded unless asked: police and health (?heat=1), the lane's own people (?gpeople=1), the player's jacket tweak (?gdress=1).
 // Sim space is the game's (x east, y north, z up); three.js space is (x, z, -y).
 import * as THREE from 'three';
@@ -15,11 +21,12 @@ import { Script } from './scripts.js';
 import { Vehicle } from '../game.js';
 
 const D2R = Math.PI / 180;
+/* kick / kickYaw: degrees the VIEW climbs / wanders per shot. Public players, Nov 11: 'carbine has way too violent of screen shake and recoil', 'To much screen shake when you shoot guns'. They were 2.3/0.7 pistol, 0.8/0.7 SMG, 4.6/1.1 shotgun, 1.1/0.8 carbine (and the camera's own kick, shake and roll per shot three to five times what they are now); now a ten-round carbine burst held on a man's chest at 20 m stays on the man. The gun's own flip and the body's push (rise, back, KICK) are as they were: the recoil is seen on the gun, not on the screen. */
 export const WEAPONS = {
-  pistol: { name: '9MM PISTOL', key: 'Digit2', auto: false, rpm: 400, mag: 15, reserve: 120, dmg: 34, pellets: 1, spread: 0.30, hip: 1.5, bloom: 0.55, bloomMax: 2.6, kick: 2.3, kickYaw: 0.7, back: 0.07, rise: 0.34, reload: 1.55, fov: 50, range: 140, tracer: 0.4, force: 1.0 },
-  smg: { name: 'SMG', key: 'Digit3', auto: true, rpm: 840, mag: 30, reserve: 240, dmg: 21, pellets: 1, spread: 0.55, hip: 2.0, bloom: 0.32, bloomMax: 3.0, kick: 0.8, kickYaw: 0.7, back: 0.04, rise: 0.08, reload: 1.9, fov: 50, range: 120, tracer: 0.5, force: 0.8 },
-  shotgun: { name: 'PUMP SHOTGUN', key: 'Digit4', auto: false, rpm: 66, mag: 8, reserve: 48, dmg: 15, pellets: 9, spread: 2.6, hip: 3.6, bloom: 1.2, bloomMax: 3.0, kick: 4.6, kickYaw: 1.1, back: 0.12, rise: 0.42, reload: 0.5, shells: true, fov: 50, range: 60, tracer: 0, force: 2.4 },
-  rifle: { name: 'CARBINE', key: 'Digit5', auto: true, rpm: 700, mag: 30, reserve: 210, dmg: 38, pellets: 1, spread: 0.22, hip: 1.9, bloom: 0.30, bloomMax: 2.8, kick: 1.1, kickYaw: 0.8, back: 0.05, rise: 0.07, reload: 2.2, fov: 47, range: 220, tracer: 0.6, force: 1.5 },
+  pistol: { name: '9MM PISTOL', key: 'Digit2', auto: false, rpm: 400, mag: 15, reserve: 120, dmg: 34, pellets: 1, spread: 0.30, hip: 1.5, bloom: 0.55, bloomMax: 2.6, kick: 0.5, kickYaw: 0.25, back: 0.07, rise: 0.34, reload: 1.55, fov: 50, range: 140, tracer: 0.4, force: 1.0 },
+  smg: { name: 'SMG', key: 'Digit3', auto: true, rpm: 840, mag: 30, reserve: 240, dmg: 21, pellets: 1, spread: 0.55, hip: 2.0, bloom: 0.32, bloomMax: 3.0, kick: 0.24, kickYaw: 0.16, back: 0.04, rise: 0.08, reload: 1.9, fov: 50, range: 120, tracer: 0.5, force: 0.8 },
+  shotgun: { name: 'PUMP SHOTGUN', key: 'Digit4', auto: false, rpm: 66, mag: 8, reserve: 48, dmg: 15, pellets: 9, spread: 2.6, hip: 3.6, bloom: 1.2, bloomMax: 3.0, kick: 1.4, kickYaw: 0.5, back: 0.12, rise: 0.42, reload: 0.5, shells: true, fov: 50, range: 60, tracer: 0, force: 2.4 },
+  rifle: { name: 'CARBINE', key: 'Digit5', auto: true, rpm: 700, mag: 30, reserve: 210, dmg: 38, pellets: 1, spread: 0.22, hip: 1.9, bloom: 0.30, bloomMax: 2.8, kick: 0.22, kickYaw: 0.14, back: 0.05, rise: 0.07, reload: 2.2, fov: 47, range: 220, tracer: 0.6, force: 1.5 },
 };
 // what the body shows of each shot: shoulder hike, head snap, chest turn (rad), hand lift per rad of muzzle flip (m), per-shot wander (m), roll (rad)
 const KICK = { pistol: { sh: 0.2, head: 0.08, yaw: 0.07, lift: 0.2, jit: 0.006, roll: 0.06, sway: 0.05 }, smg: { sh: 0.09, head: 0.06, yaw: 0.07, lift: 0.1, jit: 0.018, roll: 0.07, sway: 0.045 }, shotgun: { sh: 0.3, head: 0.14, yaw: 0.14, lift: 0.22, jit: 0.01, roll: 0.08, sway: 0.08 }, rifle: { sh: 0.09, head: 0.06, yaw: 0.07, lift: 0.08, jit: 0.016, roll: 0.06, sway: 0.045 } };
@@ -51,6 +58,8 @@ class Combat {
     this.bloom = 0; this.gunBack = 0; this.gunBackV = 0; this.gunRise = 0; this.gunRiseV = 0; this.give = 0; this.slideT = 0; this.pumpT = -1; this.hitT = 0; this.killT = 0; this.shots = 0; this.kills = 0; this.t = 0;
     this.aim = { x: 0, y: 0, z: 0, kind: 'sky', ok: false }; this.cars = new Map(); this.scared = []; this.dolls = []; this.events = []; this.legYaw = 0; this.twist = 0; this.fovPunch = 0; this.camShake = 0; this.own = false; this.stats = { fired: 0, hits: {} };
     this.health = 100;
+    { const q = game.P.get('gshake'); this.gs = q === null || q === '' || !isFinite(+q) ? 1 : clamp(+q, 0, 1); }      /* ?gshake=0..1: scale of the camera's shake, kick, zoom punch and lens pulse per shot, and of half the recoil climb (1 = the default, already far gentler than before Nov 11; 0 = a still camera) */
+    this.deadDrv = []; this.headT = 0;
     /* ?gt=key:value,key:value overrides a tuning number read through this.T (for trying variants on a laptop; game.combat.tune is live) */
     this.tune = {}; { const q = game.P.get('gt'); if (q) for (const kv of q.split(',')) { const [k, v] = kv.split(':'); if (k && isFinite(+v)) this.tune[k] = +v; } }
   }
@@ -70,7 +79,8 @@ class Combat {
     try { const D = await import('./dress.js'); this.cap = this.rig ? new D.Cap(w.scene, g.P) : null; if (D.dressPlayer && g.P.get('gdress') === '1') this.dressed = D.dressPlayer(vis, g.P);      /* v1 leaves the player's own materials alone unless ?gdress=1 */ } catch (e) { console.log('[guns] dress.js not loaded: ' + (e && e.message)); this.cap = null; }
     // the effects are not part of the ambient-occlusion depth pass
     const gt = w.gtao; if (gt && gt.renderOverride && !gt._combat) { gt._combat = true; const ro = gt.renderOverride.bind(gt), grp = this.fx.group; gt.renderOverride = function (...a) { const v = grp.visible; grp.visible = false; try { ro(...a); } finally { grp.visible = v; } }; }
-    this.bodies = null; if (g.P.get('gpeople') === '1') { try { this.bodies = new (await import('./people.js')).Bodies(g, this); } catch (e) { console.log('[guns] people.js not loaded: ' + (e && (e.stack || e.message))); this.bodies = null; } }      /* v1: people who are shot are the lead's pedhit ragdolls (kill()); the lane's own people.js only with ?gpeople=1, and only if the file is there */
+    this.bodies = null; if (!['0', 'off', 'none'].includes(g.P.get('gpeople'))) {      /* merge Nov 11: shot reactions with blood ON by default (Matt); ?gpeople=0 = the pedhit ragdolls as before, ?gblood=0 = no blood */ try { this.bodies = new (await import('./people.js')).Bodies(g, this); } catch (e) { console.log('[guns] people.js not loaded: ' + (e && (e.stack || e.message))); this.bodies = null; } }      /* v1: people who are shot are the lead's pedhit ragdolls (kill()); the lane's own people.js only with ?gpeople=1, and only if the file is there */
+    if (g.P.get('scare') !== '0') { try { (await import('./scare.js')).install(g, this); } catch (e) { console.log('[guns] scare.js not loaded: ' + (e && e.message)); } }      /* the people helper's bystander reactions (wraps scare, frighten, stepPeople, kill on this instance); ?scare=0 = the plain jog */
     this.hook(); this.bind();
     const sc = g.P.get('script'); if (sc) this.script = new Script(g, this, sc);
     if (g.P.has('gun')) this.equip(g.P.get('gun'), true); else if (!g.demo && !sc) this.equip('pistol', true);      /* given at spawn: the pistol in the hand, the rifle on key 2 (not in the demo film) */
@@ -82,23 +92,25 @@ class Combat {
 
   bind() {
     const g = this.g, I = this.inp, c = g.world.renderer.domElement;
-    addEventListener('mousedown', (e) => { if (document.pointerLockElement !== c) return; if (e.button === 0) { I.fire = true; I.tap = 0.45; } if (e.button === 2) I.aim = true; });      /* tap: a quick click still fires once the gun is up (a 50 ms click used to raise the gun and fire nothing) */
-    addEventListener('mouseup', (e) => { if (e.button === 0) I.fire = false; if (e.button === 2) I.aim = false; });
+    addEventListener('mousedown', (e) => { if (document.pointerLockElement !== c) return; if (e.button === 0) { I.mfire = true; I.tap = 0.45; } if (e.button === 2) I.maim = true; });      /* tap: a quick click still fires once the gun is up (a 50 ms click used to raise the gun and fire nothing) */
+    addEventListener('mouseup', (e) => { if (e.button === 0) I.mfire = false; if (e.button === 2) I.maim = false; });
     addEventListener('contextmenu', (e) => { if (e.target === c || document.pointerLockElement === c) e.preventDefault(); });
     addEventListener('wheel', (e) => { if (g.fly && g.fly.on || !this.canCarry()) return; I.wheel += Math.sign(e.deltaY); }, { passive: true });
     addEventListener('keydown', (e) => { if (e.repeat) return; if (e.code === 'KeyR') I.reload = true; if (e.code === 'KeyQ') I.want = this.slot === 'unarmed' ? this.last : 'unarmed'; for (const k in WEAPONS) if (WEAPONS[k].key && WEAPONS[k].key === e.code) I.want = k; });
-    addEventListener('blur', () => { I.fire = I.aim = false; });
+    addEventListener('blur', () => { I.fire = I.aim = I.mfire = I.maim = false; });
   }
   hook() {
     const g = this.g, self = this;
     const step0 = g.step.bind(g); g.step = function (dt) { self.pre(dt); self.own = self.stance; try { step0(dt); } finally { self.own = false; } self.post(dt); };
     const anim0 = (this.anim0 = g.playerAnim.bind(g)); g.playerAnim = function (n) { if (self.own) return; anim0(n); };
     const sync0 = g.syncVisuals.bind(g); g.syncVisuals = function (dt) { sync0(dt); self.pose(dt); if (self.cap) self.cap.update(self.rig, g.player.vis.object.visible !== false); self.fx.update(dt, g.world.camera); };
-    const tgt0 = g.camTarget.bind(g); g.camTarget = function () { const t = tgt0(); if (self.armedFoot()) { const W = WEAPONS[self.slot], a = sm(self.zoomT || 0); t.auto = 0; const pc = self.slot === 'pistol'; t.dist = lerp(2.6, +(g.P.get('gcam') || (pc ? 0.72 : 0.85)), a); t.height = lerp(0.26, +(g.P.get('gcamh') || (pc ? 0.2 : 0.12)), a);      /* aimed: close above and behind the right shoulder, the figure cropped at the chest, as every reference frames it; nearer and higher for the pistol, so the one-handed gun lies below and left of the crosshair and is seen along its side */ t.fov = lerp(50, +(g.P.get('gfov') || W.fov), a) + self.fovPunch; } return t; };
+    const tgt0 = g.camTarget.bind(g); g.camTarget = function () { const t = tgt0(); if (self.armedFoot()) { const W = WEAPONS[self.slot], a = sm(Math.max(self.zoomT || 0, self.hipZ || 0)); t.auto = 0; const pc = self.slot === 'pistol'; t.dist = lerp(2.6, +(g.P.get('gcam') || self.T('camd', pc ? 1.0 : 1.3)), a); self._td = t.dist; t.height = lerp(0.26, +(g.P.get('gcamh') || self.T('camh', pc ? 0.24 : 0.18)), a);      /* aimed: close above and behind the right shoulder, the figure cropped at the chest, as every reference frames it; nearer and higher for the pistol, so the one-handed gun lies below and left of the crosshair and is seen along its side */ t.fov = lerp(50, +(g.P.get('gfov') || W.fov), a) + self.fovPunch; } return t; };
     const place0 = g.placeCamera.bind(g); g.placeCamera = function (dt) { if (self.armedFoot()) self.placeCamera(dt); else place0(dt); };
     const near0 = g.nearestCar.bind(g); g.nearestCar = function (d) { if (self.stance) return null; const all = g.vehicles; g.vehicles = all.filter((v) => !v.wreck); try { return near0(d); } finally { g.vehicles = all; } };
     // the walk keys are read as ever; in the firing stance they move the player from here (strafing), not from the game's own foot code
-    const ri = g.readInput.bind(g); g.readInput = function () { const I = g.input; if (self.script) { const s = self.script; I.mx = s.mx; I.my = s.my; I.run = s.run; I.steer = s.mx; I.throttle = Math.max(0, s.my); I.brake = Math.max(0, -s.my); I.handbrake = !!s.hb; I.lock = undefined; I.latLim = 0; } else ri(); self.mx = I.mx; self.my = I.my; self.run = I.run; if (self.stance) { I.mx = 0; I.my = 0; } };
+    const ri = g.readInput.bind(g); g.readInput = function () { const I = g.input; if (self.script) { const s = self.script; I.mx = s.mx; I.my = s.my; I.run = s.run; I.steer = s.mx; I.throttle = Math.max(0, s.my); I.brake = Math.max(0, -s.my); I.handbrake = !!s.hb; I.lock = undefined; I.latLim = 0; } else ri(); try { self.limp(I); } catch (e) {} self.mx = I.mx; self.my = I.my; self.run = I.run; if (self.stance) { I.mx = 0; I.my = 0; } };
+    for (const fb of g.drivers || []) { if (!fb || !fb.add || !fb.meshes) continue; const add0 = fb.add.bind(fb); fb.add = function (x, y, z, h) { const n = fb.n; add0(x, y, z, h); if (self.deadDrv.length && fb.n > n) { try { self.slump(fb, n, x, y, z, h); } catch (e) {} } }; }      /* a driver who has been shot is drawn slumped (the lead's FigureBatch is wrapped, not edited; costs nothing until a driver is dead) */
+    if (typeof g.onCrash === 'function' && g.P.get('gcrash') !== '0') { const oc0 = g.onCrash.bind(g); g.onCrash = function (v, force) { oc0(v, force); try { self.crashed(v, force); } catch (e) {} }; }      /* crash damage (players: 'cars just stop on impact'): the game's own onCrash(vehicle, closing speed) is wrapped, not edited */
     const hud0 = g.hud.draw.bind(g.hud); g.hud.draw = function () { hud0(); try { self.hud(); } catch (e) { if (!self._hudErr) { self._hudErr = true; console.log('[guns] hud: ' + e.message); } } };
   }
   // put the player somewhere else (?at=x,y,heading): the street life is filled in round the new place
@@ -111,6 +123,21 @@ class Combat {
     try { g.traffic.cars.length = 0; g.traffic.populate(pl.x, pl.y); for (const p of g.peds.list) { p.vis.used = false; p.vis.object.visible = false; } g.peds.list.length = 0; for (let i = 0; i < g.peds.target; i++) g.peds.spawn(pl.x, pl.y, true); } catch (e) { console.log('[guns] stage: ' + e.message); }
     if (g.missions && g.missions.marker) g.missions.far = true;
   }
+  /* The controller on foot (public feedback: 'no controller glyphs cant aim cant shoot'; the lead's readInput has sticks, RT gas, LT brake, A handbrake, Y in/out, L3 run).
+     On foot the triggers are free: LT aims, RT fires, X reloads, RB / LB next / previous weapon, B puts the gun away or takes it out. In a car, the helicopter
+     or while getting in nothing is read here, so the driving controls are untouched. The pad is picked the way the lead's code picks it. */
+  padRead(K) {
+    const P = (this.pad ||= { aim: false, fire: false, b: {}, seen: false, t: -99 }); let gp = null;
+    try { const all = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : []; for (const q of all) if (q && q.connected && q.axes.length >= 2 && q.buttons.length >= 4 && (!gp || (q.mapping === 'standard' && gp.mapping !== 'standard'))) gp = q; } catch (e) { gp = null; }
+    if (!gp || !this.canCarry() || (this.g.fly && this.g.fly.on) || (typeof window !== 'undefined' && window.__startScreen)) { P.aim = P.fire = false; return P; }
+    const bt = gp.buttons, std = gp.mapping === 'standard' || bt.length >= 16, B = (i) => (bt[i] ? Math.max(typeof bt[i].value === 'number' ? bt[i].value : 0, bt[i].pressed ? 1 : 0) : 0);
+    const lt = std ? B(6) : Math.max(B(6), ((gp.axes[2] ?? -1) + 1) / 2), rt = std ? B(7) : Math.max(B(7), ((gp.axes[5] ?? -1) + 1) / 2), thr = std ? 0.3 : 0.6;      /* a pad without the standard layout reports its triggers as axes that may rest at the middle until first pulled */
+    const edge = (i) => { const d = B(i) > 0.5, was = !!P.b[i]; P.b[i] = d; return d && !was; };
+    P.aim = lt > thr; const f = rt > thr; if (f && !P.fire) K.tap = 0.45; P.fire = f;
+    if (edge(2)) K.reload = true; if (edge(5)) K.wheel += 1; if (edge(4)) K.wheel -= 1; if (edge(1)) K.want = this.slot === 'unarmed' ? this.last : 'unarmed';
+    if (!P.seen && (P.aim || P.fire || lt > 0.05 || rt > 0.05 || bt.some((b) => b && b.pressed) || Math.hypot(gp.axes[0] || 0, gp.axes[1] || 0) > 0.3)) { P.seen = true; P.t = this.t; }
+    return P;
+  }
   /* may a gun be in the hand at all? Not in a car, getting in or out of one, in or boarding the helicopter, or on a roof (v1: the ray casting and the stance know street level only) */
   canCarry() { const g = this.g, pl = g.player, h = g.heli; return !pl.vehicle && !pl.busy && !(h && (h.piloted || h.busy || h.hasCamera)) && !(pl.alt > 2); }
   armedFoot() { const g = this.g; return this.slot !== 'unarmed' && this.canCarry() && !(g.fly && g.fly.on) && !this.dead; }
@@ -120,7 +147,7 @@ class Combat {
   // ------------------------------------------------------------------ before the game's own step: input
   pre(dt) {
     const g = this.g, I = g.input, K = this.inp, pl = g.player; this.t += dt;
-    if (this.script) this.script.drive(dt, I, K);
+    if (this.script) this.script.drive(dt, I, K); else { const P = this.padRead(K); K.aim = !!K.maim || P.aim; K.fire = !!K.mfire || P.fire; }      /* mouse buttons or the controller's triggers */
     if (K.wheel) { const i = ORDER.indexOf(this.swap ? this.swap.to : this.slot); K.want = ORDER[((i < 0 ? 0 : i) + (K.wheel > 0 ? 1 : ORDER.length - 1)) % ORDER.length]; K.wheel = 0; }
     if (K.want) { if (this.canCarry()) this.equip(K.want); K.want = null; }
     const armed = this.armedFoot();
@@ -131,6 +158,8 @@ class Combat {
       this.stance = K.aim || this.stanceT < 0.9 || !!this.rel && this.stanceT < 2.5;
     } else { this.stance = false; this.stanceT = 9; }
     this.zoomT = clamp((this.zoomT || 0) + (armed && K.aim ? dt / 0.16 : -dt / 0.2), 0, 1);
+    this.hipZ = clamp((this.hipZ || 0) + (armed && !K.aim && this.stanceT < 0.9 ? dt / 0.25 : -dt / 0.5), 0, this.T('hipz', 0.7));      /* firing from the hip pulls the camera 70 % of the way in to the aim camera (judged, round 15: hip SMG 93 -> 88) */
+    if (!armed) this.camD = undefined;
   }
   // ------------------------------------------------------------------ after it: movement in stance, firing, the world's answers
   post(dt) {
@@ -184,10 +213,10 @@ class Combat {
     // the body's answer to each shot, as three springs of different speed (chest and shoulder, hips, head): the push travels and settles
     { const S = (this.bs ||= { c: 0, cv: 0, h: 0, hv: 0, n: 0, nv: 0 }), d = Math.min(dt, 1 / 30); S.cv += (-400 * S.c - 18 * S.cv) * d; S.c += S.cv * d; S.hv += (-100 * S.h - 12 * S.hv) * d; S.h += S.hv * d; S.nv += (-196 * S.n - 11 * S.nv) * d; S.n += S.nv * d; }
     /* each shot pulses the lead's lens pass (colour fringe, a touch of barrel, a little colour drained): read from its uniforms once, written back as base + pulse; nothing else writes these three */
-    { this.filmP = (this.filmP || 0) * Math.exp(-dt * 13); const fm = g.world && g.world.film && g.world.film.uniforms; if (fm && fm.uCA && fm.uDist && fm.uSat) { const B = (this._film0 ||= { ca: fm.uCA.value, di: fm.uDist.value, sa: fm.uSat.value }), p = this.filmP < 0.01 ? 0 : this.filmP * this.T('film', 1); fm.uCA.value = B.ca + 0.011 * p; fm.uDist.value = B.di + 0.016 * p; fm.uSat.value = B.sa * (1 - 0.22 * Math.min(1, p)); } }
+    { this.filmP = (this.filmP || 0) * Math.exp(-dt * 13); const fm = g.world && g.world.film && g.world.film.uniforms; if (fm && fm.uCA && fm.uDist && fm.uSat) { const B = (this._film0 ||= { ca: fm.uCA.value, di: fm.uDist.value, sa: fm.uSat.value }), p = this.filmP < 0.01 ? 0 : this.filmP * this.T('film', 0.5) * this.gs; fm.uCA.value = B.ca + 0.011 * p; fm.uDist.value = B.di + 0.016 * p; fm.uSat.value = B.sa * (1 - 0.22 * Math.min(1, p)); } }
     if (this.slideT > 0) this.slideT -= dt;
     if (this.pumpT >= 0) { const p0 = this.pumpT; this.pumpT += dt; if (p0 < 0.22 && this.pumpT >= 0.22) { this.snd('reload', 'shotgun', 'pump'); this.eject('shotgun'); } if (this.pumpT > 0.62) this.pumpT = -1; }
-    this.hitT = Math.max(0, this.hitT - dt); this.killT = Math.max(0, this.killT - dt);
+    this.hitT = Math.max(0, this.hitT - dt); this.killT = Math.max(0, this.killT - dt); this.headT = Math.max(0, this.headT - dt);
     for (let i = this.events.length - 1; i >= 0; i--) { const e = this.events[i]; e.t -= dt; if (e.t <= 0) { this.events.splice(i, 1); e.fn(); } }
     this.stepCars(dt); this.stepPeople(dt);
   }
@@ -240,17 +269,18 @@ class Combat {
       const bx = h.x - mz.x, by = h.y - -mz.z, bz = h.z - mz.y, bl = Math.hypot(bx, by, bz);
       if (bl > 0.6) { const h2 = this.cast(mz.x, -mz.z, mz.y, bx / bl, by / bl, bz / bl, 0.05, bl - 0.25); if (h2.kind !== 'none') h = h2; h.dx = bx / bl; h.dy = by / bl; h.dz = bz / bl; } else { h.dx = dx / L; h.dy = -dz / L; h.dz = dy / L; }
       const r2 = this.hit(h, W, i === 0); if (r2 === 'ped') anyPed = true; if (r2 === 'kill') { anyPed = true; killed = true; }
+      this.shove(mz, h, W);
       if (W.tracer && rnd() < W.tracer) this.fx.tracer(mz, _v2.set(h.x, h.z, -h.y));
     }
     if (anyPed) this.hitT = 0.16; if (killed) this.killT = 0.4;
     this.fx.muzzle(mz, mdir, kind, cam.position);
     if (W.shells) this.pumpT = 0; else { this.slideT = 0.085; this.eject(kind); }
     // recoil: the view climbs and wanders, most of the climb is given back; the gun punches into the shoulder; the lens breathes
-    const k = (this.inp.aim ? 1 : 1.35) * D2R, up = W.kick * k * (0.85 + rnd() * 0.3), n = Math.min(this.burst = (this.t - (this.lastShot || -9) < 0.25 ? (this.burst || 0) + 1 : 0), 10);
-    C.pitch = clamp(C.pitch - up, -1.2, 1.25); C.yaw += (rs(W.kickYaw) + (W.auto ? Math.sin(n * 1.3 + this.shots) * W.kickYaw * 0.5 : 0)) * k; this.give += up * (W.auto ? 0.55 : 0.8);
-    this.gunBackV += W.back * 34; this.gunRiseV += W.rise * 26; this.bloom = Math.min(W.bloomMax, this.bloom + W.bloom); this.fovPunch -= W.pellets > 1 ? 3.6 : W.auto ? 1.1 : 2.6; this.camShake = Math.min(1, this.camShake + (W.pellets > 1 ? 0.8 : W.auto ? 0.42 : 0.5));
+    const gs = this.gs, k = (this.inp.aim ? 1 : 1.35) * D2R * (0.5 + 0.5 * gs), up = W.kick * k * (0.85 + rnd() * 0.3), n = Math.min(this.burst = (this.t - (this.lastShot || -9) < 0.25 ? (this.burst || 0) + 1 : 0), 10);
+    C.pitch = clamp(C.pitch - up, -1.2, 1.25); { if (!n) this.yawAcc = 0; const dy = (rs(W.kickYaw) + (W.auto ? Math.sin(n * 1.3 + this.shots) * W.kickYaw * 0.5 : 0)) * k - (this.yawAcc || 0) * 0.3; this.yawAcc = (this.yawAcc || 0) + dy; C.yaw += dy; }      /* the wander pulls back toward where the burst began, so a long burst does not walk off sideways */ this.give += up * (W.auto ? 0.7 + 0.3 * Math.min(1, n / 8) : 0.85 + 0.15 * Math.min(1, n / 5));      /* from the eighth round of a burst (the fifth quick pistol shot) all of the climb is given back: a whole magazine stays on the man */
+    this.gunBackV += W.back * 34; this.gunRiseV += W.rise * 26; this.bloom = Math.min(W.bloomMax, this.bloom + W.bloom); this.fovPunch -= (W.pellets > 1 ? 1.8 : W.auto ? 0.4 : 1.1) * gs; this.camShake = Math.min(1, this.camShake + (W.pellets > 1 ? 0.3 : W.auto ? 0.1 : 0.16) * gs);
     { const S = (this.bs ||= { c: 0, cv: 0, h: 0, hv: 0, n: 0, nv: 0 }), J = W.pellets > 1 ? 2 : W.auto ? 0.4 : 1; S.cv += J * 20; S.hv += J * 14; S.nv += J * 14; }
-    this.lastShot = this.t; this.kickT = 0; this.kickJ = [(rnd() < 0.5 ? -1 : 1) * (0.5 + 0.5 * rnd()), rs(1), rs(1)]; this.bodyJ = [(this.shots % 2 ? -1 : 1) * (0.45 + 0.55 * rnd()), rs(1)]; this.filmP = Math.min(1.5, (this.filmP || 0) + (W.pellets > 1 ? 1.3 : W.auto ? 0.55 : 1)); this.camKick = (this.camKick || 0) + (W.pellets > 1 ? 1 : W.auto ? 0.4 : 0.7);
+    this.lastShot = this.t; this.kickT = 0; this.kickJ = [(rnd() < 0.5 ? -1 : 1) * (0.5 + 0.5 * rnd()), rs(1), rs(1)]; this.bodyJ = [(this.shots % 2 ? -1 : 1) * (0.45 + 0.55 * rnd()), rs(1)]; this.filmP = Math.min(W.auto ? 0.5 : 1.3, (this.filmP || 0) + (W.pellets > 1 ? 1.3 : W.auto ? 0.22 : 1)); this.camKick = (this.camKick || 0) + (W.pellets > 1 ? 0.35 : W.auto ? 0.08 : 0.18) * gs;
     this.snd('shot', kind, { dist: 0, pan: 0 });
     this.scare(pl.x, pl.y, 55, 1);
   }
@@ -329,23 +359,23 @@ class Combat {
       // a parked car that is shot becomes one of the game's own vehicles: those are drawn with their height, roll and pitch (the street
       // layer draws parked and traffic cars flat), so it can rock on its springs and sag onto a flat tyre
       if (h.ck === 'parked' && !this.cars.has(v)) { try { const nv = this.mkVehicle(v); g.parked.take(v); g.vehicles.push(nv); v = nv; h.ck = 'veh'; } catch (e) {} }
-      const S = this.carState(v, h.ck);
+      const S = this.carState(v, h.ck), drv = h.ck === 'traffic' && mat === 'glass' ? this.driverHit(v, S, h, W) : null;
       { const cs = Math.cos(v.h), sn = Math.sin(v.h), lx = h.dx * cs + h.dy * sn, ly = -h.dx * sn + h.dy * cs, J = (W.force || 1) * (W.pellets > 1 ? 0.35 : 1); S.rv = (S.rv || 0) - ly * J * 0.5; S.pv = (S.pv || 0) - lx * J * 0.22; }
       if (h.ln[0] && h.lp && (h.lp[2] < Math.min((v.def.hgt - (v.type === 'taxi' ? 0.3 : 0)) * 0.58, 1.08) || ((v.type === 'van' || v.type === 'bus') && h.ln[0] < 0))) h.lp[0] = Math.sign(h.ln[0]) * v.def.len * 0.5;
       if (h.ln[1] && h.lp) { const vn = v.type === 'van' || v.type === 'bus', belt = Math.min((v.def.hgt - (v.type === 'taxi' ? 0.3 : 0)) * 0.58, 1.08); h.lp[1] = Math.sign(h.ln[1]) * v.def.wid * (h.lp[2] < belt ? 0.497 : vn ? 0.487 : 0.415); }
       if (mat !== 'tyre') { const at = { matrix: (out) => { if (S.dead) return false; _e.set(v.roll || 0, v.h, v.pitch || 0, 'YZX'); out.compose(_v3.set(v.x, v.z || 0, -v.y), _q.setFromEuler(_e), _v4.set(1, 1, 1)); return true; } }; S.at = S.at || at;
-        fx.decal(mat === 'glass' ? 'glass' : 'metal', _v3.set(h.lp[0], h.lp[2], -h.lp[1]), _v4.set(h.ln[0], h.ln[2], -h.ln[1]), mat === 'glass' ? 0.42 + rnd() * 0.2 : 0.13 + rnd() * 0.04, S.at); }
+        fx.decal(mat === 'glass' ? 'glass' : 'metal', _v3.set(h.lp[0], h.lp[2], -h.lp[1]), _v4.set(h.ln[0], h.ln[2], -h.ln[1]), mat === 'glass' ? 0.42 + rnd() * 0.2 : 0.085 + rnd() * rnd() * 0.15, S.at); }
       if (mat === 'glass' && !S.glass) { S.glass = true; this.snd('glassBreak', { dist }); }
       // the third round into the glass on one side crazes the whole pane and showers it out
       if (mat === 'glass' && h.lp) { const k = 'g' + (h.ln[0] ? (h.ln[0] > 0 ? 'f' : 'b') : h.ln[1] > 0 ? 'l' : 'r'); S[k] = (S[k] || 0) + (W.pellets > 1 ? 0.5 : 1); if (S[k] >= 3 && !S[k + 'x']) { S[k + 'x'] = true; this.snd('glassBreak', { dist });
         for (let i = 0; i < 4; i++) fx.impact(_v3.copy(P).addScaledVector(Nn, 0.05).add(_v4.set(rs(0.25), rs(0.15), rs(0.25))), Nn, 'glass'); fx.decal('glass', _v3.set(h.lp[0], h.lp[2], -h.lp[1]), _v4.set(h.ln[0], h.ln[2], -h.ln[1]), 1.05, S.at); } }
       if (mat === 'tyre') { if (!S.tyre) { S.tyre = true; if (h.ck === 'traffic') { v.v0 *= 0.45; } } const k = (h.lp[0] > 0 ? 'f' : 'b') + (h.lp[1] > 0 ? 'l' : 'r'); S.flat = S.flat || {}; if (!(k in S.flat)) { S.flat[k] = 0; this.snd('impact', 'tyre', { dist, pan }); } }
       else { S.hp -= W.dmg * (mat === 'glass' ? 0.35 : 0.8); this.carHurt(v, S, h); }
-      return 'car';
+      return drv || 'car';
     }
     if (h.kind === 'ped' || h.kind === 'crowd') {
       const p = h.obj, dmg = W.dmg * (h.part === 'head' ? 4 : h.part === 'legs' ? 0.7 : 1); p.hp = (p.hp ?? 60) - dmg;
-      const dir = _v3.set(h.dx, h.dz, -h.dy); fx.impact(P, _v4.copy(Nn).multiplyScalar(0.6).addScaledVector(dir, 0.5), 'flesh', { power: h.part === 'head' ? 1.3 : 1 }); if (first) this.snd('impact', 'flesh', { dist, pan });
+      const dir = _v3.set(h.dx, h.dz, -h.dy); fx.impact(P, _v4.copy(Nn).multiplyScalar(0.6).addScaledVector(dir, 0.5), 'flesh', { power: h.part === 'head' ? 1.3 : 1 }); if (first) this.snd('impact', 'flesh', { dist, pan }); if (h.part === 'head') this.headshot();
       if (p.hp <= 0) { this.kill(p, h.kind, h, W.force); return 'kill'; }
       this.frighten(p, h.kind, pl.x, pl.y, 14); p.stagger = 0.35; return 'ped';
     }
@@ -362,7 +392,7 @@ class Combat {
   carState(v, kind) { let S = this.cars.get(v); if (!S) { S = { v, kind, hp: 900, smoke: null, fire: null, burn: 0 }; this.cars.set(v, S); } return S; }
   carHurt(v, S, h) {
     const fx = this.fx, g = this.g, hood = (out) => { if (S.dead) return null; const f = v.def.len * 0.33; return out.set(v.x + Math.cos(v.h) * f, (v.z || 0) + Math.min(v.def.hgt * 0.6, 1.0), -(v.y + Math.sin(v.h) * f)); };
-    if (S.kind === 'traffic' && !S.fled) { S.fled = true; v.stun = 0.5; v.v0 = Math.max(v.v0, 14) * 1.25; v.honk = 1.5; }
+    if (S.kind === 'traffic' && !S.fled && !S.drvDead) { S.fled = true; v.stun = 0.5; v.v0 = Math.max(v.v0, 14) * 1.25; v.honk = 1.5; }
     if (S.kind === 'parked' && !S.alarm) { S.alarm = true; this.snd('alarm', { dist: Math.hypot(v.x - g.player.x, v.y - g.player.y) }); }
     if (S.hp < 420 && !S.smoke) S.smoke = fx.emitter({ pos: hood, kind: 'steam', life: 60 });
     if (S.hp < 200 && S.smoke && S.smoke.kind === 'steam') { S.smoke.kind = 'smoke'; S.smoke.rate = 1.6; }
@@ -375,6 +405,8 @@ class Combat {
       if (S.kind === 'traffic' && !g.traffic.cars.includes(v)) { this.forget(v, S); continue; }
       if (S.kind === 'parked' && v.gone) { this.forget(v, S); continue; }
       if (S.kind === 'traffic' && S.fire) v.stun = 99;
+      if (S.drvDead && S.kind === 'traffic') { const D = S.drv; D.t += dt; D.v0 = Math.max(0, D.v0 - (1.6 + D.v0 * 0.22) * dt); v.v0 = D.v0; if (v.v < 0.5 && D.v0 < 0.5) v.stun = Math.max(v.stun, 2); }      /* nobody on the pedals: the car rolls down to a stop in its lane (traffic.js is not touched: its own cruise speed is walked down from here) and then counts as stalled, so the cars behind pull round it */
+      if (S.crash) { const C = S.crash; if (C.stall > 0) C.stall -= dt; else if (S.hp < 200 && v === g.player.vehicle && Math.abs(v.vf || 0) > 3) { C.next -= dt; if (C.next <= 0) { C.stall = 0.8 + rnd() * 0.6; C.next = 7 + rnd() * 7; } } }      /* a smoking engine cuts out for about a second every ten or so while it is driven */
       if (S.burn > 0) { S.burn -= dt; if (S.burn <= 0) { this.explode(v, S); continue; } }
       // one of the game's own vehicles standing still: rock on the springs under fire, sink onto flat tyres
       if (S.kind === 'veh' && !S.wrecked && v !== g.player.vehicle && Math.abs(v.vf || 0) < 0.5 && (S.rv || S.rk || S.pv || S.pk || S.flat)) { const d = Math.min(dt, 1 / 30);
@@ -384,7 +416,7 @@ class Combat {
         v.roll = roll; v.pitch = pitch; v.z = z; }
     }
   }
-  forget(v, S) { S.dead = true; if (S.smoke) S.smoke.dead = true; if (S.fire) S.fire.dead = true; if (S.at) this.fx.dropDecals(S.at); this.cars.delete(v); }
+  forget(v, S) { S.dead = true; if (S.drvDead) { const i = this.deadDrv.indexOf(S); if (i >= 0) this.deadDrv.splice(i, 1); } if (S.smoke) S.smoke.dead = true; if (S.fire) S.fire.dead = true; if (S.at) this.fx.dropDecals(S.at); this.cars.delete(v); }
   explode(v, S) {
     const g = this.g, fx = this.fx, pl = g.player, x = v.x, y = v.y;
     this.forget(v, S);
@@ -394,6 +426,7 @@ class Combat {
     if (S.kind !== 'veh') { wreck = this.mkVehicle(v); if (wreck) g.vehicles.push(wreck); }
     if (wreck) { wreck.color = 0x0a0a0a; wreck.wreck = true; wreck.vx = wreck.vy = 0; wreck.z = 0.9; wreck.pitch = rs(0.2); wreck.roll = rs(0.25); if (pl.vehicle === wreck) { /* the player's own car: thrown out happens with the health feature */ }
       const W2 = this.carState(wreck, 'veh'); W2.hp = -1; W2.wrecked = true; W2.fire = fx.emitter({ pos: (out) => out.set(wreck.x, 0.9, -wreck.y), kind: 'fire', life: 28 }); }
+    try { const PR = g.__props; if (PR && typeof PR.blast === 'function') this.stats.blown = (this.stats.blown || 0) + (PR.blast(_v.set(x, 0.5, -y), this.T('pblast', 1.6), 9) || 0); } catch (e) {}      /* chairs, bins, cones and boxes near a car that goes up are thrown */
     fx.explosion(_v.set(x, 0.4, -y)); const d = Math.hypot(x - pl.x, y - pl.y); this.snd('explosion', { dist: d }); g.cam.shake = Math.min(1, g.cam.shake + clamp(1.6 - d / 22, 0, 1)); this.camShake = Math.min(1, this.camShake + clamp(1.4 - d / 25, 0, 1));
     // the blast: people near it are thrown, the rest run; cars near it are hurt (and may go up in turn)
     const each = (p, kind) => { const dd = Math.hypot(p.x - x, p.y - y); if (dd < 7.5) { const h = { x: p.x, y: p.y, z: 1, dx: (p.x - x) / (dd || 1), dy: (p.y - y) / (dd || 1), dz: 0.5, part: 'body' }; this.kill(p, kind, h, 5); } };
@@ -402,6 +435,62 @@ class Combat {
     const near = (c, kind) => { if (c === v || c === wreck) return; const dd = Math.hypot(c.x - x, c.y - y); if (dd < 7) { const S2 = this.carState(c, kind); if (S2.wrecked) return; S2.hp -= 300 * (1 - dd / 9); this.carHurt(c, S2, null); } };
     for (const c of g.traffic.cars) near(c, 'traffic'); for (const c of g.vehicles) near(c, 'veh'); for (const s of g.parked.near(x, y, 9, [])) near(s, 'parked');
     if (d < 6 && !pl.vehicle) this.hurt(90 * (1 - d / 8));
+  }
+  /* PEOPLE IN CARS (public feedback: 'people in cars unaffected by guns'). A round that comes in through a traffic car's glass and passes through where
+     the driver sits hurts him: head or chest, 60 hp like anyone on the street. Dead, he slumps over the wheel (slump(), the instance the game draws for
+     him is re-posed) and the car rolls to a stop. The seat is the game's own (seatOf); hips 0.22 m above the seat base as game.js seats the figure. */
+  driverSeat(v) { const st = this.g.seatOf(v, '\u0000'); return [st[0], st[1], st[2] + 0.22]; }
+  driverHit(v, S, h, W) {
+    if (!h.lp || S.drvDead || S.fire && S.hp <= 0) return null; const g = this.g, cs = Math.cos(v.h), sn = Math.sin(v.h), dx = h.dx * cs + h.dy * sn, dy = -h.dx * sn + h.dy * cs, dz = h.dz, st = this.driverSeat(v);
+    const near = (cz, r) => { const ax = st[0] - h.lp[0], ay = st[1] - h.lp[1], az = cz - h.lp[2], t = ax * dx + ay * dy + az * dz; if (t < -0.1 || t > 3) return false; return ax * ax + ay * ay + az * az - t * t < r * r; };
+    const head = near(st[2] + 0.72, 0.15), body = !head && near(st[2] + 0.36, 0.27); if (!head && !body) return null;
+    const D = (S.drv ||= { hp: 60, t: 0, v0: 0, side: rnd() < 0.5 ? 1 : -1 }); D.hp -= W.dmg * (head ? 4 : 1); this.stats.hits.driver = (this.stats.hits.driver || 0) + 1;
+    const cz = st[2] + (head ? 0.72 : 0.4), wx = v.x + cs * st[0] - sn * st[1], wy = v.y + sn * st[0] + cs * st[1]; this.fx.impact(_v3.set(wx, cz, -wy), _v4.set(-h.dx, 0.3, h.dy).normalize(), 'flesh', { power: head ? 1.1 : 0.8 });
+    if (head) this.headshot();
+    if (D.hp <= 0) { S.drvDead = true; D.t = 0; D.v0 = Math.min(v.v0, Math.max(v.v, 1)); v.honk = 0; this.deadDrv.push(S); this.kills++; this.stats.drivers = (this.stats.drivers || 0) + 1; this.scare(v.x, v.y, 30, 2); return 'kill'; }
+    return 'ped';
+  }
+  /* the dead driver as drawn: the game adds one instance per driver each frame (FigureBatch.add, wrapped in hook()); his is tipped forward over the wheel about the hips and a little to one side */
+  slump(fb, n, x, y, z, h) {
+    let S = null; for (const q of this.deadDrv) { const v = q.v; if (Math.abs(v.x - x) < 2.6 && Math.abs(v.y - y) < 2.6 && Math.abs(wrapPi(v.h - h)) < 0.02) { S = q; break; } } if (!S) return;
+    const e = sm(S.drv.t / 0.45), hy = (this.g.kit.driveHips && this.g.kit.driveHips[fb.who]) || 0.5, pivot = _v.set(0, hy, 0);
+    _q.setFromEuler(_e.set(0, h, 0)); _q2.setFromEuler(_e.set(S.drv.side * this.T('drvr', 0.2) * e, 0, -this.T('drvp', 0.5) * e, 'XYZ')); _q.multiply(_q2);
+    _v2.copy(pivot).applyQuaternion(_q); _m.compose(_v3.set(x, z + hy - this.T('drvd', 0.03) * e, -y).sub(_v2), _q, _v4.set(1, 1, 1));
+    for (const im of fb.meshes) im.setMatrixAt(n, _m);
+  }
+  /* (the near-miss reaction of Nov 11 18:57 is taken out again: in three laptop runs no driver was ever seen reacting to a round that only passed; a driver whose car is HIT brakes and then bolts (carHurt), and that was seen) */
+  /* (c) public feedback: 'maybe add a satisfying noise to headshots? like a ding?' A short bell made here (two sine partials and a click of the fifth above, 0.4 s; nothing recorded, nothing fetched) and a gold marker (hud()) */
+  headshot() {
+    this.headT = 0.55; if (this.t - (this._dingT ?? -9) < 0.09) return; this._dingT = this.t;
+    try { const s = this.g.sound; if (!s || !s.on || !s.ac || !s.out || this.g.capture) return; this.dingInto(s.ac, s.out, s.ac.currentTime, this.T('ding', 0.2)); } catch (e) {}
+  }
+  dingInto(a, dest, t, gain) {
+    const out = a.createGain(); out.gain.value = gain; out.connect(dest);
+    for (const [f, g0, d] of [[1760, 1, 0.42], [2637, 0.5, 0.3], [3520, 0.22, 0.16]]) { const o = a.createOscillator(), e = a.createGain(); o.type = 'sine'; o.frequency.value = f; e.gain.setValueAtTime(0.0001, t); e.gain.exponentialRampToValueAtTime(g0, t + 0.004); e.gain.exponentialRampToValueAtTime(0.0001, t + d); o.connect(e); e.connect(out); o.start(t); o.stop(t + d + 0.03); if (f === 1760) o.onended = () => { try { out.disconnect(); } catch (err) {} }; }
+  }
+  /* LOOSE PROPS (the breakable lane's props.js, merged by the lead 19:35 Nov 11): a bullet shoves the first loose thing on its way (a chair tips, a cone flies, a newspaper box barely moves),
+     with a spark where it struck if that is not where the round ended anyway. Nothing happens when game.__props is absent or off (?props=0). */
+  shove(mz, h, W) {
+    const PR = this.g.__props; if (!PR || PR.on === false || typeof PR.ray !== 'function' || h.dx === undefined) return;
+    try { const L = Math.hypot(h.x - mz.x, h.y + mz.z, h.z - mz.y), r = PR.ray(mz, _v3.set(h.dx, h.dz, -h.dy), this.T('pimp', 18) * (W.force || 1), L + 0.35); if (!r) return; this.stats.hits.loose = (this.stats.hits.loose || 0) + 1;
+      if (r.point && typeof PR.impulse === 'function') PR.impulse(_v4.copy(r.point).setY(r.point.y + 0.45), _v3.multiplyScalar(this.T('ptip', 9) * (W.force || 1)), 0.2);      /* and a second, smaller push high up, so a chair or an A-frame goes over instead of sliding away upright (laptop run 1: four pistol rounds slid a chair 2 m still standing) */
+      if (r.point && L - r.point.distanceTo(mz) > 0.6) this.fx.impact(_v4.copy(r.point), _v3.set(-h.dx, -h.dz, h.dy).normalize(), r.kind === 'crate' || r.kind === 'cbox' || r.kind === 'bag' ? 'wood' : 'metal'); } catch (e) { if (!this._prErr) { this._prErr = true; console.log('[guns] props: ' + (e && e.message)); } }
+  }
+  /* CRASH DAMAGE (players' most-asked wish: 'cars just stop on impact'; the lead, 16:40: 'gameplay what a damaged car does (pulling, smoke, stalling)').
+     Every crash the game reports takes health off the car by the square of the closing speed (25 km/h 70, 45 km/h 230, 70 km/h 560 of 900), on the same
+     health the bullets use: under 420 the bonnet steams, under 200 it smokes. Crashes alone never take it under 130, so a crash does not set the car alight
+     (bullets still can). A damaged car pulls to one side (limp(), up to about three degrees of wheel), loses up to a third of its power, stalls for a second
+     or two after a hard blow and, once it smokes, cuts out now and then. */
+  crashed(v, force) {
+    if (!(v instanceof Vehicle) || v.wreck || !(force > 0)) return; const S = this.carState(v, 'veh'); if (S.wrecked || S.hp <= 0) return;
+    const C = (S.crash ||= { side: rnd() < 0.5 ? -1 : 1, stall: 0, next: 5 + rnd() * 5, n: 0 }); C.n++;
+    if (S.hp > 130) { S.hp = Math.max(130, S.hp - this.T('crk', 1.5) * force * force); this.carHurt(v, S, null); }
+    if (v === this.g.player.vehicle && (force > 11 || (S.hp < 200 && force > 6))) C.stall = Math.max(C.stall, 1.1 + rnd() * 0.8);
+  }
+  limp(I) {
+    const g = this.g, v = g.player.vehicle, S = v && this.cars.get(v), C = S && S.crash; if (!C || g.demo) return; const f = clamp((900 - S.hp) / 700, 0, 1), sp = Math.abs(v.vf || 0);
+    if (f > 0.2 && sp > 2) { const p = C.side * this.T('crpull', 0.05) * ((f - 0.2) / 0.8) * Math.min(1, sp / 8); if (I.lock !== undefined) I.lock += p; else I.steer = clamp(I.steer + p * 4, -1, 1); }
+    if (C.stall > 0) { I.throttle = 0; if ((v.vf || 0) < 0.6) I.brake = 0; } else if (f > 0.4) I.throttle *= 1 - 0.33 * f;
   }
   mkVehicle(v) { const n = new Vehicle(v.def, v.x, v.y, v.h, v.color); if (v.vseed !== undefined) n.vseed = v.vseed; if (v.mission) n.mission = v.mission; return n; }
   hurt(n) { this.health = Math.max(0, this.health - n); this.hurtT = 0.6; }
@@ -468,20 +557,20 @@ class Combat {
 
   // ------------------------------------------------------------------ camera: over the right shoulder
   placeCamera(dt) {
-    const g = this.g, C = g.cam, cam = g.world.camera, st = g.statics, a = sm(this.zoomT || 0), pitch = C.pitch;
+    const g = this.g, C = g.cam, cam = g.world.camera, st = g.statics, a = sm(Math.max(this.zoomT || 0, this.hipZ || 0)), pitch = C.pitch;
     const gv = g.P.get('gview'); if (gv) { const pl = g.player, y = C.yaw + (gv === 'front' ? 0 : gv === 'side' ? -Math.PI / 2 : gv === 'left' ? Math.PI / 2 : gv === 'q' ? -0.9 : Math.PI), d = +(g.P.get('gdist') || 1.9); const gn = g.P.get('gfocus') === 'gun' && this.guns[this.slot], fx0 = gn ? gn.position.x : pl.x, fy0 = gn ? -gn.position.z : pl.y, fz0 = gn ? gn.position.y : 1.3; cam.position.set(fx0 + Math.cos(y) * d, fz0 + (gn ? 0.12 : 0.15), -(fy0 + Math.sin(y) * d)); cam.lookAt(fx0, fz0, -fy0); cam.fov = 40; cam.updateProjectionMatrix(); cam.updateMatrixWorld(); return; }
-    const fx = Math.cos(C.yaw), fy = Math.sin(C.yaw), rx = fy, ry = -fx; let sh = lerp(0.55, +(g.P.get('gcams') || (this.slot === 'pistol' ? 0.5 : 0.58)), a);
+    const fx = Math.cos(C.yaw), fy = Math.sin(C.yaw), rx = fy, ry = -fx; let sh = lerp(0.55, +(g.P.get('gcams') || this.T('cams', this.slot === 'pistol' ? 0.6 : 0.62)), a);
     const hs = st.raycast(C.tx, C.ty, C.tx + rx * (sh + 0.3), C.ty + ry * (sh + 0.3)); if (hs < 1) sh = Math.max(0.05, (sh + 0.3) * hs - 0.25);
-    let px = C.tx + rx * sh, py = C.ty + ry * sh; const pz = C.tz + C.h; let d = C.dist; const hd = d * Math.cos(pitch);
+    let px = C.tx + rx * sh, py = C.ty + ry * sh; const pz = C.tz + C.h; if (this._td !== undefined) { const e = dt || 0.016; this.camD = this.camD === undefined || !dt ? C.dist : this.camD + (this._td - this.camD) * Math.min(1, e * this.T('camr', 9)); }      /* the aim camera is in place within a quarter second and stays a body's length back: shoulder and head at the left edge, not a quarter of the frame (judged, rounds 14-15) */ let d = this.camD !== undefined ? this.camD : C.dist; const d0 = d; const hd = d * Math.cos(pitch);
     let hit = 1; for (const sd of [0, 0.3, -0.3]) hit = Math.min(hit, st.raycast(px, py, px - fx * (hd + 0.5) - fy * sd, py - fy * (hd + 0.5) + fx * sd));
     const want = hit < 1 ? Math.max(0.55, d * hit - 0.3) : d; if (!dt || C.clip === undefined) C.clip = want; else C.clip += (want - C.clip) * Math.min(1, dt * (want < C.clip ? 22 : 2.4)); d = Math.min(d, C.clip);
-    if (d < C.dist) { const k2 = Math.max(0.5, d / C.dist); px = C.tx + rx * sh * k2; py = C.ty + ry * sh * k2; }      /* a wall behind pushes the camera in: bring it in toward the shoulder as well, or the figure slides off the left edge */
+    if (d < d0) { const k2 = Math.max(0.5, d / d0); px = C.tx + rx * sh * k2; py = C.ty + ry * sh * k2; }      /* a wall behind pushes the camera in: bring it in toward the shoulder as well, or the figure slides off the left edge */
     // looking up, the camera sinks only a little (it stays behind the shoulder instead of diving to the pavement)
-    const hz = pitch < 0 ? Math.cos(pitch * 0.5) : Math.cos(pitch); let cx = px - fx * d * hz, cy = py - fy * d * hz, cz = pz + d * Math.sin(pitch) * (pitch < 0 ? 0.42 : 1) + Math.max(0, C.dist - d) * this.T('cwr', 0.15); if (cz < 0.3) cz = 0.3;
-    const s1 = C.shake * C.shake * 0.25, s2 = this.camShake * 0.06, n = g.frame;
+    const hz = pitch < 0 ? Math.cos(pitch * 0.5) : Math.cos(pitch); let cx = px - fx * d * hz, cy = py - fy * d * hz, cz = pz + d * Math.sin(pitch) * (pitch < 0 ? 0.42 : 1) + Math.max(0, d0 - d) * this.T('cwr', 0.15); if (cz < 0.3) cz = 0.3;
+    const s1 = C.shake * C.shake * 0.25, s2 = this.camShake * this.T('cshk', 0.02), n = g.frame;      /* was 0.06: six centimetres and over a degree of jitter every frame of a burst */
     cam.position.set(cx + Math.sin(n * 1.7) * s1 + Math.sin(n * 2.9) * s2, cz + Math.sin(n * 2.3) * s1 + Math.sin(n * 3.7) * s2, -cy + Math.cos(n * 1.3) * s1);
     const lp = pitch - 0.08, cp = Math.cos(lp); cam.lookAt(cam.position.x + fx * cp * 10, cam.position.y - Math.sin(lp) * 10, cam.position.z - fy * cp * 10);
-    const ck = this.camKick || 0, kj = this.kickJ || [0, 0, 0]; cam.rotateZ(Math.sin(n * 2.1) * s2 * 0.5 + kj[0] * ck * this.T('croll', 0.04)); cam.rotateX(Math.sin(n * 3.3) * s2 * 0.35 + ck * 0.034); cam.position.addScaledVector(_v.set(fx, 0, -fy), -ck * 0.1).addScaledVector(_v.set(fy, 0, fx), kj[1] * ck * this.T('clat', 0.02));
+    const ck = this.camKick || 0, kj = this.kickJ || [0, 0, 0]; cam.rotateZ(Math.sin(n * 2.1) * s2 * 0.5 + kj[0] * ck * this.T('croll', 0.03)); cam.rotateX(Math.sin(n * 3.3) * s2 * 0.35 + ck * 0.034); cam.position.addScaledVector(_v.set(fx, 0, -fy), -ck * 0.1).addScaledVector(_v.set(fy, 0, fx), kj[1] * ck * this.T('clat', 0.02));
     /* the horizon tips a degree or two on the shot and the lens jumps sideways: a tilted flash frame can be read in a still, a level one that only moved up cannot (rounds 6-8: 'framing only drifts') */
     cam.updateMatrixWorld();
     if (Math.abs(cam.fov - C.fov) > 0.01) { cam.fov = C.fov; cam.updateProjectionMatrix(); }
@@ -574,8 +663,12 @@ class Combat {
       else { tick(cx - gap - len, cy, cx - gap, cy); tick(cx + gap, cy, cx + gap + len, cy); tick(cx, cy + gap, cx, cy + gap + len); if (!W.auto || true) tick(cx, cy - gap - len, cx, cy - gap); }
       c.fillStyle = 'rgba(0,0,0,0.55)'; c.beginPath(); c.arc(cx, cy, 2.6, 0, 7); c.fill(); c.fillStyle = col; c.beginPath(); c.arc(cx, cy, 1.5, 0, 7); c.fill();
       if (this.hitT > 0 || this.killT > 0) { const kq = this.killT > 0, u = kq ? this.killT / 0.4 : this.hitT / 0.16, r0 = 9 + (1 - u) * 5, r1 = r0 + 9; c.globalAlpha = Math.min(1, u * 1.6); c.strokeStyle = kq ? '#ff3b2f' : '#fff'; c.lineWidth = kq ? 3 : 2.2; for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) { c.beginPath(); c.moveTo(cx + sx * r0, cy + sy * r0); c.lineTo(cx + sx * r1, cy + sy * r1); c.stroke(); } }
+      if (this.headT > 0) { const u = this.headT / 0.55, r0 = 11 + (1 - u) * 9, r1 = r0 + 13; c.globalAlpha = Math.min(1, u * 2.2); c.lineCap = 'round';      /* a headshot: a gold cross, longer and thicker than the hit marker, with a ring that opens out */
+        for (const [colr, lw] of [['rgba(0,0,0,0.6)', 6.5], ['#ffd23f', 3.6]]) { c.strokeStyle = colr; c.lineWidth = lw; for (const [sx, sy] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) { c.beginPath(); c.moveTo(cx + sx * r0, cy + sy * r0); c.lineTo(cx + sx * r1, cy + sy * r1); c.stroke(); } }
+        c.strokeStyle = '#ffd23f'; c.lineWidth = 2; c.globalAlpha = Math.min(1, u * 1.4) * 0.8; c.beginPath(); c.arc(cx, cy, Math.max(0.5, 7 + (1 - u) * 30), 0, 7); c.stroke(); c.lineCap = 'butt'; }
       c.globalAlpha = 1;
     }
+    { const v = pl.vehicle, S = v && this.cars.get(v); if (S && S.crash && S.crash.stall > 0) { c.globalAlpha = 1; H.panel(Wd / 2 - 120, Ht - 286, 240, 38, 6); H.text('ENGINE STALLED', Wd / 2, Ht - 260, 17, '#ff5a45', 'center', 700, 3); } }      /* so a dead pedal does not read as a fault */
     // weapon panel, top right under the cash
     if (this.slot !== 'unarmed' && W && !pl.vehicle) {
       const am = this.ammo[this.slot], x = Wd - 216, y = 96, low = am.mag <= Math.ceil(W.mag * 0.2);
@@ -587,7 +680,7 @@ class Combat {
       if (this.rel) { const u = W.shells ? this.rel.t / W.reload : this.rel.t / this.rel.dur; H.text('RELOADING', Wd / 2, Ht / 2 + 124, 12, 'rgba(255,255,255,0.85)', 'center', 700, 3); c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(Wd / 2 - 46, Ht / 2 + 132, 92, 4); c.fillStyle = '#ffb82e'; c.fillRect(Wd / 2 - 46, Ht / 2 + 132, 92 * clamp(u, 0, 1), 4); }
       else if (am.mag === 0 && armed) H.text(am.reserve > 0 ? 'R  RELOAD' : 'NO AMMO', Wd / 2, Ht / 2 + 124, 12, '#ff5a45', 'center', 700, 3);
     }
-    if (!g.demo && !this.script && !g.capture && this.t < 14 && this.canCarry()) { c.globalAlpha = clamp((14 - this.t) / 1.5, 0, 1); H.panel(Wd / 2 - 330, Ht - 196, 660, 34, 6); H.text('1 PISTOL    2 RIFLE    Q PUT AWAY    R RELOAD    MOUSE  LEFT FIRE   RIGHT AIM', Wd / 2, Ht - 174, 13, 'rgba(255,255,255,0.9)', 'center', 700, 1); c.globalAlpha = 1; }      /* the keys, for the first seconds */
+    { const pd = this.pad && this.pad.seen ? this.pad : null, t0 = pd ? Math.max(0, pd.t) : 0, T1 = pd ? t0 + 12 : 14; if (!g.demo && !this.script && !g.capture && this.t < T1 && this.canCarry()) { c.globalAlpha = clamp((T1 - this.t) / 1.5, 0, 1); H.panel(Wd / 2 - 330, Ht - 196, 660, 34, 6); H.text(pd ? 'LT AIM    RT FIRE    X RELOAD    RB / LB SWITCH    B PUT AWAY' : '1 PISTOL    2 RIFLE    Q PUT AWAY    R RELOAD    MOUSE  LEFT FIRE   RIGHT AIM', Wd / 2, Ht - 174, 13, 'rgba(255,255,255,0.9)', 'center', 700, 1); c.globalAlpha = 1; } }      /* the keys, for the first seconds */
     // the strip of weapons while switching
     if (this.swap || (this.t - (this._stripT || -9) < 0.7 && !this.inp.aim)) { if (this.swap) this._stripT = this.t; const u = clamp(0.7 - (this.t - this._stripT), 0, 1), sel = this.swap ? this.swap.to : this.slot; c.globalAlpha = Math.min(1, u * 3); const names = { unarmed: 'HOLSTER', pistol: 'PISTOL', smg: 'SMG', shotgun: 'SHOTGUN', rifle: 'CARBINE' }, w = 116, x0 = Wd / 2 - (ORDER.length * w) / 2, y = Ht - 250;
       ORDER.forEach((n, i) => { const on = n === sel; H.panel(x0 + i * w + 3, y, w - 6, 40, 4); if (on) { c.fillStyle = '#ffb82e'; c.fillRect(x0 + i * w + 3, y + 36, w - 6, 4); } H.text(n === 'unarmed' ? 'Q' : String(i + 1), x0 + i * w + 14, y + 26, 13, '#ffb82e', 'left', 800); H.text(names[n], x0 + i * w + 30, y + 26, 13, on ? '#fff' : 'rgba(255,255,255,0.6)', 'left', 700, 1); }); c.globalAlpha = 1; }

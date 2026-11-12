@@ -7,8 +7,7 @@ import * as THREE from 'three';
 export class CabinSun {
   constructor(size = 1024, half = 2.3) {
     this.size = size; this.half = half;
-    this.rt = new THREE.WebGLRenderTarget(size, size, { depthBuffer: true, format: THREE.RGBAFormat, type: THREE.UnsignedByteType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false });
-    this.rt.depthTexture = new THREE.DepthTexture(size, size, THREE.UnsignedIntType); this.rt.depthTexture.minFilter = this.rt.depthTexture.magFilter = THREE.LinearFilter; this.rt.depthTexture.compareFunction = THREE.LessEqualCompare;
+    this._make();
     this.cam = new THREE.OrthographicCamera(-half, half, half, -half, 0.5, 14.5); this.cam.layers.enableAll();      // the aircraft lives on a layer of its own (model.js), the cabin on the same one
     this.scene = new THREE.Scene(); this.scene.matrixWorldAutoUpdate = false;
     this.scene.overrideMaterial = new THREE.MeshDepthMaterial({ side: THREE.DoubleSide }); this.scene.overrideMaterial.colorWrite = false;
@@ -16,6 +15,13 @@ export class CabinSun {
     this._bias = new THREE.Matrix4().set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1); this._hid = []; this._skip = null; this._rw = new THREE.Matrix4(); this._obj = new THREE.Matrix4(); this._q = new THREE.Quaternion(); this._sb = new THREE.Vector3(); this._last = new THREE.Vector3(0, -1, 0); this._age = 99;
     this._hide = (o) => { if (o.isMesh && o.visible && ((o.material && o.material.transparent) || (this._skip && this._skip.includes(o)))) { o.visible = false; this._hid.push(o); } };
   }
+  _make() {
+    const size = this.size;
+    this.rt = new THREE.WebGLRenderTarget(size, size, { depthBuffer: true, format: THREE.RGBAFormat, type: THREE.UnsignedByteType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false });
+    this.rt.depthTexture = new THREE.DepthTexture(size, size, THREE.UnsignedIntType); this.rt.depthTexture.minFilter = this.rt.depthTexture.magFilter = THREE.LinearFilter; this.rt.depthTexture.compareFunction = THREE.LessEqualCompare;
+  }
+  // throw the map away and make it again (the cockpit's self-check, when the map is missing or a draw that reads it was refused)
+  rebuild(renderer) { try { this.rt.depthTexture.dispose(); this.rt.dispose(); } catch (e) {} this._make(); this.u.tCabSh.value = this.rt.depthTexture; this.prime(renderer); this.off(); }
   // root: the aircraft's root group (shell + cockpit); center: Vector3 (world); sunDir: unit vector toward the sun (world); skip: objects never to draw
   render(renderer, root, center, sunDir, skip) {
     if (!(sunDir.y > 0.05)) { this.u.uCabShOn.value = 0; return; }
@@ -31,16 +37,19 @@ export class CabinSun {
     // glass and the rotor's blur let the sun through; needle quads are cut-outs the depth pass cannot see
     const hid = this._hid; hid.length = 0; this._skip = skip; root.traverse(this._hide);
     const old = renderer.getRenderTarget(), au = renderer.shadowMap.autoUpdate, ac = renderer.autoClear, xr = renderer.xr.enabled;
-    renderer.shadowMap.autoUpdate = false; renderer.xr.enabled = false; renderer.autoClear = true;
-    this.scene.children.length = 0; this.scene.children.push(root);      // drawn as is, without leaving its place in the game's scene
-    renderer.setRenderTarget(this.rt); renderer.render(this.scene, cam); renderer.setRenderTarget(old);
-    this.scene.children.length = 0; renderer.shadowMap.autoUpdate = au; renderer.xr.enabled = xr; renderer.autoClear = ac;
-    for (const o of hid) o.visible = true;
-    this.u.uCabShOn.value = 1;
+    // whatever happens in the draw, the renderer and the aircraft are put back as they were (a throw here once would otherwise leave
+    // parts hidden and the game drawing into this map)
+    try {
+      renderer.shadowMap.autoUpdate = false; renderer.xr.enabled = false; renderer.autoClear = true;
+      this.scene.children.length = 0; this.scene.children.push(root);      // drawn as is, without leaving its place in the game's scene
+      renderer.setRenderTarget(this.rt); renderer.render(this.scene, cam);
+      this.u.uCabShOn.value = 1;
+    } catch (e) { this.u.uCabShOn.value = 0; this._age = 99; if (!this._warned) { this._warned = true; console.log('[heli] cockpit sun map: draw failed (' + (e && e.message) + ')'); } }
+    finally { renderer.setRenderTarget(old); this.scene.children.length = 0; renderer.shadowMap.autoUpdate = au; renderer.xr.enabled = xr; renderer.autoClear = ac; for (const o of hid) o.visible = true; }
   }
   // The map must exist on the GPU before any material that reads it is drawn: a compared-depth sampler on a texture never rendered to
   // makes the driver refuse the whole draw (the cabin then vanished from outside until the first time an eye came near it).
-  prime(renderer) { const old = renderer.getRenderTarget(); renderer.setRenderTarget(this.rt); renderer.clear(true, true, false); renderer.setRenderTarget(old); }
+  prime(renderer) { const old = renderer.getRenderTarget(); try { renderer.setRenderTarget(this.rt); renderer.clear(true, true, false); this.primed = true; } finally { renderer.setRenderTarget(old); } }
   off() { this.u.uCabShOn.value = 0; this._age = 99; }
   // GLSL the materials share
   get vertPars() { return 'uniform mat4 uCabShM; varying vec3 vCabSh;'; }

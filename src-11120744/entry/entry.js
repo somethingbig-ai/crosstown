@@ -457,13 +457,14 @@ class Entry {
     else if (c.on && pl.vehicle) { v = pl.vehicle; want = 1; }
     else { c.on = false; c.k = 0; return false; }
     if (b && b.entry) c.k = b.nodoor ? c.k + clamp(want - c.k, -dt * 2.4, dt * 2.4) : want; else c.k = Math.min(1, c.k + dt / 0.9 * (1.02 - c.k) * 3);
-    const k = c.k; if (!b && k > 0.995) { c.on = false; c.k = 0; return false; }      // fully the driving view: the game's own camera carries on from the same numbers
+    const k = c.k; if (!b && k > 0.995 && !(c.fb > 0.02 && (c.hold = (c.hold || 0) + dt) < 1.5)) { c.on = false; c.k = 0; c.hold = 0; return false; }      // fully the driving view: the game's own camera carries on from the same numbers
     const big = v.def.len > 7 ? 1.9 : v.def.hgt > 2 ? 1.3 : 1, sp = Math.hypot(v.vx, v.vy);
     const foot = { x: pl.vehicle ? v.x : pl.x, y: pl.vehicle ? v.y : pl.y, z: (g.statics.onSidewalk(pl.x, pl.y) ? 0.15 : 0) + (b ? 1.2 : 1.5), dist: b ? 4.6 : 3.4, height: b ? 0.5 : 0.35, fov: 52 };      // while he gets in or out: a little further back and lower, so door, legs and feet stay in the picture
     const car = { x: v.x, y: v.y, z: v.z + 1.15 * big, dist: (5.6 + sp * 0.045) * big, height: 1.25 * big, fov: 56 + clamp(sp / 45, 0, 1) * 16 };
     const t = { x: lerp(foot.x, car.x, k), y: lerp(foot.y, car.y, k), z: lerp(foot.z, car.z, k), dist: lerp(foot.dist, car.dist, k), height: lerp(foot.height, car.height, k), fov: lerp(foot.fov, car.fov, k) };
     // if the car is between the camera and the door, come round to the door's side (only while the mouse is left alone)
-    if (C.lookT > 1.0 && b) { const off = wrapPi(v.h - 0.62 - C.yaw); if (Math.abs(off) > 0.3) C.yaw += off * Math.min(1, dt * 2.4); }      // to the rear quarter on the door's side, where the door does not hide him
+    if (C.lookT > 1.0 && b) { { const a = v.h - 0.62, hq = g.statics.raycast(t.x, t.y, t.x - Math.cos(a) * (t.dist + 0.6), t.y - Math.sin(a) * (t.dist + 0.6)); c.qo = (c.qo === undefined ? 1 : c.qo) + ((hq < 0.85 ? 0 : 1) - (c.qo === undefined ? 1 : c.qo)) * Math.min(1, dt * 5); }
+      const off = wrapPi(v.h - ((0.62) - 0.47 * (1 - c.qo)) - C.yaw); if (Math.abs(off) > 0.03 + 0.27 * c.qo) C.yaw += off * Math.min(1, dt * 2.4); }      // to the rear quarter on the door's side, where the door does not hide him
     else if (C.lookT > 1.5 && !b && pl.vehicle) C.yaw += wrapPi(v.h - C.yaw) * Math.min(1, dt * 3.2 * k);
     const kk = Math.min(1, dt * 14); C.tx += (t.x - C.tx) * kk; C.ty += (t.y - C.ty) * kk; C.tz += (t.z - C.tz) * Math.min(1, dt * 8);
     C.dist += (t.dist - C.dist) * Math.min(1, dt * 5); C.fov += (t.fov - C.fov) * Math.min(1, dt * 5); C.h += (t.height - C.h) * Math.min(1, dt * 5);
@@ -480,7 +481,15 @@ class Entry {
       if (Math.abs(ox) > hl || Math.abs(oz) > hw) { let t0 = 0, t1 = 1; for (const [o, dd, h] of [[ox, dx, hl], [oz, dz, hw]]) { if (Math.abs(dd) < 1e-6) { if (Math.abs(o) > h) t0 = 2; continue; } let a = (-h - o) / dd, e = (h - o) / dd; if (a > e) { const q = a; a = e; e = q; } if (a > t0) t0 = a; if (e < t1) t1 = e; }
         if (t0 < t1 && C.tz + (C.h + d * Math.sin(pitch)) * t0 < (v.z || 0) + v.def.hgt + 0.3) hit = Math.min(hit, t0); } } }
     const want = hit < 1 ? Math.max(0.9, d * hit - 0.35) : d; if (!dt || C.clip === undefined) C.clip = want; else C.clip += (want - C.clip) * Math.min(1, dt * (want < C.clip ? 22 : 2.2)); d = Math.min(d, C.clip);
-    const cx = C.tx + bx * d * Math.cos(pitch), cy = C.ty + by * d * Math.cos(pitch); let cz = C.tz + C.h + d * Math.sin(pitch); if (cz < 0.4) cz = 0.4;
+    let cx = C.tx + bx * d * Math.cos(pitch), cy = C.ty + by * d * Math.cos(pitch), cz = C.tz + C.h + d * Math.sin(pitch); if (cz < 0.4) cz = 0.4;
+    { const pb = g.player.busy, v = (pb && pb.entry && pb.v) || g.player.vehicle, c = this.cam; let m = 0;      // never rammed into the car's body or his head: a clear place behind instead
+      if (v && v.def) { const co = Math.cos(v.h), si = Math.sin(v.h), hl = (v.def.len || 4.6) / 2, hw = (v.def.wid || 1.85) / 2, top = (v.z || 0) + (v.def.hgt || 1.45), ox = (cx - v.x) * co + (cy - v.y) * si, oz = (cx - v.x) * si - (cy - v.y) * co;
+        m = clamp(Math.min((hl + 0.6 - Math.abs(ox)) / 0.3, (hw + 0.6 - Math.abs(oz)) / 0.3, (top + 0.5 - cz) / 0.3), 0, 1);
+        if (pb && pb.entry) m = Math.max(m, clamp((0.7 - d / Math.max(1, C.dist)) / 0.15, 0, 1));
+        if (this.me && this.me.rig && g.player.vis.object.visible) { const hp = this.me.rig.pos('head', _v2); m = Math.max(m, clamp((0.6 - Math.hypot(hp.x - cx, hp.y - cz, hp.z + cy)) / 0.2, 0, 1)); }
+        if (m > 0 && !(c.fb > 0)) { let best = -1; for (const [dx, dz] of [[-0.81, -0.58], [-0.98, -0.2], [-1, 0], [-0.98, 0.2]]) { const mx = co * dx + si * dz, my = si * dx - co * dz, L = Math.min(4.4, g.statics.raycast(C.tx, C.ty, C.tx + mx * 5, C.ty + my * 5) * 5 - 0.35); if (L > best) { best = L; c.fbx = mx; c.fby = my; c.fbL = L; } if (L >= 3) break; } }
+        c.fb = Math.max(m, (c.fb || 0) - (dt || 0) * 1.6);
+        if (c.fb > 0) { const L = Math.max(1.2, c.fbL || 0); cx = lerp(cx, C.tx + c.fbx * L, c.fb); cy = lerp(cy, C.ty + c.fby * L, c.fb); cz = lerp(cz, Math.max(cz, top + 0.35), c.fb); } } else c.fb = 0; }
     const sh = C.shake * C.shake * 0.25, n = g.frame; cam.position.set(cx + Math.sin(n * 1.7) * sh, cz + Math.sin(n * 2.3) * sh, -cy + Math.cos(n * 1.3) * sh);
     const ahead = 2.2 * k * k; cam.lookAt(C.tx + Math.cos(C.yaw) * ahead, C.tz + lerp(0.15, 0.1, k), -(C.ty + Math.sin(C.yaw) * ahead));
     { const extra = (-0.25 - C.pitch) * (1 - k); if (extra > 0) { const dd = cam.getWorldDirection(_v), hl = Math.hypot(dd.x, dd.z) || 1, e = Math.min(1.4, Math.asin(clamp(dd.y, -1, 1)) + extra); cam.lookAt(cam.position.x + dd.x / hl * Math.cos(e) * 10, cam.position.y + Math.sin(e) * 10, cam.position.z + dd.z / hl * Math.cos(e) * 10); } }

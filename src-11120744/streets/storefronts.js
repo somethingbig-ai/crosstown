@@ -7,6 +7,11 @@
 // Layout mirrors pipeline/dressing/place.py (wall runs, street-front rule, per-style gh and shop width) so the floor meets the facade
 // above; nothing else of facade.js is relied on. Everything is instanced per 128 m tile in two distance bands.
 // storefronts.art.js = the atlases, storefronts.glsl.js = the shader text.
+// Collision (Nov 12, a player: "I can walk through walls"): the game's solid wall is the building footprint, and every front here stands 0.1-0.7 m
+// proud of it (piers 0.26-0.48 m, corner piers also that far past the corner), so a walker's 0.34 m circle sat inside the piers. layout() now also
+// returns the drawn front line of every bay (pier faces, glass line, showcases, recessed doors, gates, lobby portals) and add() puts it into
+// game.statics as wall segments. Off: ?sfsolid=0. Not added on hero footprints (hero.js removes the fronts there) or inside a traffic lane.
+// A corner pier's reach past its corner is solid only where that closes no way through (solExt): at an alley mouth it stays as it was.
 import * as THREE from 'three';
 import * as FAC from '../facade.js';
 import { makeMask, makeRooms, makeProps } from './storefronts.art.js';
@@ -140,7 +145,15 @@ export function layout(C, opts = {}) {
   };
   const LC = new Map(), lay = (bi) => { let l = LC.get(bi); if (!l) LC.set(bi, (l = layoutOf(B[bi].style, B[bi].seed))); return l; };
 
-  const tiles = new Map(), frames = [], shops = []; const stats = { buildings: 0, bays: 0, shops: 0, kinds: {}, signs: {}, samples: {} };
+  // collision: how much of a corner pier's reach past its corner (ext) may be solid: none of the way a walker has today between this corner and the
+  // next wall (an alley mouth, a slot between two buildings) may be closed, so 0.9 m of any such gap stays open, shared between its two sides;
+  // and solOut: a front line is never solid nearer than 0.9 m to a wall across from it (a bay inside a slot between buildings)
+  const solExt = (cx, cy, ux, uy, nx, ny, ext, out) => { let g = 1e9; for (const z of [-0.7, -0.35, 0.03, out / 2, out]) { const ox = cx + ux * 0.02 + nx * z, oy = cy + uy * 0.02 + ny * z; if (z < 0 && inBuilding(ox, oy)) continue; const h = bgrid.ray(ox, oy, ux, uy, 1.9); if (h && h[0] < g) g = h[0]; }     /* 1.9 m: the deepest pier on both sides (0.48 m each) and the 0.9 m kept open */
+    if (g > 1e8) return ext; stats.solidCut++; const e = Math.min(ext, (g - 0.9) / 2); return e > 0.05 ? e : 0; };
+  const solOut = (P, a, b2, z) => { let g = 1e9; for (const u of b2 - a > 0.8 ? [a + 0.35, (a + b2) / 2, b2 - 0.35] : [(a + b2) / 2]) { const ox = P.x + P.dx * u + P.nx * 0.03, oy = P.y + P.dy * u + P.ny * 0.03; if (inBuilding(ox, oy)) continue;     /* buried in the next building: nothing to keep open */
+      const h = bgrid.ray(ox, oy, P.nx, P.ny, z + 0.9); if (h && h[0] < g) g = h[0]; }
+    if (g > 1e8) return z; stats.solidCut++; return Math.min(z, g + 0.03 - 0.9); };
+  const tiles = new Map(), frames = [], shops = [], solid = []; const stats = { buildings: 0, bays: 0, shops: 0, kinds: {}, signs: {}, samples: {}, solidCut: 0 };
   let tile = null, fi = 0;
   const bx = (major, x0, x1, y0, y1, z0, z1, kind, col, p0 = 0, p1 = 0, p2 = 0, p3 = 0) => bc(major, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, x1 - x0, y1 - y0, z1 - z0, 0, 0, kind, col, p0, p1, p2, p3);
   const bc = (major, cx, cy, cz, sx, sy, sz, yaw, tilt, kind, col, p0 = 0, p1 = 0, p2 = 0, p3 = 0) => { if (sx <= 0.001 || sy <= 0.001 || sz <= 0.001) return; (major ? tile.major : tile.fine).push(fi, cx, cy, cz, sx, sy, sz, yaw, tilt, kind, col[0], col[1], col[2], p0, p1, p2, p3); };
@@ -183,7 +196,7 @@ export function layout(C, opts = {}) {
       const dp = dirs[(ri - 1 + n) % n], dn = dirs[(ri + 1) % n], convA = dp[0] * dy - dp[1] * dx > 0.3, convB = dx * dn[1] - dy * dn[0] > 0.3;
       for (let i = 0; i + 1 < cuts.length; i++) {
         const a = cuts[i], bb = cuts[i + 1], mid = (a + bb) / 2, kd = frs[Math.max(0, Math.min(ns - 1, Math.floor(mid / SL * ns)))]; if (kd === null) continue;
-        pieces.push({ x: x0 + dx * mid, y: y0 + dy * mid, dx, dy, nx, ny, Lp: bb - a, kd, SL, mid, extA: i === 0 && convA ? pproud : 0, extB: i + 2 === cuts.length && convB ? pproud : 0, key: ri * 64 + i });
+        pieces.push({ x: x0 + dx * mid, y: y0 + dy * mid, dx, dy, nx, ny, Lp: bb - a, kd, SL, mid, extA: i === 0 && convA ? pproud : 0, extB: i + 2 === cuts.length && convB ? pproud : 0, key: ri * 64 + i, ox: x0, oy: y0, ri });
       }
     }
     if (!pieces.length) return;
@@ -218,6 +231,7 @@ export function layout(C, opts = {}) {
     }
 
     // ---- emit
+    const solG = new Map();                               // collision: per wall segment, [from, to, how far out] along the wall of everything drawn solid
     for (const P of pieces) {
       const r = (k) => rnd(bid, P.key + 2000, k), Lp = P.Lp, rot = Math.atan2(P.dy, P.dx);
       const tk = Math.floor(P.x / TILE) + ',' + Math.floor(P.y / TILE); tile = tiles.get(tk); if (!tile) tiles.set(tk, (tile = { major: [], fine: [], awn: [], glass: [], bq: [] }));
@@ -225,16 +239,19 @@ export function layout(C, opts = {}) {
       stats.bays++; stats.kinds[P.role] = (stats.kinds[P.role] || 0) + 1; { const nm = P.role === 'shop' ? P.type.name : P.role, a = (stats.samples[nm] ||= []); if (Math.hypot(P.x + 200, P.y + 250) < 260 && P.kd > 3.4) a.push([+P.x.toFixed(1), +P.y.toFixed(1), +rot.toFixed(3)]); }
       const seed = r(0), TY = P.type, masP = [mas, 0, 0, seed];
       const xa = -Lp / 2, xb = Lp / 2;
+      let sq = solG.get(P.ri); if (!sq) solG.set(P.ri, (sq = { P, iv: [] })); const pu = (P.x - P.ox) * P.dx + (P.y - P.oy) * P.dy, so = (a, b2, z) => { if (b2 - a > 0.01 && (z = solOut(P, a, b2, z)) > 0.03) sq.iv.push(pu + a, pu + b2, z); };
+      const eA = P.extA ? solExt(P.x + P.dx * xa, P.y + P.dy * xa, -P.dx, -P.dy, P.nx, P.ny, P.extA, pproud) : 0, eB = P.extB ? solExt(P.x + P.dx * xb, P.y + P.dy * xb, P.dx, P.dy, P.nx, P.ny, P.extB, pproud) : 0;
       // entablature over the bay and its lip
       const entCol = style === 2 ? baseCol : mul(baseCol, 1.04);
       bx(1, xa - P.extA, xb + P.extB, sHi, Hh + 0.03, 0, pproud - 0.05, K.MAS, entCol, mas === 1 ? 2 : mas, 0, 0, seed);
       if (style !== 2) bx(1, xa - P.extA - 0.04, xb + P.extB + 0.04, Hh - 0.08, Hh + 0.05, 0, pproud + 0.10, K.MAS, mul(entCol, 1.05), 2, 0, 0, seed);
-      if (P.role === 'infill') { bx(1, xa - P.extA, xb + P.extB, 0, sHi, 0, pproud, K.MAS, baseCol, ...masP); bx(0, xa - P.extA - 0.03, xb + P.extB + 0.03, 0, 0.4, 0, pproud + 0.04, K.MAS, mul(baseCol, 0.85), mas === 1 ? 0 : mas, 0, 0, seed); continue; }
+      if (P.role === 'infill') { so(xa - eA, xb + eB, pproud); bx(1, xa - P.extA, xb + P.extB, 0, sHi, 0, pproud, K.MAS, baseCol, ...masP); bx(0, xa - P.extA - 0.03, xb + P.extB + 0.03, 0, 0.4, 0, pproud + 0.04, K.MAS, mul(baseCol, 0.85), mas === 1 ? 0 : mas, 0, 0, seed); continue; }
       const ppw = P.role === 'entry' ? 0.3 : pw;
       // piers with a plinth
       bx(1, xa - P.extA, xa + ppw, 0, sHi, 0, pproud, K.MAS, baseCol, ...masP); bx(1, xb - ppw, xb + P.extB, 0, sHi, 0, pproud, K.MAS, baseCol, ...masP);
       bx(0, xa - P.extA - 0.03, xa + ppw + 0.03, 0, 0.38, 0, pproud + 0.04, K.MAS, mul(baseCol, 0.85), mas === 1 ? 0 : mas, 0, 0, seed); bx(0, xb - ppw - 0.03, xb + P.extB + 0.03, 0, 0.38, 0, pproud + 0.04, K.MAS, mul(baseCol, 0.85), mas === 1 ? 0 : mas, 0, 0, seed);
       const W = Lp - 2 * ppw, x0 = -W / 2, x1 = W / 2;
+      so(xa - eA, xa + ppw, pproud); so(xb - ppw, xb + eB, pproud);
       const fc = r(1) < 0.4 ? bFrame : FRAMES[Math.floor(Math.pow(r(2), 1.5) * FRAMES.length)], F = (major, a, b2, c, d, e, g2) => bx(major, a, b2, c, d, e, g2, K.PLAIN, fc[0], fc[1], fc[2], 0.6, seed);
       const D = 5 + 4 * r(3), Hr = Math.min(Hh - 0.15, sLo + 0.45);
       let zF = 0.10, bk = 0.4, flagsAll = 0, clutter = TY.cl, tagCell = 0, lit = TY.lit * (0.8 + 0.4 * r(4));
@@ -257,6 +274,7 @@ export function layout(C, opts = {}) {
       const stepTile = [0.30 + 0.2 * r(6), 0.29 + 0.18 * r(6), 0.27 + 0.15 * r(6)];
 
       if (P.role === 'service' || P.role === 'dock') {
+        so(x0, x1, 0.16);
         bx(1, x0, x1, 0, sHi, 0, 0.10, K.MAS, mul(baseCol, 0.92), mas === 3 ? 3 : (r(5) < 0.5 ? 1 : mas), 0, 0, seed);
         if (P.role === 'dock') {
           const gw = Math.min(W - 0.5, 3.4), gt = Math.min(sLo - 0.05, 3.5);
@@ -273,6 +291,7 @@ export function layout(C, opts = {}) {
         continue;
       }
       if (P.role === 'entry') {
+        so(x0, x1, 0.12);
         bx(1, x0, x1, sLo, sHi, 0, 0.12, K.MAS, baseCol, ...masP);
         const st = r(11) < 0.6 ? 0.14 : 0.03, wood = r(12) < 0.5, dc = wood ? [0.075, 0.036, 0.018] : PAINT[Math.floor(r(13) * PAINT.length)], dl = -0.52, dr = 0.52;
         bx(0, x0, x1, 0, sLo, 0, 0.04, K.PLAIN, DARK, 0.8, 0, 0, seed); bx(0, x0 - 0.05, x1 + 0.05, 0, st, 0, 0.5, K.TILE, [0.33, 0.31, 0.28], 0.6, 0, 0, seed);
@@ -283,6 +302,7 @@ export function layout(C, opts = {}) {
         continue;
       }
       if (P.role === 'gate') {
+        so(x0, x1, 0.17);
         const gc = r(14) < 0.6 ? [0.17, 0.175, 0.18] : mul(PAINT[Math.floor(r(15) * PAINT.length)], 0.8);
         bx(1, x0, x1, 0, sLo - 0.28, 0.06, 0.13, K.GATE, gc, 0.075, 0, 0, seed); bx(1, x0, x1, sLo - 0.28, sLo, 0.04, 0.3, K.PLAIN, STEEL, 0.5, 0.6, 1, seed);
         F(0, x0, x0 + 0.07, 0, sLo - 0.28, 0.05, 0.17); F(0, x1 - 0.07, x1, 0, sLo - 0.28, 0.05, 0.17);
@@ -298,6 +318,8 @@ export function layout(C, opts = {}) {
         let dxc = isLobby || r(21) < 0.35 ? 0 : (r(22) < 0.5 ? -1 : 1) * (W / 2 - dw / 2 - (r(23) < 0.5 ? 0.02 : 0.9)); if (W < dw + 1.2) dxc = (r(22) < 0.5 ? -1 : 1) * (W - dw) / 2;
         dxc = Math.max(x0 + dw / 2, Math.min(x1 - dw / 2, dxc));
         const dl = dxc - dw / 2, dr = dxc + dw / 2, st = !modern && (style === 0 || style === 4) && r(24) < 0.4 ? 0.14 : 0.025;
+        if (rec) { so(x0, dl, dl - x0 > 0.12 ? zF + 0.085 : zd + 0.07); so(dl, dr, zd + 0.07); so(dr, x1, x1 - dr > 0.12 ? zF + 0.085 : zd + 0.07); } else so(x0, x1, zF + 0.085);     // the glass line; a set-back door stays a closed door at the back of its recess
+        if (isLobby) for (const s of [-1, 1]) so(s * (dw / 2 + 0.2) - 0.2, s * (dw / 2 + 0.2) + 0.2, pproud + 0.08);
         if (P.role === 'vacant') { flagsAll = r(25) < 0.6 ? 2 : 0; clutter = 0; tagCell = r(26) < 0.7 ? 131 : 0; }
         else if (!isLobby && r(27) < 0.6) tagCell = 200 + TY.g;
         const bkKind = r(28), bkCol = bkKind < 0.3 ? mul(fc[0], 1.0) : (bkKind < 0.55 ? [0.07 + 0.3 * r(29), 0.07 + 0.25 * r(29), 0.07 + 0.2 * r(29)] : (bkKind < 0.8 ? mul(baseCol, 0.9) : [0.5, 0.5, 0.48]));
@@ -368,8 +390,16 @@ export function layout(C, opts = {}) {
         }
       }
     }
+    // ---- the solid line of each wall segment: the outermost drawn face at every point along it, runs of one depth joined
+    for (const { P, iv } of solG.values()) {
+      const cut = []; for (let i = 0; i < iv.length; i += 3) cut.push(iv[i], iv[i + 1]); cut.sort((a, b2) => a - b2);
+      let ua = 0, za = -1; const out = (ub) => { if (za > 0 && ub - ua > 0.01) solid.push(P.ox + P.dx * ua + P.nx * za, P.oy + P.dy * ua + P.ny * za, P.ox + P.dx * ub + P.nx * za, P.oy + P.dy * ub + P.ny * za); };
+      for (let k = 0; k + 1 < cut.length; k++) { const a = cut[k], b2 = cut[k + 1]; if (b2 - a < 1e-4) continue; const m = (a + b2) / 2; let z = -1; for (let i = 0; i < iv.length; i += 3) if (iv[i] < m && iv[i + 1] > m && iv[i + 2] > z) z = iv[i + 2];
+        if (Math.abs(z - za) > 1e-3) { out(a); ua = a; za = z; } }
+      if (cut.length) out(cut[cut.length - 1]);
+    }
   });
-  return { tiles, frames, stats, shops };
+  return { tiles, frames, stats, shops, solid };
 }
 
 // ------------------------------------------------------------------------------------------------ meshes
@@ -431,7 +461,7 @@ function glassMaterial(shared, tex, tune) {
 export async function add(game, ctx) {
   const w = game.world, shared = w.shared, C = game.city;
   const hasDressing = !!(game.dressing && game.dressing.meshes && game.dressing.meshes.length);
-  const { tiles, frames, stats, shops } = layout(C, { noDressing: !hasDressing });
+  const { tiles, frames, stats, shops, solid } = layout(C, { noDressing: !hasDressing });
   const tex = { mask: makeMask(THREE), rooms: makeRooms(THREE), props: makeProps(THREE) };
   const tune = { value: new THREE.Vector4(0.15, 2.8, 0.55, 0.6) };
   const det = await detailArrays(ctx.A); const mSolid = solidMaterial(shared, tex.mask, false, det), mAwn = solidMaterial(shared, tex.mask, true, det), mGlass = glassMaterial(shared, tex, tune);
@@ -473,5 +503,22 @@ export async function add(game, ctx) {
     if (k.startsWith('awn_')) { hid.awnings += m.count; m.count = 0; }
     else if (k === 'pier') { const a = m.instanceMatrix.array; for (let i = 0; i < m.count; i++) if (Math.abs(a[i * 16 + 13] - SW) < 0.02) { for (let c = 0; c < 12; c++) a[i * 16 + c] = 0; hid.piers++; } m.instanceMatrix.needsUpdate = true; }
   }
-  return { group, meshes, tune, stats, shops, report: { instances: inst, ktris: Math.round(tris / 1000), bays: stats.bays, shops: stats.shops, kinds: stats.kinds, signs: stats.signs, hid } };
+  // collision: the drawn front line into game.statics (see the note at the top). One switch: ?sfsolid=0
+  const Q = new URLSearchParams(location.search), sol = { on: Q.get('sfsolid') !== '0', segs: 0, metres: 0, hero: 0, lane: 0 }, solidSegs = [];
+  if (sol.on && game.statics && game.statics.addSeg) {
+    let polys = [];                                     // hero.js takes this layer's instances off every hero footprint (2.2 m round it): no front drawn, no wall added
+    if (Q.get('hero') !== '0' && !(window.__CFG && window.__CFG.hero === false && Q.get('hero') !== '1')) { try { const r = await fetch(ctx.A.replace(/streets\/$/, 'hero/') + 'hero.json'); if (r.ok) polys = (await r.json()).filter((h) => !h.off && h.footprint && h.footprint.length > 2).map((h) => h.footprint); } catch (err) { /* no hero list: every front is solid */ } }
+    const onHero = (x, y) => polys.some((P) => { let c = false; for (let i = 0, j = P.length - 1; i < P.length; j = i++) { const a = P[i], b = P[j]; if ((a[1] > y) !== (b[1] > y) && x < (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]) c = !c;
+      const dx = b[0] - a[0], dy = b[1] - a[1], t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy || 1))); if (Math.hypot(x - a[0] - t * dx, y - a[1] - t * dy) < 2.2) return true; } return c; });
+    const inLane = (x, y) => !!(game.roads && game.roads.inLane && game.roads.inLane(x, y, 0.25));
+    for (let i = 0; i < solid.length; i += 4) {
+      const L = Math.hypot(solid[i + 2] - solid[i], solid[i + 3] - solid[i + 1]), n = Math.max(1, Math.ceil(L / 6));     // long runs in pieces of 6 m or less, each judged on its own
+      for (let k = 0; k < n; k++) { const ax = solid[i] + (solid[i + 2] - solid[i]) * k / n, ay = solid[i + 1] + (solid[i + 3] - solid[i + 1]) * k / n, bx2 = solid[i] + (solid[i + 2] - solid[i]) * (k + 1) / n, by2 = solid[i + 1] + (solid[i + 3] - solid[i + 1]) * (k + 1) / n;
+        if (onHero((ax + bx2) / 2, (ay + by2) / 2)) { sol.hero++; continue; }
+        if (inLane(ax, ay) || inLane(bx2, by2) || inLane((ax + bx2) / 2, (ay + by2) / 2)) { sol.lane++; continue; }
+        game.statics.addSeg(ax, ay, bx2, by2); solidSegs.push(ax, ay, bx2, by2); sol.segs++; sol.metres += L / n; }
+    }
+    sol.metres = Math.round(sol.metres);
+  }
+  return { group, meshes, tune, stats, shops, solidSegs, report: { instances: inst, ktris: Math.round(tris / 1000), bays: stats.bays, shops: stats.shops, kinds: stats.kinds, signs: stats.signs, hid, solid: Object.assign(sol, { cornersHeldBack: stats.solidCut }) } };
 }

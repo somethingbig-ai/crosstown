@@ -30,6 +30,26 @@ function atlas() {
   cell(15, () => { for (let k = 0; k < 30; k++) blob(128 + rs(30), rr(30, 226), rr(14, 34), rr(0.08, 0.2)); });
   const t = new THREE.CanvasTexture(c); t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.colorSpace = THREE.NoColorSpace; return t;
 }
+/* round 33: laminated glass crazed from edge to edge: a pale, half-clear sheet of fine cracks with a few punched holes */
+function crazeTex() {
+  const c = document.createElement('canvas'); c.width = c.height = 256; const x = c.getContext('2d'); if (!x) return null;
+  x.fillStyle = 'rgba(168,182,188,0.5)'; x.fillRect(0, 0, 256, 256);
+  x.strokeStyle = 'rgba(226,234,238,0.6)'; x.lineWidth = 0.8; for (let k = 0; k < 900; k++) { const X = rnd() * 256, Y = rnd() * 256, a = rnd() * 6.283, L = 4 + rnd() * 11; x.beginPath(); x.moveTo(X, Y); x.lineTo(X + Math.cos(a) * L, Y + Math.sin(a) * L); x.stroke(); }
+  x.strokeStyle = 'rgba(240,246,248,0.7)'; x.lineWidth = 1.1; for (let k = 0; k < 14; k++) { let X = rnd() * 256, Y = rnd() * 256, a = rnd() * 6.283; x.beginPath(); x.moveTo(X, Y); for (let s = 0; s < 9; s++) { a += rs(0.5); X += Math.cos(a) * 22; Y += Math.sin(a) * 22; x.lineTo(X, Y); } x.stroke(); }
+  for (let k = 0; k < 5; k++) { const X = 40 + rnd() * 176, Y = 40 + rnd() * 176, r = 5 + rnd() * 5; const g = x.createRadialGradient(X, Y, r, X, Y, r * 4); g.addColorStop(0, 'rgba(235,242,245,0.8)'); g.addColorStop(1, 'rgba(235,242,245,0)'); x.fillStyle = g; x.fillRect(X - r * 4, Y - r * 4, r * 8, r * 8); x.fillStyle = 'rgba(4,5,6,0.97)'; x.beginPath(); x.arc(X, Y, r, 0, 7); x.fill(); }
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+}
+/* a car window that is OUT: the dark inside of the car seen through the opening, a ragged rim of crazed glass left in the frame. Twice as wide as high; laid on the pane's own outline by Combat.paneGo */
+function paneTex() {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 128; const x = c.getContext('2d'); if (!x) return null;
+  const edge = (inset, jit) => { const P = [], n = 44; for (let k = 0; k < n; k++) { const u = k / n, per = u * 4, sd = Math.floor(per), f = per - sd, m = inset + rnd() * jit; let X, Y; if (sd === 0) { X = 10 + f * 236; Y = 8 + m; } else if (sd === 1) { X = 246 - m * 1.2; Y = 8 + f * 112; } else if (sd === 2) { X = 246 - f * 236; Y = 120 - m * 0.7; } else { X = 10 + m * 1.2; Y = 120 - f * 112; } P.push([X, Y]); } return P; };
+  const path = (P) => { x.beginPath(); P.forEach((q, i) => x[i ? 'lineTo' : 'moveTo'](q[0], q[1])); x.closePath(); };
+  x.fillStyle = 'rgba(176,190,194,0.5)'; x.beginPath(); x.roundRect ? x.roundRect(6, 5, 244, 118, 16) : x.rect(6, 5, 244, 118); x.fill();      // the crazed glass still in the frame
+  x.strokeStyle = 'rgba(232,240,242,0.55)'; x.lineWidth = 0.7; for (let k = 0; k < 150; k++) { const X = 6 + rnd() * 244, Y = 5 + rnd() * 118, a = rnd() * 6.283, L = 3 + rnd() * 7; x.beginPath(); x.moveTo(X, Y); x.lineTo(X + Math.cos(a) * L, Y + Math.sin(a) * L); x.stroke(); }
+  x.fillStyle = 'rgba(5,6,8,0.96)'; path(edge(5, 13)); x.fill();      // the opening
+  x.fillStyle = 'rgba(30,33,36,0.5)'; x.fillRect(40, 78, 176, 30);      // a hint of seat backs in the dark
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+}
 function decalTex(kind) {
   const S = 128, c = document.createElement('canvas'); c.width = c.height = S; const x = c.getContext('2d'); if (!x || !x.createRadialGradient) return null;
   const jag = (r0, r1, n) => { x.beginPath(); for (let k = 0; k < n; k++) { const a = (k / n) * 6.283, r = rr(r0, r1); x[k ? 'lineTo' : 'moveTo'](64 + Math.cos(a) * r, 64 + Math.sin(a) * r); } x.closePath(); };
@@ -105,7 +125,7 @@ export class Fx {
   }
 
   // ---- what a shot makes
-  follow(pos) { if (!this.mzAt || !this.ok) return; const dx = pos.x - this.mzAt.x, dy = pos.y - this.mzAt.y, dz = pos.z - this.mzAt.z; this.mzAt.copy(pos); if (!dx && !dy && !dz) return; if (dx * dx + dy * dy + dz * dz > 0.25) return; for (const p of this.p) if (p.on && p.mz) { p.x += dx; p.y += dy; p.z += dz; } if (this.lightT > 0) { this.light.position.x += dx; this.light.position.y += dy; this.light.position.z += dz; } }
+  follow(pos) { if (!this.mzAt || !this.ok) return; if (this.wisp > 0) { this.wisp--; if (this.wisp < 56 && this.wisp % 3 === 0) { const d = this.day, k = this.wisp / 56; this.spawn({ x: pos.x + rs(0.008), y: pos.y + 0.01, z: pos.z + rs(0.008), vx: rs(0.07) - 0.05, vy: rr(0.3, 0.55), vz: rs(0.07), life: rr(0.45, 0.8), s0: 0.018, s1: rr(0.07, 0.13), r: 0.23 * d, g: 0.23 * d, b: 0.227 * d, a: 0.3 * k + 0.05, frame: this.wisp % 4, drag: 1.2, fade: 0.8, rotv: rs(1), fin: 0.04 }); } } const dx = pos.x - this.mzAt.x, dy = pos.y - this.mzAt.y, dz = pos.z - this.mzAt.z; this.mzAt.copy(pos); if (!dx && !dy && !dz) return; if (dx * dx + dy * dy + dz * dz > 0.25) return; for (const p of this.p) if (p.on && p.mz) { p.x += dx; p.y += dy; p.z += dz; } if (this.lightT > 0) { this.light.position.x += dx; this.light.position.y += dy; this.light.position.z += dz; } }
   muzzle(pos, dir, kind, camPos) {
     const big = kind === 'shotgun' ? 1.55 : kind === 'rifle' ? 1.25 : kind === 'smg' ? 0.9 : 0.8, s = big * rr(0.85, 1.15);
     const C = [9.0, 5.2, 1.9]; (this.mzAt ||= pos.clone()).copy(pos);      /* the flash quads (mz) and the flash light ride with the muzzle: follow() */
@@ -119,7 +139,10 @@ export class Fx {
     for (let i = 0; i < (kind === 'shotgun' ? 7 : 3); i++) { const sp = rr(6, 22); this.spawn({ add: true, x: pos.x, y: pos.y, z: pos.z, vx: dir.x * sp + rs(3), vy: dir.y * sp + rs(3), vz: dir.z * sp + rs(3), life: rr(0.05, 0.14), s0: 0.012, r: 8, g: 4, b: 1.2, frame: 8, stretch: 0.012, drag: 6 }); }
     // powder smoke: a quick jet out of the muzzle, then a pale cloud that hangs and drifts for a couple of seconds
     /* powder smoke: thin grey veils that leave the muzzle along the barrel line, swell to half a metre and drift up for three or four seconds (small bright puffs read as 'white cotton balls hanging at the muzzle': round 11) */
-    const d = this.day; for (let i = 0; i < (kind === 'shotgun' ? 8 : kind === 'pistol' ? 5 : 2); i++) { const sp = rr(0.4, 3.2); this.spawn({ delay: i * 0.025, x: pos.x + dir.x * 0.1, y: pos.y + dir.y * 0.1, z: pos.z + dir.z * 0.1, vx: dir.x * sp + rs(0.35) + 0.12, vy: dir.y * sp + 0.28 + rs(0.25), vz: dir.z * sp + rs(0.35), life: rr(2.4, 4.2), s0: 0.1 * big, s1: rr(0.7, 1.25) * big, r: 0.2 * d, g: 0.2 * d, b: 0.215 * d, a: kind === 'pistol' || kind === 'shotgun' ? 0.12 : 0.06, frame: (i + this.cursor) % 4, drag: 3.4, rotv: rs(0.7), fin: 0.08 }); }
+    const d = this.day; if (kind === 'shotgun' && this.msm) {      /* the shotgun's wisps were half a metre wide, lived for seconds and drifted off the muzzle sideways: against a car they read as 'a soft grey blob pasted on the van side' (three blind critics). Now a cone of small puffs driven out along the barrel that stop between a hand's breadth and 0.9 m and are gone in under half a second, then a thread of smoke off the bore itself for a second (follow()). Off: ?gsw=0 */
+      for (let i = 0; i < 12; i++) { const u = (i + rnd()) / 12, sp = 0.5 + u * 6.2; this.spawn({ delay: i * 0.004, x: pos.x + dir.x * 0.04 + rs(0.012), y: pos.y + dir.y * 0.04 + rs(0.012), z: pos.z + dir.z * 0.04 + rs(0.012), vx: dir.x * sp + rs(0.2) * u, vy: dir.y * sp + rr(0.05, 0.3), vz: dir.z * sp + rs(0.2) * u, life: rr(0.22, 0.42), s0: 0.035, s1: (0.07 + 0.22 * u) * rr(0.85, 1.15), r: 0.225 * d, g: 0.223 * d, b: 0.22 * d, a: 0.34 - 0.2 * u, frame: (i + this.cursor) % 4, drag: 6.5, fade: 0.8, rotv: rs(1.2), fin: 0.012 }); }
+      this.wisp = 62;
+    } else for (let i = 0; i < (kind === 'shotgun' ? 8 : kind === 'pistol' ? 5 : 2); i++) { const sp = rr(0.4, 3.2); this.spawn({ delay: i * 0.025, x: pos.x + dir.x * 0.1, y: pos.y + dir.y * 0.1, z: pos.z + dir.z * 0.1, vx: dir.x * sp + rs(0.35) + 0.12, vy: dir.y * sp + 0.28 + rs(0.25), vz: dir.z * sp + rs(0.35), life: rr(2.4, 4.2), s0: 0.1 * big, s1: rr(0.7, 1.25) * big, r: 0.2 * d, g: 0.2 * d, b: 0.215 * d, a: kind === 'pistol' || kind === 'shotgun' ? 0.12 : 0.06, frame: (i + this.cursor) % 4, drag: 3.4, rotv: rs(0.7), fin: 0.08 }); }
     /* the flash's light: at the muzzle with a short reach, so it falls on the gun, the hands and the face and dies before the jacket or anyone down the street (a long-reach light gave yellow patches on the jacket and tinted the victim) */ this.light.position.set(pos.x + dir.x * 0.1, pos.y + dir.y * 0.1 + 0.04, pos.z + dir.z * 0.1); this.lightI = 3.0 * big * (this.lightK ?? 1); this.lightT = 0.09; this.light.distance = this.lightR || 2.4;
   }
   tracer(from, to, speed = 420) {
@@ -139,8 +162,8 @@ export class Fx {
       puff(4, c, 0.34, 0.5 * pw, 2.6, 1.0); puff(2, c, 0.5, 0.2 * pw, 5, 0.3); chips(material === 'wood' ? 5 : 7, material === 'asphalt' ? [0.2, 0.2, 0.2] : c, 5, 0.03);
       if (rnd() < 0.3) sparks(3, 7);
       this.spawn({ add: true, x, y, z, life: 0.03, s0: 0.14, r: 3, g: 2.2, b: 1.2, a: 0.6, frame: 7, fade: 0 });
-    } else if (material === 'metal') { sparks(7, 8); puff(2, [0.5, 0.5, 0.5], 0.2, 0.22, 2, 0.4); this.spawn({ add: true, x, y, z, life: 0.035, s0: 0.3, r: 8, g: 5.5, b: 2.4, a: 1, frame: 5, fade: 0 }); chips(2, [0.12, 0.12, 0.13], 4, 0.016); }
-    else if (material === 'glass') { for (let i = 0; i < 16; i++) this.spawn({ x, y, z, vx: n.x * rr(0.5, 4) + rs(2.4), vy: n.y * rr(0.5, 4) + rs(2.4) + 1, vz: n.z * rr(0.5, 4) + rs(2.4), life: rr(0.4, 0.8), s0: rr(0.006, 0.016), r: 0.8 * d, g: 0.9 * d, b: 0.95 * d, a: 0.7, frame: 11, grav: 9.8, rotv: rs(20), bounce: 0.25, fade: 0.2 }); puff(2, [0.9, 0.95, 1], 0.14, 0.25, 2, 0.35); sparks(2, 5); }
+    } else if (material === 'metal') { sparks(o.lite ? 3 : 7, 8); if (!o.lite) puff(2, [0.5, 0.5, 0.5], 0.2, 0.22, 2, 0.4); if (o.col) puff(1, o.col, 0.34, 0.15, 2.6, 0.3); this.spawn({ add: true, x, y, z, life: 0.035, s0: 0.3, r: 8, g: 5.5, b: 2.4, a: 1, frame: 5, fade: 0 }); chips(2, [0.12, 0.12, 0.13], 4, 0.016); }
+    else if (material === 'glass') { for (let i = 0; i < 16; i++) this.spawn({ x, y, z, vx: n.x * rr(0.5, 4) + rs(2.4), vy: n.y * rr(0.5, 4) + rs(2.4) + 1, vz: n.z * rr(0.5, 4) + rs(2.4), life: rr(0.4, 0.8), s0: rr(0.006, 0.016), r: 0.8 * d, g: 0.9 * d, b: 0.95 * d, a: 0.7, frame: 11, grav: 9.8, rotv: rs(20), bounce: 0.25, fade: 0.2 }); if (!o.lite) puff(2, [0.9, 0.95, 1], 0.14, 0.25, 2, 0.35); sparks(2, 5); }
     else if (material === 'tyre') { puff(4, [0.16, 0.16, 0.16], 0.4, 0.45, 3, 0.7); chips(4, [0.04, 0.04, 0.04], 4, 0.02); }
     else if (material === 'flesh') { this.blood(pos, n, pw); }
   }
@@ -151,14 +174,22 @@ export class Fx {
     for (let i = 0; i < 4; i++) this.spawn({ x: pos.x, y: pos.y, z: pos.z, vx: n.x * rr(1.5, 5) + rs(1.2), vy: n.y * rr(1.5, 5) + rs(1.2) + 0.6, vz: n.z * rr(1.5, 5) + rs(1.2), life: rr(0.18, 0.4), s0: rr(0.004, 0.008), r: 0.09 * d, g: 0.008 * d, b: 0.008 * d, a: 0.85, frame: 8, grav: 9.8, stretch: 0.03, fade: 0.5 });
   }
   // a hole in a surface. attach: null, or {matrix(out Matrix4)} whose matrix carries local -> world each frame (pos/normal are then local)
-  decal(kind, pos, n, size, attach = null) {
+  decal(kind, pos, n, size, attach = null, tag = null) {
     const D = this.decals[kind]; if (!D) return; const i = D.i; D.i = (D.i + 1) % D.cap;
     _q.setFromUnitVectors(Z, _v.copy(n).normalize()); _q2.setFromAxisAngle(Z, rnd() * 6.283); _q.multiply(_q2);
     const old = D.rec[i]; if (old && old.attach) { const k = this.riding.indexOf(old); if (k >= 0) this.riding.splice(k, 1); }
-    const rec = { D, i, attach, local: new THREE.Matrix4().compose(_v2.copy(pos).addScaledVector(n, 0.004), _q, (kind === 'glass' ? _s.set(size, size, size) : _s.set(size * (0.7 + rnd() * 0.7), size * (0.8 + rnd() * 0.45), size))) }      /* wall and metal holes are stretched unevenly, each its own shape (judged, rounds 14-15) */; D.rec[i] = rec;
+    const rec = { D, i, attach, tag, local: new THREE.Matrix4().compose(_v2.copy(pos).addScaledVector(n, 0.004), _q, (kind === 'glass' ? _s.set(size, size, size) : _s.set(size * (0.7 + rnd() * 0.7), size * (0.8 + rnd() * 0.45), size))) }      /* wall and metal holes are stretched unevenly, each its own shape (judged, rounds 14-15) */; D.rec[i] = rec;
     if (attach) this.riding.push(rec); else { D.im.setMatrixAt(i, rec.local); D.im.instanceMatrix.needsUpdate = true; }
   }
-  dropDecals(attach) { for (let k = this.riding.length - 1; k >= 0; k--) { const r = this.riding[k]; if (r.attach === attach) { _m.makeScale(0, 0, 0); r.D.im.setMatrixAt(r.i, _m); r.D.im.instanceMatrix.needsUpdate = true; r.D.rec[r.i] = null; this.riding.splice(k, 1); } } }
+  /* round 33: the cracks on a pane go when the pane goes */
+  untag(attach, tag) { for (let k = this.riding.length - 1; k >= 0; k--) { const r = this.riding[k]; if (r.attach === attach && r.tag === tag) { _m.makeScale(0, 0, 0); r.D.im.setMatrixAt(r.i, _m); r.D.im.instanceMatrix.needsUpdate = true; r.D.rec[r.i] = null; this.riding.splice(k, 1); } } }
+  /* round 33: a pane that is out (kind 'hole': the dark inside of the car in the pane's own outline) or crazed all over (kind 'craze': laminated glass). pos / uv: the pane's own triangles in the car's frame, a few millimetres proud of the glass; it rides on the car like the decals */
+  pane(pos, uv, kind, attach) {
+    if (!this.ok || !attach) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.computeVertexNormals();
+    const mat = kind === 'out' ? (this._pout ||= new THREE.MeshStandardMaterial({ color: 0x5c6266, map: paneTex(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, roughness: 0.6, metalness: 0, side: THREE.DoubleSide })) : kind === 'craze' ? (this._crz ||= new THREE.MeshStandardMaterial({ map: crazeTex(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, roughness: 0.7, metalness: 0, side: THREE.DoubleSide })) : (this._hol ||= new THREE.MeshBasicMaterial({ color: 0x020303, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, side: THREE.DoubleSide }));
+    const m = new THREE.Mesh(g, mat); m.matrixAutoUpdate = false; m.frustumCulled = false; m.renderOrder = 3; m.visible = false; this.scene.add(m); (this.panes ||= []).push({ m, attach });
+  }
+  dropDecals(attach) { if (this.panes) for (let k = this.panes.length - 1; k >= 0; k--) if (this.panes[k].attach === attach) { const m = this.panes[k].m; this.scene.remove(m); m.geometry.dispose(); this.panes.splice(k, 1); } for (let k = this.riding.length - 1; k >= 0; k--) { const r = this.riding[k]; if (r.attach === attach) { _m.makeScale(0, 0, 0); r.D.im.setMatrixAt(r.i, _m); r.D.im.instanceMatrix.needsUpdate = true; r.D.rec[r.i] = null; this.riding.splice(k, 1); } } }
   casing(kind, pos, vel) {
     let C = this.cas[kind]; if (C === undefined) { const g = this.casingOf(kind); if (!g) { this.cas[kind] = null; return; } let cm = g.material; try { cm = g.material.clone(); if (cm.color) cm.color.multiplyScalar(0.32); if (cm.roughness !== undefined) cm.roughness = Math.max(cm.roughness, 0.5); if (cm.emissiveIntensity !== undefined) cm.emissiveIntensity *= 0.3; } catch (e) { cm = g.material; }      /* brass, not yellow bars: the models' casing material is kept, ours is a darker copy */
     const im = new THREE.InstancedMesh(g.geometry, cm, 56); im.frustumCulled = false; im.castShadow = true; _m.makeScale(0, 0, 0); for (let i = 0; i < 56; i++) im.setMatrixAt(i, _m); this.group.add(im); C = this.cas[kind] = { im, i: 0, list: [] }; }
@@ -222,6 +253,7 @@ export class Fx {
       if (dirty) C.im.instanceMatrix.needsUpdate = true; }
     for (const L of this.loose) { if (L.rest) continue; L.age += dt; L.vy -= 9.8 * dt; const o = L.o; o.position.x += L.vx * dt; o.position.y += L.vy * dt; o.position.z += L.vz * dt; o.rotateOnWorldAxis(_v.set(L.wx, 0, L.wz).normalize(), L.w * dt);
       const gy = this.ground(o.position.x, o.position.z) + 0.012; if (o.position.y < gy) { o.position.y = gy; if (Math.abs(L.vy) < 1.2) { L.rest = true; o.rotation.set(Math.PI / 2, 0, rnd() * 6.283); if (this.onMag) this.onMag(L); } else { L.vy = -L.vy * 0.3; L.vx *= 0.5; L.vz *= 0.5; L.w *= 0.5; if (this.onMag) this.onMag(L); } } }
+    if (this.panes) for (const P of this.panes) { P.m.visible = !!P.attach.matrix(P.m.matrix); if (P.m.visible) P.m.matrixWorld.copy(P.m.matrix); }
     // decals that ride on cars
     if (this.riding.length) { const touched = new Set(); for (const r of this.riding) { if (!r.attach.matrix(_m)) { _m.makeScale(0, 0, 0); r.D.im.setMatrixAt(r.i, _m); } else { _m.multiply(r.local); r.D.im.setMatrixAt(r.i, _m); } touched.add(r.D); } for (const D of touched) D.im.instanceMatrix.needsUpdate = true; }
   }

@@ -21,6 +21,7 @@ import './feedback.js';     // first: its error, console and frame-time recorder
     bar.style.width = (building ? 99 : Math.max(2, pct)) + '%'; txt.textContent = building ? '99% · ' + mb(L.done) + ' MB in · building the city on your graphics card (' + Math.round(secs) + ' s)' : pct + '% · ' + mb(L.done) + ' of ' + mb(tot) + ' MB · loading ' + (L.now || 'the city') + (L.failed ? ' · ' + L.failed + ' failed' : ''); }, 150); }
 import * as THREE from 'three';
 import { World } from './world.js';
+import { memfree } from './memfree.js';     // audit lane, Nov 11: frees the page's copies of vertex arrays and texture data after upload (?memfree=0 off)
 
 const P = new URLSearchParams(location.search);
 // Big plain-data files are served gzip-packed (the link's uplink is ~2 MB/s): any fetch of these names reads <name>.gz and unpacks it in the page, falling back to the plain file.
@@ -48,7 +49,7 @@ canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); if (win
   d.style.cssText = 'position:fixed;inset:0;z-index:90;background:rgba(11,12,14,.93);color:#eee;font:15px/1.6 system-ui,sans-serif;display:flex;align-items:center;justify-content:center;text-align:center;padding:24px';
   d.innerHTML = '<div style="max-width:32em"><b>The graphics card stopped drawing.</b><br>The browser took the 3D picture away: usually the graphics driver reset or ran out of memory (the game needs about 1.5 GB of graphics memory).<br><br><a href="" style="color:#ffd27a">Reload the page</a> &nbsp; Closing other tabs and games first helps. Press <b>B</b> to tell us what happened: the report includes what we need to look into it.</div>'; document.body.appendChild(d); try { document.exitPointerLock(); } catch (err) {} });
 renderer.outputColorSpace = THREE.LinearSRGBColorSpace; renderer.toneMapping = THREE.NoToneMapping;
-renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+memfree.lean(renderer); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 await (await import('./ktx2hook.js')).installKTX2(renderer);     // lead, Nov 10: Basis/KTX2 textures (see ktx2hook.js)
 const world = new World(renderer);
 // lead, Nov 10: which build is this? Shown bottom-left for the first 25 s (publish.sh writes build.txt), so a stale tab can be told from a new one.
@@ -91,6 +92,6 @@ try {
       const go = () => { if (!window.__startScreen) return; window.__startScreen = false; if (window.__mark) window.__mark('play'); game.paused = false; for (const h of window.__hudEls || []) h.style.visibility = ''; boot.style.opacity = 0; setTimeout(() => boot.remove(), 500); try { game.sound.unlock(); } catch (e) {} try { const pr = canvas.requestPointerLock && canvas.requestPointerLock(); if (pr && pr.catch) pr.catch(() => {}); } catch (e) {} };
       pb.addEventListener('click', go); { const pv = setInterval(() => { if (!window.__startScreen) { clearInterval(pv); return; } try { for (const q of navigator.getGamepads ? navigator.getGamepads() : []) if (q && q.connected && q.buttons.some((b, i) => (i === 0 || i === 9) && b.pressed)) { go(); break; } } catch (e) {} }, 120); }     /* a controller's A or Start presses Play */ addEventListener('keydown', (e) => { if (window.__startScreen && (e.code === 'Enter' || e.code === 'Space')) { e.stopPropagation(); go(); } }, true); }
     if (P.has('capture')) { const { capture } = await import('./capture.js'); window.capture = (o) => capture(game, o); }
-    window.__ready = true; if (window.__mark) window.__mark('ready'); window.__readyAt = +(performance.now() / 1000).toFixed(1); game.start();
+    window.__ready = true; if (window.__mark) window.__mark('ready'); window.__readyAt = +(performance.now() / 1000).toFixed(1); game.start(); memfree.start(world);
   }
 } catch (e) { msg.textContent = 'error: ' + e.message; console.error(e); window.__error = String(e.stack || e); }

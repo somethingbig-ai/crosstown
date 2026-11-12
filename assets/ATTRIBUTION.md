@@ -12,6 +12,8 @@ Map data: (c) OpenStreetMap contributors, Open Database License (https://www.ope
 
 Building shapes: NYC 3D Model by Community District, NYC Department of City Planning (NYC Open Data).
 
+Street trees: positions and species from the NYC Parks 2015 Street Tree Census, NYC Open Data (https://data.cityofnewyork.us/Environment/2015-Street-Tree-Census-Tree-Data/uvpi-gqnh).
+
 Cars: OpenX Assets, https://github.com/vevalabs/openx-assets (MPL-2.0 and CC BY 4.0), modified for this game; per-model authors and copyright lines are in assets/streets/vehicles/ATTRIBUTION.md.
 
 Road photographs: "Soho Crosswalk" by Billie Grace Ward, CC BY 2.0 (https://creativecommons.org/licenses/by/2.0/), https://commons.wikimedia.org/wiki/File:Soho_Crosswalk_(23652301818).jpg , modified (cut out, re-lit, a shadow and a lane line painted out). Manhole covers: "Con Edison manhole cover" and "DPW Manhattan manhole cover" by Paul Lowry, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/), modified (the utility name smoothed away).

@@ -359,8 +359,13 @@ export class GunAudio {
         }
       }
     } catch (e) { /* no recordings: the synthesized guns play instead */ }
-    try { for (const k of allKeys()) { if (!this.bufs.has(k)) this._data(k); await new Promise((r) => setTimeout(r, 0)); } } catch (e) { /* anything missing is rendered on first use */ }
+    try { for (const k of allKeys().concat(this._more())) { if (!this.bufs.has(k)) this._data(k); await new Promise((r) => setTimeout(r, 0)); } } catch (e) { /* anything missing is rendered on first use */ }
   }
+  /* perf, Nov 12: a casing that lands on the road (asphalt) was rendered in the frame it landed, 2 to 4 ms each, five variants a gun: they are rendered at load with the rest */
+  _more() { const k = []; for (const g of this.kinds || KINDS) for (let v = 0; v < 5; v++) k.push(`casing:${g}:asphalt:${v}`); return k; }
+  /* perf, Nov 12: once sound is allowed (after Play): the bus (7 to 15 ms, it was built inside the first shot) and the AudioBuffers of the guns in hand, two per idle moment. True once started. */
+  prime() { if (this._primed) return true; if (!this._ok()) return false; this._primed = true; const has = this.kinds || KINDS, keys = allKeys().concat(this._more()).filter((k) => { const g = k.split(':')[1]; return !KINDS.includes(g) || has.includes(g); });
+    const idle = typeof requestIdleCallback === 'function' ? (f) => requestIdleCallback(f, { timeout: 1000 }) : (f) => setTimeout(f, 0), step = () => { let n = 0; while (keys.length && n < 2) { const k = keys.shift(); if (!this.bufs.has(k)) { try { this._buf(k); } catch (e) {} n++; } } if (keys.length) idle(step); }; idle(step); return true; }
   _data(key) { let d = this.data.get(key); if (!d) { d = bake(key, (k) => this.data.get(k) || bake(k)); this.data.set(key, d); } return d; }
   _buf(key) {
     let b = this.bufs.get(key);

@@ -9,6 +9,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+import { installCamera } from './camera.js';   /* camera lane's module (lanes/camera/handoff/camera.js), hooked as its own world.patch does */
 import { addHero } from './hero.js';
 import { makeFacadeMaterial, makeSignAtlas, NOISE_GLSL, BAKE_LIGHT_GLSL } from './facade.js';
 
@@ -47,8 +48,9 @@ export const LIGHT = {
   key: 0.215, hi: 0.70, aoR: 1.5, aoS: 3.2, aoT: 1.5,   /* contact shade: reach (m), strength, thickness */
   expMin: 0.45, expMax: 4.0,
   pk: 0.75, pkMin: 0.6, pkLo: 0.6, /* light L19 (a lower floor, pkLo .35, where over a fifth of the street half is sunlit) did NOT hold when re-judged on several frames (L21: 5 of 12): pkLo = pkMin leaves it switched off */               /* light L11: highlight guard. The brightest part of the street half of the frame (8th-power mean) may not land above pk after exposure, so sunlit paving keeps its joints; the guard closes down at most to pkMin of the metered exposure. 0 = off */
-  gnd: 1.0, sunK: 1.0, con: 0.55, /* light: trial knobs, all neutral at these numbers. gnd = how bright the city floor is to the image-based light; sunK scales the sun; con = film contrast (L11: .55, was .40) */
+  gnd: 1.0, sunK: 1.0, con: 0.55, sho: 0.35, knee: 0.36, /* light: trial knobs, all neutral at these numbers. gnd = how bright the city floor is to the image-based light; sunK scales the sun; con = film contrast (L11: .55, was .40) */
   wbR: 1.0, wbB: 1.01, skyGain: 1.35, shSearch: 0.8, bloomS: 0.10, bloomT: 2.5,
+  ltmH: 0.5, ltmS: 0.0, ltmLo: 1.5, ltmHi: 2.0, /* light L28: the camera lane's local tone step (camera.js uLtmH / uLtmS), switched in by the exposure: nothing below exposure ltmLo (open sunlit streets), full from ltmHi up (dark close views with a sunlit sidewalk in frame, where the meter has opened wide) */
 };
 const Q = new URLSearchParams(location.search);
 for (const k of Object.keys(LIGHT)) if (Q.has('L' + k)) LIGHT[k] = isNaN(+Q.get('L' + k)) ? Q.get('L' + k) : +Q.get('L' + k);
@@ -67,12 +69,12 @@ function installSunShadows() {
   const pcss = `
   float lightIgn(vec2 p){ return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
   vec2 lightVogel(int i, float n, float a){ float r = sqrt((float(i) + 0.5) / n), t = float(i) * 2.3999632 + a; return r * vec2(cos(t), sin(t)); }
-  float pcssShadow(sampler2D sm, vec4 sc){
+  float pcssShadow(sampler2D sm, vec4 sc, float turn){
     const float WORLD = ${f(2 * LIGHT.shadowR)}, RANGE = ${f(LIGHT.shadowFar - LIGHT.shadowNear)}, SUN = ${f(LIGHT.sunSize)}, SEARCH = ${f(LIGHT.shSearch)}, MINW = ${f(1.6 * 2 * LIGHT.shadowR / LIGHT.shadowMap)};
     vec3 ax = dFdx(sc.xyz), ay = dFdy(sc.xyz); float det = ax.x * ay.y - ax.y * ay.x;
     vec2 grad = abs(det) > 1e-14 ? vec2(ay.y * ax.z - ax.y * ay.z, ax.x * ay.z - ay.x * ax.z) / det : vec2(0.0);
     grad = clamp(grad, vec2(-2.5), vec2(2.5));
-    float a = lightIgn(gl_FragCoord.xy) * 6.2831853, zb = 0.0, nb = 0.0;
+    float a = (lightIgn(gl_FragCoord.xy) + turn) * 6.2831853, zb = 0.0, nb = 0.0;
     for (int i = 0; i < ${NB}; i++) { vec2 o = lightVogel(i, ${NB}.0, a) * (SEARCH / WORLD); float d = unpackRGBAToDepth(textureLod(sm, sc.xy + o, 0.0)); if (d < sc.z + dot(grad, o)) { zb += d; nb += 1.0; } }
     if (nb < 0.5) return 1.0;
     float pen = clamp((sc.z - zb / nb) * RANGE * SUN, MINW, SEARCH * 2.0), s = 0.0;
@@ -82,7 +84,7 @@ function installSunShadows() {
   float getShadow(`;
   let c = THREE.ShaderChunk.shadowmap_pars_fragment;
   if (!c.includes('float getShadow(') || !c.includes('#if defined( SHADOWMAP_TYPE_PCF )')) { console.warn('[game] sun shadows: three.js shader changed, soft-shadow patch not applied'); return; }
-  c = c.replace('float getShadow(', pcss).replace('#if defined( SHADOWMAP_TYPE_PCF )', '#if 1\n shadow = pcssShadow( shadowMap, shadowCoord );\n#elif defined( SHADOWMAP_TYPE_PCF )');
+  c = c.replace('float getShadow(', pcss).replace('#if defined( SHADOWMAP_TYPE_PCF )', '#if 1\n shadow = pcssShadow( shadowMap, shadowCoord, shadowRadius );\n#elif defined( SHADOWMAP_TYPE_PCF )');
   THREE.ShaderChunk.shadowmap_pars_fragment = c;
   // haze that thickens steadily with distance (plain exponential), not three's squared falloff that sits clear and then walls up
   THREE.ShaderChunk.fog_fragment = THREE.ShaderChunk.fog_fragment.replace('exp( - fogDensity * fogDensity * vFogDepth * vFogDepth )', 'exp( - fogDensity * vFogDepth )');
@@ -188,18 +190,19 @@ export class World {
     hdr.mapping = THREE.EquirectangularReflectionMapping; hdr.wrapS = THREE.RepeatWrapping; hdr.minFilter = THREE.LinearFilter; hdr.magFilter = THREE.LinearFilter; hdr.generateMipmaps = false; hdr.anisotropy = 4;
     const hdrSunAz = (LIGHT.skySunU - 0.5) * Math.PI * 2;       // where the sun is in the picture (measured, see pipeline notes)
     const want = Math.atan2(this.sunDir.z, this.sunDir.x);
+    this.skyU = { uGnd: { value: LIGHT.gnd }, uSkyGain: { value: LIGHT.skyGain } };   /* light L25: uniforms, so setLight() can change them in a running page */
     const mk = (forEnv) => new THREE.ShaderMaterial({
       side: THREE.BackSide, depthWrite: false, depthTest: !forEnv, fog: false,
-      uniforms: { tSky: { value: hdr }, uRot: { value: want - hdrSunAz }, uEnv: { value: forEnv ? 1 : 0 }, uGain: { value: 1.0 } },
+      uniforms: { tSky: { value: hdr }, uRot: { value: want - hdrSunAz }, uEnv: { value: forEnv ? 1 : 0 }, uGain: { value: 1.0 }, uGnd: this.skyU.uGnd, uSkyGain: this.skyU.uSkyGain },
       vertexShader: `varying vec3 vDir; void main(){ vDir = position; vec4 p = modelViewMatrix * vec4(position, 0.0); gl_Position = projectionMatrix * vec4(p.xyz, 1.0); gl_Position.z = gl_Position.w * 0.9999999; }`,
-      fragmentShader: `uniform sampler2D tSky; uniform float uRot; uniform float uEnv; uniform float uGain; varying vec3 vDir;
+      fragmentShader: `uniform sampler2D tSky; uniform float uRot; uniform float uEnv; uniform float uGain, uGnd, uSkyGain; varying vec3 vDir;
         void main(){ vec3 d = normalize(vDir); float a = atan(d.z, d.x) - uRot; vec2 uv = vec2(a / 6.2831853 + 0.5, asin(clamp(d.y, -1., 1.)) / 3.14159265 + 0.5);
           vec3 c = textureLod(tSky, vec2(fract(uv.x), clamp(uv.y, 0.001, 0.999)), 0.0).rgb;
           vec3 horizon = textureLod(tSky, vec2(fract(uv.x), 0.505), 0.0).rgb;
           // below the horizon: the city floor as the light sees it (dim, warm-grey), a soft blend up to the real sky
-          vec3 ground = vec3(0.075, 0.07, 0.065) * ${Number(LIGHT.gnd).toFixed(4)} * (uEnv > 0.5 ? 1.0 : 0.0) + (uEnv > 0.5 ? vec3(0.0) : horizon * 0.9);
+          vec3 ground = vec3(0.075, 0.07, 0.065) * uGnd * (uEnv > 0.5 ? 1.0 : 0.0) + (uEnv > 0.5 ? vec3(0.0) : horizon * 0.9);
           if (uEnv < 0.5) c = mix(c, vec3(0.62, 0.68, 0.80) * 1.05, 0.65 * exp(-max(d.y, 0.0) * 5.0));     // the air near the horizon, as the street haze has it
-          if (uEnv < 0.5) { float sl = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = mix(c, sl * vec3(0.80, 1.0, 1.16), 0.22) * ${Number(LIGHT.skyGain).toFixed(4)}; }   // as a phone renders it beside a sunlit street: lighter and a touch more cyan than the HDR's cobalt
+          if (uEnv < 0.5) { float sl = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = mix(c, sl * vec3(0.80, 1.0, 1.16), 0.22) * uSkyGain; }   // as a phone renders it beside a sunlit street: lighter and a touch more cyan than the HDR's cobalt
           c = mix(ground, c, smoothstep(-0.02, 0.03, d.y));
           c = min(c, vec3(uEnv > 0.5 ? 60.0 : 14.0));           // the sun disc itself is the DirectionalLight's job
           gl_FragColor = vec4(c * uGain, 1.0);
@@ -210,12 +213,26 @@ export class World {
     this.skyMesh.onBeforeRender = (r, s, cam) => { this.skyMesh.position.copy(cam.position); this.skyMesh.updateMatrixWorld(); };
     this.scene.add(this.skyMesh);
     const envScene = new THREE.Scene(); const em = new THREE.Mesh(geo, mk(true)); em.scale.setScalar(100); envScene.add(em);
-    const pm = new THREE.PMREMGenerator(this.renderer);
+    const pm = new THREE.PMREMGenerator(this.renderer); this.envScene = envScene;
     this.scene.environment = pm.fromScene(envScene, 0, 1, 1000).texture; this.scene.environmentIntensity = LIGHT.envI;
     pm.dispose();
     // aerial haze, tinted like the sky near the horizon
     this.scene.fog = new THREE.FogExp2(new THREE.Color(0.62, 0.68, 0.80), LIGHT.fog);
   }
+
+  // light L25: change LIGHT numbers in a running page (the frozen-street capture draws kept and trial states in one page load).
+  // world.setLight({ sunK: .6, key: .166 }); exposure snaps to the new metered value on the next frame. Not for: sky file, sun direction, shadow box, AO, bloom.
+  setLight(o) {
+    for (const k in o) if (k in LIGHT) LIGHT[k] = o[k];
+    const I = Math.max(...LIGHT.sunE) * LIGHT.sunK; this.sun.intensity = I; this.shared.uSunColor.value.copy(this.sun.color).multiplyScalar(I / Math.PI);
+    this.scene.environmentIntensity = LIGHT.envI; this.scene.fog.density = LIGHT.fog; this.skyU.uSkyGain.value = LIGHT.skyGain;
+    if (this.skyU.uGnd.value !== LIGHT.gnd) { this.skyU.uGnd.value = LIGHT.gnd; const pm = new THREE.PMREMGenerator(this.renderer), old = this.scene.environment; this.scene.environment = pm.fromScene(this.envScene, 0, 1, 1000).texture; pm.dispose(); if (old) old.dispose(); }
+    const f = this.film.uniforms; f.uCon.value = LIGHT.con; f.uKnee.value = LIGHT.knee; f.uShoulder.value = LIGHT.sho; f.uWB.value.set(LIGHT.wbR, 1.0, LIGHT.wbB);
+    const u = this.expMat.uniforms; u.uPk.value = LIGHT.pk; u.uPkMin.value = LIGHT.pkMin; u.uPkLo.value = LIGHT.pkLo; u.uFirst.value = 1; this.meterDone = false; return LIGHT;
+  }
+
+  // light L28: local tone strength follows the exposure (see LIGHT.ltmH)
+  setLtm() { const u = this.film.uniforms; if (!u.uLtmH) return; const e = Math.min(1, Math.max(0, (this.ltmEx - LIGHT.ltmLo) / Math.max(1e-3, LIGHT.ltmHi - LIGHT.ltmLo))), k = e * e * (3 - 2 * e); u.uLtmH.value = LIGHT.ltmH * k; u.uLtmS.value = LIGHT.ltmS * k; }
 
   setupLights() {
     const I = Math.max(...LIGHT.sunE) * LIGHT.sunK, sunCol = new THREE.Color(LIGHT.sunE[0] * LIGHT.sunK / I, LIGHT.sunE[1] * LIGHT.sunK / I, LIGHT.sunE[2] * LIGHT.sunK / I);
@@ -343,7 +360,7 @@ export class World {
     const film = new ShaderPass({
       uniforms: { tDiffuse: { value: null }, uExposure: { value: 0.80 }, tExp: { value: null }, uExpTex: { value: 0 }, uTime: { value: 0 }, uRes: { value: size.clone() },
         uGrain: { value: 0.11 }, uVig: { value: 0.12 }, uSoft: { value: 0.3 }, uSharp: { value: 0.32 }, uDist: { value: 0.014 }, uCA: { value: 0.0008 },
-        uSat: { value: 1.27 }, uCon: { value: LIGHT.con } /* light L11: was .40; shade goes properly dark */, uKnee: { value: 0.36 }, uBlack: { value: 0.008 }, uShoulder: { value: 0.35 }, uWB: { value: new THREE.Vector3(LIGHT.wbR, 1.0, LIGHT.wbB) } },
+        uSat: { value: 1.27 }, uCon: { value: LIGHT.con } /* light L11: was .40; shade goes properly dark */, uKnee: { value: LIGHT.knee }, uBlack: { value: 0.008 }, uShoulder: { value: LIGHT.sho }, uWB: { value: new THREE.Vector3(LIGHT.wbR, 1.0, LIGHT.wbB) } },
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
       fragmentShader: `uniform sampler2D tDiffuse; uniform sampler2D tExp; uniform float uExpTex; uniform float uExposure, uTime, uGrain, uVig, uSoft, uSharp, uDist, uCA, uSat, uCon, uKnee, uBlack, uShoulder; uniform vec3 uWB; uniform vec2 uRes; varying vec2 vUv;
         float h(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
@@ -404,6 +421,8 @@ export class World {
       vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }',
       fragmentShader: 'uniform sampler2D t; uniform sampler2D prev; uniform float uFirst, uKey, uMin, uMax, uEase, uHi, uPk, uPkMin, uPkLo; void main(){ float s = 0.0, w = 0.0, h = 0.0, ps = 0.0, pw = 0.0; for (int y = 0; y < 18; y++) for (int x = 0; x < 32; x++) { float k = (1.0 - 0.4 * length(vec2((float(x) - 15.5) / 16.0, (float(y) - 7.5) / 9.0))) * (y < 10 ? 1.0 : 0.35); vec2 LL = texelFetch(t, ivec2(x, y), 0).rg; float L = LL.r; s += L * k; h += exp(4.0 * L) * k; w += k; if (y < 10) { ps += exp(8.0 * LL.g) * k; pw += k; } } float want = uKey / exp(s / w); float hi = pow(h / w, 0.25) * want; want = clamp(want * clamp(pow(uHi / max(hi, 1e-4), 0.7), 0.88, 1.24), uMin, uMax); if (uPk > 0.0) { float pk = pow(ps / pw, 0.125), fr = 0.0; for (int y = 0; y < 10; y++) for (int x = 0; x < 32; x++) { float k = 1.0 - 0.4 * length(vec2((float(x) - 15.5) / 16.0, (float(y) - 7.5) / 9.0)); fr += step(uPk, exp(texelFetch(t, ivec2(x, y), 0).g) * want) * k; } want = max(min(want, uPk / max(pk, 1e-4)), want * mix(uPkMin, uPkLo, smoothstep(0.10, 0.20, fr / pw))); }   /* light L5: the bright part of the frame (4th-power mean) is steered toward uHi, so a frame full of sunlit paving closes down and a frame with no brights opens up */ float p = texelFetch(prev, ivec2(0), 0).r; gl_FragColor = vec4(uFirst > 0.5 ? want : p + (want - p) * uEase, 0.0, 0.0, 1.0); }' });
     this.expScene = new THREE.Scene(); this.expScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.expMat)); this.expI = 0; this.expGPU = !Q.has('capture') && !Q.has('shot') && Q.get('meter') !== 'cpu';
+    installCamera(this, Q, LIGHT);     // camera lane: temporal anti-aliasing and the camera grade (src/camera.js); ?cam=0 off
+    if (this.cam && this.cam.film) { const u = this.film.uniforms; u.uLtmT.value = 1.5; u.uLtmSky.value = 0.0; this.ltmBuf = new Float32Array(4); this.ltmEx = 1; }
   }
 
   updateStreet() {
@@ -441,7 +460,7 @@ export class World {
   }
 
   render(t, focus) {
-    this.shared.uTime.value = t; this.film.uniforms.uTime.value = t;
+    this.shared.uTime.value = t; this.film.uniforms.uTime.value = t + (this.grainOff || 0);   /* light L25: grainOff moves the grain alone while the street is frozen */
     // lead, Nov 10 (Matt: "lots of z fighting"): the near plane rides out with the camera's height. Depth steps grow with distance squared over the
     // near distance: at 0.25 m near, surfaces 1.5 km away had to be half a metre apart to sort cleanly, so from the air facade trim, glass, road
     // paint and the far city flickered. At street level it stays 0.25 m (hands, car interior); 100 m up it is 3 m: twelve times finer steps.
@@ -470,10 +489,12 @@ export class World {
       const meter = () => {
         let s = 0, w = 0, hs = 0, ps = 0, pw = 0; for (let y = 0; y < 18; y++) for (let x = 0; x < 32; x++) { const k = (1.0 - 0.4 * Math.hypot((x - 15.5) / 16, (y - 7.5) / 9)) * (y < 10 ? 1.0 : 0.35); /* rows count up from the bottom: the street weighs more than the sky */ const L = this.meterBuf[(y * 32 + x) * 4]; s += L * k; hs += Math.exp(4 * L) * k; w += k; if (y < 10) { ps += Math.exp(8 * this.meterBuf[(y * 32 + x) * 4 + 1]) * k; pw += k; } }
         const avg = Math.exp(s / w), w0 = LIGHT.key / avg, hi = Math.pow(hs / w, 0.25) * w0; let want = Math.min(LIGHT.expMax, Math.max(LIGHT.expMin, w0 * Math.min(1.24, Math.max(0.88, Math.pow(LIGHT.hi / Math.max(hi, 1e-4), 0.7))))); if (LIGHT.pk > 0) { let fr = 0; for (let y = 0; y < 10; y++) for (let x = 0; x < 32; x++) if (Math.exp(this.meterBuf[(y * 32 + x) * 4 + 1]) * want >= LIGHT.pk) fr += 1.0 - 0.4 * Math.hypot((x - 15.5) / 16, (y - 7.5) / 9); const e = Math.min(1, Math.max(0, (fr / pw - 0.10) / 0.10)); want = Math.max(Math.min(want, LIGHT.pk / Math.max(Math.pow(ps / pw, 0.125), 1e-4)), want * (LIGHT.pkMin + (LIGHT.pkLo - LIGHT.pkMin) * e * e * (3 - 2 * e))); } const first = !this.meterDone; this.meterDone = true;
-        this.lastAvg = avg; this.exposure = first ? want : this.exposure + (want - this.exposure) * 0.12; this.film.uniforms.uExposure.value = this.exposure;
+        this.lastAvg = avg; this.exposure = first ? want : this.exposure + (want - this.exposure) * 0.12; this.film.uniforms.uExposure.value = this.exposure; if (this.ltmBuf) { this.ltmEx = this.exposure; this.setLtm(); }
       };
       if (this.expGPU) { const dst = this.expRT[this.expI ^= 1], src = this.expRT[this.expI ^ 1], u = this.expMat.uniforms; u.t.value = this.meterRT.texture; u.prev.value = src.texture; u.uKey.value = LIGHT.key; u.uHi.value = LIGHT.hi; u.uMin.value = LIGHT.expMin; u.uMax.value = LIGHT.expMax;
-        r.setRenderTarget(dst); r.render(this.expScene, this.meterCam); r.setRenderTarget(old); u.uFirst.value = 0; this.film.uniforms.tExp.value = dst.texture; this.film.uniforms.uExpTex.value = 1; return; }
+        r.setRenderTarget(dst); r.render(this.expScene, this.meterCam); r.setRenderTarget(old); u.uFirst.value = 0; this.film.uniforms.tExp.value = dst.texture; this.film.uniforms.uExpTex.value = 1;
+        if (this.ltmBuf && !this.ltmBusy && r.readRenderTargetPixelsAsync) { this.ltmBusy = true; r.readRenderTargetPixelsAsync(dst, 0, 0, 1, 1, this.ltmBuf).then(() => { this.ltmEx = this.ltmBuf[0]; this.setLtm(); }).catch(() => {}).finally(() => { this.ltmBusy = false; }); }   /* light L28: one float back through a fence, no stall */
+        return; }
       if (this.meterN === 1 || Q.has('capture') || Q.has('shot') || !r.readRenderTargetPixelsAsync) { r.readRenderTargetPixels(this.meterRT, 0, 0, 32, 18, this.meterBuf); meter(); }
       else if (!this.meterBusy) { this.meterBusy = true; r.readRenderTargetPixelsAsync(this.meterRT, 0, 0, 32, 18, this.meterBuf).then(meter).catch(() => {}).finally(() => { this.meterBusy = false; }); }
     }

@@ -890,6 +890,7 @@ function mkMat(shared, U, o) {
         uniform sampler2D tField; uniform sampler2D tLines; uniform sampler2D tAng; uniform sampler2D tPack1; uniform sampler2D tPack2; uniform sampler2D tDecal; uniform sampler2D tMarks; uniform vec4 uField;
         uniform sampler2D tAsC; uniform sampler2D tAsN; uniform sampler2D tPaint; uniform vec4 uHN; uniform vec4 uHC; uniform vec4 uHD; uniform vec4 uHX; uniform vec2 uHR; uniform sampler2D tNoise; uniform sampler2D tMacro; uniform sampler2D tPhoto;
         vec3 bakeV; vec3 bakeN; float gRough; float gMetal; float gSpec; vec3 gNrm; float gNs;
+        #define GTONE 0.65      // f8: the level of all drawn asphalt against 0.148 (measured: the judging photographs' roads are sRGB 47-101, ours was 110-143)
         ${GLSL_COMMON}
         ${o.fsDecl || ''}`)
       .replace('#include <map_fragment>', `#include <map_fragment>
@@ -907,7 +908,7 @@ function mkMat(shared, U, o) {
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n metalnessFactor = clamp(gMetal, 0.0, 1.0);')
       .replace('#include <aomap_fragment>', BAKE_LIGHT_GLSL + '\n reflectedLight.directSpecular *= gSpec; reflectedLight.indirectSpecular *= gSpec;');
   };
-  m.customProgramCacheKey = () => 'stground75-' + o.name + (o.graze || '');
+  m.customProgramCacheKey = () => 'stground77-' + o.name + (o.graze || '');
   return m;
 }
 
@@ -1045,7 +1046,7 @@ const FS_ROAD = /* glsl */`
   // the hero corridor (23rd St through the 5th Ave and Broadway crossings): its history is laid as geometry (buildHistory), not by these rules
   vec2 hp = m - uHC.xy, hd = uHC.zw - uHC.xy; float hero = 1.0 - smoothstep(uHR.x, uHR.y, length(hp - hd * clamp(dot(hp, hd) / dot(hd, hd), 0.0, 1.0)));
   float calm = 1.0 - smoothstep(uHR.x + 75.0, uHR.y + 85.0, length(hp - hd * clamp(dot(hp, hd) / dot(hd, hd), 0.0, 1.0)));      // the blocks around the hero corridor: no rule-drawn cuts, seams or tar lines (critics call every one of them drawn)
-  float tone = 0.148 * (0.98 + 0.04 * big);
+  float tone = 0.148 * GTONE * (0.98 + 0.04 * big);
   float tar = 0.0, rgh = 0.89, oil = 0.0, pad = 0.0, polish = 0.0;
   #ifndef RIBBON
     // junction boxes and open roadway: paving passes of different ages, lane-wide strips with staggered ends
@@ -1289,7 +1290,7 @@ const FS_PATCH = /* glsl */`
   float lip = dot(om, normalize(vec2(uSunDir.x, -uSunDir.z) + 1e-6)) * (fract(vR.z * 57.0) < 0.7 ? 1.0 : -1.0) * (1.0 - smoothstep(0.0, 0.028, -sd)) * nearK * step(kind, 2.5);
   if (kind < 0.5) {            // newer asphalt in a trench or keyhole: darker, finer, tighter, the roller's passes along it
     float pass = gN0(vec2(vQ.x * 0.21, vQ.y * 2.4) + vR.z * 31.0).g;
-    col = vec3(0.148 * mix(1.0, vR.y, 0.62)) * vec3(1.03, 1.0, 0.96) * mix(vec3(1.0), mix(vec3(asL), asC, 0.5), 0.45) * (0.84 + 0.34 * pass) * (0.88 + 0.26 * nW.a);
+    col = vec3(0.148 * GTONE * mix(1.0, vR.y, 0.62)) * vec3(1.03, 1.0, 0.96) * mix(vec3(1.0), mix(vec3(asL), asC, 0.5), 0.45) * (0.84 + 0.34 * pass) * (0.88 + 0.26 * nW.a);
     col *= (1.0 + 0.16 * ln.x) * (1.0 - 0.30 * ln.y * (0.3 + 0.7 * nW.g)) * clamp(1.0 + (mac - 1.0) * 0.36, 0.6, 1.5);
     rgh = 0.70; ns = 0.6; spec = 0.8;
     float seal = max(edge, step(0.0, sd)) * sealOn;       // hot-poured sealant along the saw cut, most of the way round, lapping onto the old road
@@ -1308,7 +1309,7 @@ const FS_PATCH = /* glsl */`
     col *= 1.0 - 0.6 * (1.0 - smoothstep(0.0, 0.03, -sd));
     rgh = 0.93 - 0.3 * drip; ns = 0.35; spec = 0.35 + 0.4 * drip;
   } else if (kind < 2.5) {     // an old, oxidised patch: pale, open, stony, cracked
-    col = vec3(0.148 * mix(1.0, vR.y, 0.62)) * vec3(1.05, 1.0, 0.93) * mix(vec3(asL), asC, 0.6) * (0.72 + 0.5 * asL) * (0.90 + 0.22 * nW.a);
+    col = vec3(0.148 * GTONE * mix(1.0, vR.y, 0.62)) * vec3(1.05, 1.0, 0.93) * mix(vec3(asL), asC, 0.6) * (0.72 + 0.5 * asL) * (0.90 + 0.22 * nW.a);
     col *= (1.0 + 0.14 * ln.x) * (1.0 - 0.30 * ln.y * (0.3 + 0.7 * nW.g)) * clamp(1.0 + (mac - 1.0) * 0.45, 0.5, 1.6);
     float ck = gN0(grot(m, rotA) * vec2(0.5, 1.7) + vR.z * 3.0).a;
     col *= 1.0 - 0.55 * (1.0 - smoothstep(0.002, 0.006 + 0.3 * px, abs(ck - 0.47))) * (1.0 - smoothstep(0.02, 0.05, px));
@@ -1355,17 +1356,36 @@ const FS_PHOTO = /* glsl */`
   float pnt = smoothstep(uPN.a * 0.85, uPN.a * 1.15, pl);
   vec3 col = pow(ph.rgb / uPN.rgb, vec3(uPM.z)) * uPL.x * mix(vec3(1.03, 1.0, 0.96), vec3(1.0), pnt);      // a little more contrast than the photo's own (the film pass lifts blacks); paint stays white, not cream
   col *= mix(1.0, uPM.w * 0.86, pnt);      // paint: off-white, never clipped, the road's stone telling through it close up
+  if (uPR.x > 0.5) {      // f11: the bars are a photograph of worn bars (paint pixels only, hard mask; items/road/paintatlas.py) over this photo's asphalt, whose own bars were filled from the gaps beside them
+    vec2 quv = (vec2(g.x, zr) - uPQ.xy) * uPQ.zw;
+    if (quv.x > 0.0 && quv.x < 1.0 && quv.y > 0.0 && quv.y < 1.0) {
+      vec4 pt = textureGrad(tPt, quv, dFdx(quv) * uPR.z, dFdy(quv) * uPR.z); float pm = pt.a;
+      col = mix(col, vec3(uPR.y) * pow(pt.r, 2.2) * 1.25 * vec3(1.0, 0.985, 0.95), pm); pnt = max(pnt, pm);
+    }
+  }
   vec2 tx = puv * uPL.zw; float mag = 1.0 - clamp(min(length(dFdx(tx)), length(dFdy(tx))) * 1.4, 0.0, 1.0);      // 1 where the photo has fewer pixels than the screen (seen from the side, a photo taken along the street is thin in one direction)
   col *= mix(1.0, clamp(asL, 0.5, 1.5), clamp(uPL.y * (0.35 + 1.5 * mag), 0.0, 0.9) * (1.0 - pnt) * (1.0 - smoothstep(0.006, 0.03, px)));       // the stone a phone camera smears away, from our close scan, on asphalt only
   if (uPT.x + uPT.y + uPT.z > 0.0) {      // fresh loop f2-f4 (Nov 12): what a sunlit, noise-reduced photograph lost, put back from scans: stone-level aggregate at its real size, paint worn off the stone tops, the slow stains of a used road
     vec3 sC = textureGrad(tAsC, m / 2.2, mdx / 2.2 * 0.5, mdy / 2.2 * 0.5).rgb / vec3(0.166, 0.152, 0.135); float sL = dot(sC, vec3(0.333));
     float sk = 1.0 - uPT.w * smoothstep(0.012, 0.06, px);
-    vec2 muv = m / 15.0 + 0.37; float mac = pow(textureGrad(tMacro, muv, mdx / 15.0, mdy / 15.0).r, 2.2) / 0.1407;
-    col *= mix(1.0, mix(clamp(mac, 0.55, 1.5), min(1.0, 0.5 + 0.5 * mac + 0.5 * min(mac, 0.8) - 0.4), pnt), uPT.z);      // on paint only the scan's dark features tell, never a lighter patch
+    vec2 muv = m / 15.0 + 0.37; float macT;
+    if (uPA.x > 0.5) {      // f8 (Nov 12): the stone's contrast falls as 1 / distance once a pixel is wider than uPA.w of road (a camera averages what it cannot resolve); the 15 m aerial scan WITHOUT its grain (asph_hist.jpg: stains, tyre arcs, a paving joint, sharp cracks) laid in the photo's own frame at uPB.xy
+      sk = clamp(uPA.w / px, 0.0, 1.0);
+      muv = vec2(g.x, zr) / 15.0 + uPB.xy; macT = textureGrad(tHist, muv, dFdx(muv), dFdy(muv)).r;
+    } else macT = textureGrad(tMacro, muv, mdx / 15.0, mdy / 15.0).r;
+    float mac = pow(macT, 2.2) / 0.1407;
+    col *= mix(1.0, mix(clamp(mac, uPA.x > 0.5 ? 0.2 : 0.55, 1.5), min(1.0, 0.5 + 0.5 * mac + 0.5 * min(mac, 0.8) - 0.4), pnt), uPT.z);      // on paint only the scan's dark features tell, never a lighter patch
+    if (uPA.z > 0.0) {      // where the tyres run the road is darker, and a line of drips down the middle of each lane; uPB.zw = lane centres in the photo's Z
+      float wt = 0.0, wo = 0.0;
+      for (int i = 0; i < 2; i++) { float c = i == 0 ? uPB.z : uPB.w; if (c > 0.0) { float d = abs(zr - c); wt += exp(-gsq((d - 0.85) / 0.38)); wo += exp(-gsq(d / 0.22)); } }
+      float wv = 0.55 + 0.9 * gN(vec2(g.x * 0.13, zr * 0.5) + 17.0).r;
+      col *= 1.0 - uPA.z * (0.20 * wt * wv * mix(1.0, 1.6, pnt) + 0.16 * wo * smoothstep(0.35, 0.6, gN(vec2(g.x * 0.6, zr * 2.0) + 5.0).g) * (1.0 - 0.5 * pnt));
+    }
     float fl = smoothstep(0.0, 0.22, sL * 0.55 + nF.r * 0.5 + (nW.g - 0.47) * 2.2 * uPT.y - 0.88) * pnt * step(0.001, uPT.y) * sk;
     col = mix(col, uPL.x * sC * 0.9, fl * 0.85);
     col *= mix(1.0, clamp(sL, 0.35, 1.9), uPT.x * sk * mix(1.0, 0.4, pnt * (1.0 - fl)));
   }
+  col *= mix(uPA.y, 1.0, pnt);      // f8: the road's level against the photo's (the judging photographs' asphalt is far darker than a sunlit phone picture's)
   diffuseColor = vec4(col, a);
   gRough = clamp(mix(mix(0.9, 0.8, pnt), mix(0.56, 0.40, pnt), uPS.x) * (0.72 + 0.4 * asN.b / 0.66), 0.25, 1.0); gSpec = mix(0.5, 1.0, uPS.x);      // sheen: worn stone and thermoplastic glare toward the sun (the light's direction reads on the road)
   gNrm = vec3(asN.xy * 2.0 - 1.0, 0.0); gNrm.z = sqrt(max(0.0, 1.0 - dot(gNrm.xy, gNrm.xy)));
@@ -1490,8 +1510,6 @@ const FS_GRASS = /* glsl */`
 
 // ------------------------------------------------------------------ the part
 export async function add(game, ctx) {
-  if (!ctx.gNext && game.P && game.P.get('gnext')) { ctx.gNext = 1; return (await import('./ground_next.js')).add(game, ctx); }     // ?gnext=1: the version under test (drawn cleanly once before it becomes this file)
-  if (!ctx.gNext && game.P && game.P.get('gexp')) { ctx.gNext = 1; return (await import('./ground_exp.js')).add(game, ctx); }     // ?gexp=1: an experiment not yet judged (never the default; reads photo/photos_exp.json)
   const world = game.world, city = game.city || ctx.city, shared = world.shared, renderer = world.renderer;
   const group = new THREE.Group(); group.name = 'streets_ground';
   const L = new THREE.TextureLoader();
@@ -1507,6 +1525,7 @@ export async function add(game, ctx) {
   const [tPack1, tPack2, tDecal, tAsC, tAsN, tPaint, tPhoto, tMacro] = await Promise.all([load('pack1.jpg', false, true), load('pack2.jpg', false, true), load('decals.webp', true, false), load('asph_col.jpg', true, true), load('asph_nrm.jpg', false, true), load('paint.webp', true, true), Promise.resolve(null), lum('asph_macro4k.jpg')]);
   const photos = await fetch(ctx.A + 'ground/photo/photos.json').then((r) => (r.ok ? r.json() : [])).catch(() => []);
   const tPh = await Promise.all(photos.map((p) => load(p.file, true, false)));
+  const tPtBy = {}; for (const p of photos) if (p.paintAtlas && !tPtBy[p.paintAtlas.file]) { const t = await load(p.paintAtlas.file, false, false); t.anisotropy = renderer.capabilities.getMaxAnisotropy(); tPtBy[p.paintAtlas.file] = t; }      // f11: paint-only atlas (rgb = tone through the sRGB curve, read as data; alpha = paint)
   const maxAniso = renderer.capabilities.getMaxAnisotropy(); for (const t of [tAsC, tAsN, tPaint, tMacro, ...tPh]) t.anisotropy = maxAniso;
 
 
@@ -1542,15 +1561,16 @@ export async function add(game, ctx) {
   const marks = buildMarks(C); addAll(marks, mats.marks, (m) => { m.renderOrder = 2; });
   addAll(hist.under, mats.patch, (m) => { m.renderOrder = -1.5; }); addAll(hist.over, mats.patchOver, (m) => { m.renderOrder = -1.4; }); addAll(hist.plates, mats.plate, (m) => { m.renderOrder = -1.3; });
   // photographed road: one quad per photo over the ground it shows, drawn over the markings (it brings its own), blended at its feathered outline
+  const tHist = photos.some((p) => p.asph2) ? await lum('asph_hist.webp').then((t) => { t.anisotropy = maxAniso; return t; }) : tMacro;      // f8: the aerial scan without its grain (items/road/prep_hist.py)
   photos.forEach((p, i) => {
     const acc = new Acc({ position: 3, aQ: 4 }), d = p.world.dir, dl = Math.hypot(d[0], d[1]), dx = d[0] / dl, dy = d[1] / dl, rx = dy, ry = -dx;
     const mz = p.mirror ? p.mirror.z : -1e3, z0 = p.mirror ? p.mirror.to : p.box[2], Y = 0.016 + (p.lift || 0);
     const c = [[p.box[0], z0], [p.box[1], z0], [p.box[1], p.box[3]], [p.box[0], p.box[3]]].map(([X, Z]) => ({ p: [p.world.x + dx * Z + rx * X, Y, -(p.world.y + dy * Z + ry * X)], X, Z }));
     const a = acc.get(p.world.x, p.world.y);
     for (const tri of [[c[0], c[1], c[2]], [c[0], c[2], c[3]]]) for (const v of triTo(tri, [0, 1, 0])) { a.position.push(...v.p); a.aQ.push(v.X, v.Z, 0, 0); }
-    const v = vary(['vec4 aQ'], 'vQ = aQ;'); v.fsDecl += ' uniform sampler2D tPh; uniform mat3 uPH; uniform vec4 uPN; uniform vec4 uPL; uniform vec4 uPM; uniform vec2 uPS; uniform vec4 uPT;';
+    const v = vary(['vec4 aQ'], 'vQ = aQ;'); v.fsDecl += ' uniform sampler2D tPh; uniform mat3 uPH; uniform vec4 uPN; uniform vec4 uPL; uniform vec4 uPM; uniform vec2 uPS; uniform vec4 uPT; uniform vec4 uPA; uniform vec4 uPB; uniform sampler2D tHist; uniform sampler2D tPt; uniform vec4 uPQ; uniform vec4 uPR;';
     const H = new THREE.Matrix3(); H.set(...p.H);
-    const mat = mkMat(shared, { ...U, tPh: { value: tPh[i] }, uPH: { value: H }, uPN: { value: new THREE.Vector4(p.norm[0], p.norm[1], p.norm[2], p.paintAt || 1.9) }, uPL: { value: new THREE.Vector4(p.level, p.grain, p.size[0], p.size[1]) }, uPM: { value: new THREE.Vector4(mz, z0, p.contrast || 1.0, p.paintGain || 1.0) }, uPS: { value: new THREE.Vector2(p.sheen || 0, 0) }, uPT: { value: new THREE.Vector4(p.stone || 0, p.flake || 0, p.macro || 0, p.stoneFade === undefined ? 1 : p.stoneFade) } },
+    const mat = mkMat(shared, { ...U, tPh: { value: tPh[i] }, uPH: { value: H }, uPN: { value: new THREE.Vector4(p.norm[0], p.norm[1], p.norm[2], p.paintAt || 1.9) }, uPL: { value: new THREE.Vector4(p.level, p.grain, p.size[0], p.size[1]) }, uPM: { value: new THREE.Vector4(mz, z0, p.contrast || 1.0, p.paintGain || 1.0) }, uPS: { value: new THREE.Vector2(p.sheen || 0, 0) }, tHist: { value: tHist }, tPt: { value: p.paintAtlas ? tPtBy[p.paintAtlas.file] : tHist }, uPQ: { value: p.paintAtlas ? new THREE.Vector4(p.paintAtlas.box[0], p.paintAtlas.box[2], 1 / (p.paintAtlas.box[1] - p.paintAtlas.box[0]), 1 / (p.paintAtlas.box[3] - p.paintAtlas.box[2])) : new THREE.Vector4(0, 0, 1, 1) }, uPR: { value: new THREE.Vector4(p.paintAtlas ? 1 : 0, (p.paintAtlas || {}).albedo || 0.5, (p.paintAtlas || {}).mip || 0.75, 0) }, uPA: { value: new THREE.Vector4(p.asph2 || 0, p.asphLevel || 1, p.wheel || 0, p.stoneAt || 0.004) }, uPB: { value: new THREE.Vector4((p.macroAt || [0.2, 0])[0], (p.macroAt || [0.2, 0])[1], (p.laneZ || [0, 0])[0], (p.laneZ || [0, 0])[1]) }, uPT: { value: new THREE.Vector4(p.stone || 0, p.flake || 0, p.macro || 0, p.stoneFade === undefined ? 1 : p.stoneFade) } },
       { name: 'photo', ...v, fsMain: FS_PHOTO, graze: 0.55, setup: (m) => { m.transparent = true; m.depthWrite = false; m.polygonOffset = true; m.polygonOffsetFactor = -3; m.polygonOffsetUnits = -6; } });
     addAll(acc, mat, (m) => { m.renderOrder = 2.5 + i * 0.01; });      // in the order listed: a photo cut in two (for pixels enough) overlaps itself seamlessly
   });

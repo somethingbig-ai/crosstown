@@ -36,6 +36,7 @@ const _o = {}, _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new TH
 const F = new THREE.Vector3(), R = new THREE.Vector3(), U = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0);
 let seed = 99991; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }, rs = (a = 1) => (rnd() * 2 - 1) * a;
 const sm = (u) => { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); };
+const idle = typeof requestIdleCallback === 'function' ? (f, ms = 800) => requestIdleCallback(f, { timeout: ms }) : (f) => setTimeout(f, 0);      /* perf, Nov 12: work that can wait for a quiet moment */
 
 // a stand-in weapon if combat/models.js is missing or throws: the same contract, plain boxes
 function plainWeapon(kind) {
@@ -76,6 +77,7 @@ class Combat {
     this.fx = new Fx(w.scene, { ground, casing: (k) => { try { return this.casing(k); } catch (e) { return null; } }, day: 1.0, light: g.P.get('glight') !== '0' }); this.SW = g.P.get('gsw') !== '0'; this.fx.msm = this.SW;      /* ?gsw=0: the shotgun's longer pump stroke, smoke cone, ragged glass rim, varied holes, paint dust and the alarm lamps all off */
     this.fx.onCasing = (k, c) => this.snd('casing', k, g.statics.onSidewalk(c.x, -c.z) ? 'concrete' : 'asphalt');
     this.guns = {}; for (const k in WEAPONS) { let o; try { o = this.build(k); } catch (e) { console.log('[guns] ' + k + ' model failed: ' + e.message); o = plainWeapon(k); } o.visible = false; if (k === 'pistol') o.scale.multiplyScalar(+(g.P.get('gps') || 1.3)); o.traverse((m) => { if (m.isMesh) { m.castShadow = true; m.frustumCulled = false; } });      /* the pistol is drawn over life size, as shooters draw them (?gps=1 = as modelled). The models' material is NOT copied here: it is one material whose finishes live in onBeforeCompile and vertex colours, and a clone() drops that shader (the shotgun's wood went white: out/tc-shot.jpg) */ w.scene.add(o); this.guns[k] = o; const mv = o.userData.moving || {}; for (const n in mv) if (mv[n] && mv[n].node) mv[n].home = mv[n].node.position.clone(); }
+    try { if (this.fx.warm) this.fx.warm(ORDER.filter((k) => WEAPONS[k])); } catch (e) {}      /* perf, Nov 12: the casings of the player's guns are made at load, not in the first shot's frame */
     { const fg = g.P.get('gfig'); if (fg && fg !== 'player' && g.kit && g.kit.person) { try { const p = g.kit.person(fg), old = g.player.vis; if (p && old && old.object) { w.scene.remove(old.object); p.object.position.copy(old.object.position); p.object.rotation.copy(old.object.rotation); g.player.vis = p; w.scene.add(p.object); } } catch (e) { console.log('[guns] gfig: ' + (e && e.message)); } } }      /* ?gfig=ped_a..ped_d: another kit figure as the player (for filming) */
     if (g.P.has('gli')) this.fx.lightK = +g.P.get('gli'); if (g.P.has('glr')) this.fx.lightR = +g.P.get('glr');
     const vis = g.player.vis; this.rig = vis && vis.mixer ? new AimRig(vis, vis.name || 'player') : null; if (this.rig && !this.rig.ok) this.rig = null; if (this.rig && g.P.has('gcl')) this.rig.curlL = +g.P.get('gcl');
@@ -86,6 +88,7 @@ class Combat {
     if (g.P.get('scare') !== '0') { try { (await import('./scare.js')).install(g, this); } catch (e) { console.log('[guns] scare.js not loaded: ' + (e && e.message)); } }      /* the people helper's bystander reactions (wraps scare, frighten, stepPeople, kill on this instance); ?scare=0 = the plain jog */
     this.hook(); this.bind();
     const sc = g.P.get('script'); if (sc) this.script = new Script(g, this, sc);
+    this._cmLazy = !g.capture && !sc && g.P.get('gcmlazy') !== '0';
     if (g.P.has('gun')) this.equip(g.P.get('gun'), true); else if (!g.demo && !sc) this.equip('pistol', true);      /* given at spawn: the pistol in the hand, the rifle on key 2 (not in the demo film) */
     if (g.P.has('at')) this.stage(...g.P.get('at').split(',').map(Number));
     console.log('[guns] ready: rig ' + (this.rig ? 'ik' : 'none') + ', models ' + (this.build === plainWeapon ? 'plain' : 'kit') + ', audio ' + (this.audio ? 'yes' : 'no') + (sc ? ', script ' + sc : ''));
@@ -222,6 +225,7 @@ class Combat {
     this.hitT = Math.max(0, this.hitT - dt); this.killT = Math.max(0, this.killT - dt); this.headT = Math.max(0, this.headT - dt);
     for (let i = this.events.length - 1; i >= 0; i--) { const e = this.events[i]; e.t -= dt; if (e.t <= 0) { this.events.splice(i, 1); e.fn(); } }
     this.stepCars(dt); this.stepPeople(dt);
+    if ((this.bgT = (this.bgT || 0) - dt) <= 0) { this.bgT = 0.5; try { this.background(); } catch (e) {} }
   }
 
   /* QA: one shot now, whatever the script is doing (tools/tunesheet.mjs) */
@@ -401,17 +405,23 @@ class Combat {
   /* round 33: the car's REAL surface instead of two boxes. The kit's own body triangles in the car's frame (x forward, y up, z = -left; the cabin trim inside is left out), which of them are glass (by material), and the glass gathered into panes (triangles that share a corner and face the same way): each pane has its middle, its outward normal, a level and an upright direction in its plane, and its half sizes along them. Built once per kind of car; null where the kit has no triangles (the node sim), and the boxes are used then. `?gcm=0` = the boxes */
   carMesh(def, v) {
     if (!def) return null; const layer = !!(this.g.streets && this.g.streets.parts && this.g.streets.parts.vehicles && this.g.streets.parts.vehicles.group); let dr = null;
+    /* perf, Nov 12 (THE CARBINE'S COST: a kind's surface, 60-120 thousand triangles, was built inside the first round whose ray passed a car of that kind: 22 to 60 ms each on an M1 Pro, once per kind and again close up, so the first magazines down a street hitched again and again). A round never builds now: it uses the surface that is there (or the two boxes, as tyres do) and the build is queued and done a few milliseconds at a time in idle moments (cmIdle, cmBuild); the cars within 60 m of a drawn gun are queued ahead of any shot (background). Captures and scripted films build on the spot as before; ?gcmlazy=0 = the old way. */
+    if (this._cmLazy && !this._cmNow) { if (def._cm === undefined || (layer && v && (def._cm ? !def._cmNear : def._cm === null) && this.t - (def._cmT ?? -9) > 1 && (def._cm === null || Math.hypot(this.g.world.camera.position.x - v.x, this.g.world.camera.position.z + v.y) < 18))) this.cmIdle(def, v); return def._cm || null; }
     /* where the street layer draws the cars, the surface is taken from the model drawn at this car's place: once per kind, and once more when a car of the kind is first met close up (the far model has fewer triangles) */
     if (layer && v && (def._cm === undefined || ((def._cm ? !def._cmNear : def._cm === null) && this.t - (def._cmT ?? -9) > 1))) { const cam = this.g.world.camera, near = Math.hypot(cam.position.x - v.x, cam.position.z + v.y) < 18; if (def._cm === undefined || def._cm === null || near) { dr = this.drawnBody(v); def._cmT = this.t; if (near && dr) def._cmNear = true; if (!dr || (def._cm && dr.tris <= (def._cmTris || 0))) { if (def._cm === undefined) def._cm = null; return def._cm; } def._cmTris = dr.tris; def._cm = undefined; } }
     if (layer && !dr && def._cm === undefined) return null; if (def._cm !== undefined) return def._cm; def._cm = null;
-    try { const tb0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    /* perf, Nov 12: the build is a generator (cmBuild) so that an idle moment can do it a few ms at a time (cmIdle); here (a capture, a scripted film, ?gcmlazy=0) it is run to its end at once, as before */
+    if (this._cmNow) { this.cmJob = { def, it: this.cmBuild(def, dr) }; return null; }
+    try { const it = this.cmBuild(def, dr); let r = it.next(); while (!r.done) r = it.next(); return (def._cm = r.value || null); } catch (e) { console.log('[guns] car mesh: ' + (e && e.message)); return (def._cm = null); }
+  }
+  *cmBuild(def, dr) { let yc = 0; const tb0 = typeof performance !== 'undefined' ? performance.now() : 0;
       const drawn = dr && dr.body, body = drawn || def.body; if (!body || !body.length) return null; const A = [], G = [], p = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()];
       for (const b of body) { const nm = (b.material && b.material.name) || ''; if (nm === 'interior' || !b.geometry || !b.geometry.attributes || !b.geometry.attributes.position) continue; const gl = nm === 'glass' || nm === 'glass_dark', pos = b.geometry.attributes.position, idx = b.geometry.index, n = idx ? idx.count : pos.count;
-        for (let i = 0; i + 2 < n; i += 3) { for (let k = 0; k < 3; k++) { p[k].fromBufferAttribute(pos, idx ? idx.getX(i + k) : i + k); if (b.matrix) p[k].applyMatrix4(b.matrix); } A.push(p[0].x, p[0].y, p[0].z, p[1].x - p[0].x, p[1].y - p[0].y, p[1].z - p[0].z, p[2].x - p[0].x, p[2].y - p[0].y, p[2].z - p[0].z); G.push(gl ? -2 : -1); } }
+        for (let i = 0; i + 2 < n; i += 3) { if ((++yc & 2047) === 0) yield; for (let k = 0; k < 3; k++) { p[k].fromBufferAttribute(pos, idx ? idx.getX(i + k) : i + k); if (b.matrix) p[k].applyMatrix4(b.matrix); } A.push(p[0].x, p[0].y, p[0].z, p[1].x - p[0].x, p[1].y - p[0].y, p[1].z - p[0].z, p[2].x - p[0].x, p[2].y - p[0].y, p[2].z - p[0].z); G.push(gl ? -2 : -1); } }
       const n = G.length; if (!n) return null; const T = new Float32Array(A), pane = new Int16Array(G), lo = [1e9, 1e9, 1e9], hi = [-1e9, -1e9, -1e9];
       for (let i = 0, o = 0; i < n; i++, o += 9) for (let k = 0; k < 3; k++) { const p0 = T[o + k], p1 = p0 + T[o + 3 + k], p2 = p0 + T[o + 6 + k], mn = p0 < p1 ? (p0 < p2 ? p0 : p2) : (p1 < p2 ? p1 : p2), mx = p0 > p1 ? (p0 > p2 ? p0 : p2) : (p1 > p2 ? p1 : p2); if (mn < lo[k]) lo[k] = mn; if (mx > hi[k]) hi[k] = mx; }
       // panes: union the glass triangles that share a corner (to the millimetre) and face within about 50 degrees of each other
-      const gi = []; for (let i = 0; i < n; i++) if (pane[i] === -2) gi.push(i); const par = gi.map((_, k) => k), root = (k) => { while (par[k] !== k) k = par[k] = par[par[k]]; return k; }, nrm = gi.map((i) => { const o = i * 9, x = T[o + 4] * T[o + 8] - T[o + 5] * T[o + 7], y = T[o + 5] * T[o + 6] - T[o + 3] * T[o + 8], z = T[o + 3] * T[o + 7] - T[o + 4] * T[o + 6], l = Math.hypot(x, y, z) || 1; return [x / l, y / l, z / l, l / 2]; }), at = new Map();
+      yield; const gi = []; for (let i = 0; i < n; i++) if (pane[i] === -2) gi.push(i); const par = gi.map((_, k) => k), root = (k) => { while (par[k] !== k) k = par[k] = par[par[k]]; return k; }, nrm = gi.map((i) => { const o = i * 9, x = T[o + 4] * T[o + 8] - T[o + 5] * T[o + 7], y = T[o + 5] * T[o + 6] - T[o + 3] * T[o + 8], z = T[o + 3] * T[o + 7] - T[o + 4] * T[o + 6], l = Math.hypot(x, y, z) || 1; return [x / l, y / l, z / l, l / 2]; }), at = new Map();
       gi.forEach((i, k) => { const o = i * 9; for (const c of [[T[o], T[o + 1], T[o + 2]], [T[o] + T[o + 3], T[o + 1] + T[o + 4], T[o + 2] + T[o + 5]], [T[o] + T[o + 6], T[o + 1] + T[o + 7], T[o + 2] + T[o + 8]]]) { const key = Math.round(c[0] * 1000) + ',' + Math.round(c[1] * 1000) + ',' + Math.round(c[2] * 1000); let L = at.get(key); if (!L) at.set(key, (L = [])); for (const j of L) if (nrm[j][0] * nrm[k][0] + nrm[j][1] * nrm[k][1] + nrm[j][2] * nrm[k][2] > 0.64) { const a = root(j), b = root(k); if (a !== b) par[a] = b; } L.push(k); } });
       const groups = new Map(); gi.forEach((i, k) => { const r = root(k); if (!groups.has(r)) groups.set(r, []); groups.get(r).push(k); }); const panes = [];
       for (const ks of groups.values()) { let ar = 0, cx = 0, cy = 0, cz = 0, nx = 0, ny = 0, nz = 0; for (const k of ks) { const o = gi[k] * 9, a = nrm[k][3]; ar += a; cx += (T[o] + (T[o + 3] + T[o + 6]) / 3) * a; cy += (T[o + 1] + (T[o + 4] + T[o + 7]) / 3) * a; cz += (T[o + 2] + (T[o + 5] + T[o + 8]) / 3) * a; nx += nrm[k][0] * a; ny += nrm[k][1] * a; nz += nrm[k][2] * a; }
@@ -420,22 +430,35 @@ class Combat {
         let u0 = 1e9, u1 = -1e9, w0 = 1e9, w1 = -1e9; for (const k of ks) { const o = gi[k] * 9; for (const c of [[T[o], T[o + 1], T[o + 2]], [T[o] + T[o + 3], T[o + 1] + T[o + 4], T[o + 2] + T[o + 5]], [T[o] + T[o + 6], T[o + 1] + T[o + 7], T[o + 2] + T[o + 8]]]) { const a = (c[0] - cx) * ux + (c[2] - cz) * uz, b = (c[0] - cx) * wx + (c[1] - cy) * wy + (c[2] - cz) * wz; if (a < u0) u0 = a; if (a > u1) u1 = a; if (b < w0) w0 = b; if (b > w1) w1 = b; } }
         const um = (u0 + u1) / 2, wm = (w0 + w1) / 2; panes.push({ tris: ks.map((k) => gi[k]), area: ar, c: [cx + ux * um + wx * wm, cy + wy * wm, cz + uz * um + wz * wm], n: [nx, ny, nz], u: [ux, 0, uz], w: [wx, wy, wz], hu: (u1 - u0) / 2, hw: (w1 - w0) / 2, same: -1 }); }
       // an inner and an outer face of the same glass are one pane
-      panes.forEach((P, i) => { for (let j = 0; j < i; j++) { const Q = panes[j]; if (Q.same < 0 && Math.hypot(P.c[0] - Q.c[0], P.c[1] - Q.c[1], P.c[2] - Q.c[2]) < 0.1) { P.same = j; break; } } });
+      yield; panes.forEach((P, i) => { for (let j = 0; j < i; j++) { const Q = panes[j]; if (Q.same < 0 && Math.hypot(P.c[0] - Q.c[0], P.c[1] - Q.c[1], P.c[2] - Q.c[2]) < 0.1) { P.same = j; break; } } });
       panes.forEach((P, i) => { for (const t of P.tris) pane[t] = P.same >= 0 ? P.same : i; }); for (let i = 0; i < n; i++) if (pane[i] === -2) pane[i] = -1;
       /* the triangles must be the car that is DRAWN: the street layer draws its own models over the kit's sizes (round 33's first captures aimed at the kit van's window, half a metre from the drawn one). A body whose box is not this kind's length, width and height is not used */
       if (!drawn && (Math.abs(hi[0] - lo[0] - def.len) > 0.14 || Math.abs(hi[2] - lo[2] - def.wid) > 0.14 || Math.abs(hi[1] - def.hgt) > 0.12)) { console.log('[guns] car surface: the ' + (def.type || '?') + ' body does not fit its sizes, boxes used'); return null; }
       // triangles in three flat grids, one for each axis looked along (cells over the other two axes): a ray uses the grid of the axis it runs along most and tests only the cells under it. A near model is 60-120 thousand triangles: slices along one axis still left a ray down the length of a car with a tenth of them (2.7 ms a ray, measured on the lead's game 03:45)
-      const NG = [32, 16, 16], grids = [0, 1, 2].map((ax) => { const u = (ax + 1) % 3, w = (ax + 2) % 3, nu = NG[u], nw = NG[w], su = (hi[u] - lo[u]) / nu || 1, sw = (hi[w] - lo[w]) / nw || 1, cnt = new Int32Array(nu * nw + 1), R = new Uint8Array(n * 4), lu = lo[u], lw = lo[w];
+      const NG = [32, 16, 16], grids = []; for (const ax of [0, 1, 2]) { yield; const u = (ax + 1) % 3, w = (ax + 2) % 3, nu = NG[u], nw = NG[w], su = (hi[u] - lo[u]) / nu || 1, sw = (hi[w] - lo[w]) / nw || 1, cnt = new Int32Array(nu * nw + 1), R = new Uint8Array(n * 4), lu = lo[u], lw = lo[w];
         for (let i = 0, o = 0; i < n; i++, o += 9) { let p = T[o + u], q = p + T[o + 3 + u], r = p + T[o + 6 + u], mn = p < q ? (p < r ? p : r) : (q < r ? q : r), mx = p > q ? (p > r ? p : r) : (q > r ? q : r), a0 = Math.floor((mn - lu) / su), a1 = Math.floor((mx - lu) / su); if (a0 < 0) a0 = 0; if (a1 > nu - 1) a1 = nu - 1;
           p = T[o + w]; q = p + T[o + 3 + w]; r = p + T[o + 6 + w]; mn = p < q ? (p < r ? p : r) : (q < r ? q : r); mx = p > q ? (p > r ? p : r) : (q > r ? q : r); let b0 = Math.floor((mn - lw) / sw), b1 = Math.floor((mx - lw) / sw); if (b0 < 0) b0 = 0; if (b1 > nw - 1) b1 = nw - 1;
           R[i * 4] = a0; R[i * 4 + 1] = a1; R[i * 4 + 2] = b0; R[i * 4 + 3] = b1; for (let a = a0; a <= a1; a++) for (let b = b0; b <= b1; b++) cnt[a * nw + b + 1]++; }
         for (let k = 0; k < nu * nw; k++) cnt[k + 1] += cnt[k]; const idx = new Int32Array(cnt[nu * nw]), fill = cnt.slice(0, nu * nw);
         for (let i = 0; i < n; i++) { const a1 = R[i * 4 + 1], b0 = R[i * 4 + 2], b1 = R[i * 4 + 3]; for (let a = R[i * 4]; a <= a1; a++) for (let b = b0; b <= b1; b++) idx[fill[a * nw + b]++] = i; }
-        return { u, w, nu, nw, su, sw, cnt, idx }; });
+        grids.push({ u, w, nu, nw, su, sw, cnt, idx }); }
       console.log('[guns] car surface: ' + (def.type || '?') + ' ' + n + ' triangles' + (drawn ? ' (as drawn)' : ' (kit)') + ', ' + panes.filter((P) => P.same < 0).length + ' panes, built in ' + ((typeof performance !== 'undefined' ? performance.now() : 0) - tb0).toFixed(0) + ' ms');
-      return (def._cm = { T, n, pane, panes, lo, hi, t: 0, grids });
-    } catch (e) { console.log('[guns] car mesh: ' + (e && e.message)); return (def._cm = null); }
+      return { T, n, pane, panes, lo, hi, t: 0, grids };
   }
+  /* perf, Nov 12: the queued surfaces, built a few milliseconds at a time in idle moments (3 ms when the frame has no time to spare); the surface a kind already has stays in use until its better one is whole */
+  cmIdle(def, v) { if (def._cmQ) return; def._cmQ = true; (this.cmQ ||= []).push(def, v); if (this.cmBusy) return; this.cmBusy = true;
+    const run = (dl) => { const end = performance.now() + (dl && !dl.didTimeout && dl.timeRemaining ? Math.min(6, Math.max(2, dl.timeRemaining())) : 3);
+      try { while (performance.now() < end) {
+        if (!this.cmJob) { const d = this.cmQ.shift(), c = this.cmQ.shift(); if (!d) break; const old = d._cm; this._cmNow = true; try { this.carMesh(d, c); } finally { this._cmNow = false; } if (this.cmJob) { if (old) d._cm = old; } else d._cmQ = false; continue; }
+        const r = this.cmJob.it.next(); if (r.done) { const d = this.cmJob.def; this.cmJob = null; d._cm = r.value || null; d._cmQ = false; } } }
+      catch (e) { if (this.cmJob) { const d = this.cmJob.def; this.cmJob = null; d._cm = null; d._cmQ = false; } }
+      if (this.cmJob || this.cmQ.length) idle(run, 120); else this.cmBusy = false; };
+    idle(run, 120); }
+  /* perf, Nov 12: twice a second, out of the frame's way: the gun sounds' bus and buffers once sound is allowed (they were made in the first shot's frame), and with a gun out the surfaces of the cars near by */
+  background() { const g = this.g, pl = g.player;
+    if (!this._primed && this.audio && this.audio.prime) idle(() => { try { this._primed = this.audio.prime(); } catch (e) { this._primed = true; } });
+    if (!this._cmLazy || g.P.get('gcm') === '0' || !this.armedFoot()) return; const R2 = 60 * 60, see = (v) => { if (v && v.def && (v.x - pl.x) * (v.x - pl.x) + (v.y - pl.y) * (v.y - pl.y) < R2) this.carMesh(v.def, v); };
+    for (const v of g.traffic.cars) see(v); for (const v of g.vehicles) see(v); for (const s of g.parked.near(pl.x, pl.y, 60, (this._pk3 ||= []))) see(s); }
   /* the body the street layer DRAWS for this car (lanes/streets vehicles.js draws its own models over the kit's sizes: instanced meshes in game.streets.parts.vehicles.group, the meshes of one model sharing one instance-matrix attribute). Found by where the car is: the model that had an instance at this car's place in the last frame; of those (body, lettering, rack) the one with the most triangles. Glass is told by its material (dark, mirror-smooth, no vertex colours). Returns { body, tris } or null (layer not there, or the car was not drawn last frame) */
   drawnBody(v) {
     try { const grp = this.g.streets && this.g.streets.parts && this.g.streets.parts.vehicles && this.g.streets.parts.vehicles.group; if (!grp || !grp.children) return null;

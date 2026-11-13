@@ -4,7 +4,7 @@
 // per calibre. All positions here are three.js world space (x east, y up, z = -north).
 import * as THREE from 'three';
 
-const N = 1800, CELLS = 4;
+const N = 1800, CELLS = 4, WARM = 240;
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _m = new THREE.Matrix4(), _s = new THREE.Vector3(), _e = new THREE.Euler();
 const Z = new THREE.Vector3(0, 0, 1), UP = new THREE.Vector3(0, 1, 0);
 let seed = 1234567; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }, rs = (a = 1) => (rnd() * 2 - 1) * a, rr = (a, b) => a + rnd() * (b - a);
@@ -116,9 +116,17 @@ export class Fx {
     this.cas = {}; this.loose = [];      // casings per kind; loose objects (magazines)
     this.light = new THREE.PointLight(0xffc27a, 0, 16, 2); this.light.castShadow = false; if (opts.light !== false) scene.add(this.light); this.lightT = 0; this.lightI = 0;
     this.emit = [];
+    if (this.ok) { this.spawn({ x: 0, y: -60, z: 0, life: 3, s0: 0.05, a: 0.02 }); this.spawn({ add: true, x: 0, y: -60, z: 0, life: 3, s0: 0.05, a: 0.02 }); }      /* perf, Nov 12: one speck in each batch 60 m under the street for the first three seconds, so both particle programs are really drawn once behind the start screen (an empty batch issues no draw) */
+    this.frames = 0; this.any = true;      /* perf, Nov 12: frames drawn so far (the first WARM of them draw everything once, empty, so nothing is compiled or uploaded on the first shot); any = a particle may be alive */
+  }
+  /* perf, Nov 12: the casings of the guns the player has are made at load, not on the first shot (their material's program was compiled in the first shot's frame) */
+  warm(kinds) { for (const k of kinds) { try { this.casOf(k); } catch (e) {} } }
+  casOf(kind) {
+    let C = this.cas[kind]; if (C !== undefined) return C; const g = this.casingOf(kind); if (!g) return (this.cas[kind] = null); let cm = g.material; try { cm = g.material.clone(); if (cm.color) cm.color.multiplyScalar(0.32); if (cm.roughness !== undefined) cm.roughness = Math.max(cm.roughness, 0.5); if (cm.emissiveIntensity !== undefined) cm.emissiveIntensity *= 0.3; } catch (e) { cm = g.material; }      /* brass, not yellow bars: the models' casing material is kept, ours is a darker copy */
+    const im = new THREE.InstancedMesh(g.geometry, cm, 56); im.frustumCulled = false; im.castShadow = true; _m.makeScale(0, 0, 0); for (let i = 0; i < 56; i++) im.setMatrixAt(i, _m); this.group.add(im); return (this.cas[kind] = { im, i: 0, list: [] });
   }
   spawn(o) {
-    let p = null; for (let k = 0; k < 24; k++) { const q = this.p[this.cursor]; this.cursor = (this.cursor + 1) % N; if (!q.on) { p = q; break; } } if (!p) { p = this.p[this.cursor]; this.cursor = (this.cursor + 1) % N; }
+    this.any = true; let p = null; for (let k = 0; k < 24; k++) { const q = this.p[this.cursor]; this.cursor = (this.cursor + 1) % N; if (!q.on) { p = q; break; } } if (!p) { p = this.p[this.cursor]; this.cursor = (this.cursor + 1) % N; }
     p.on = true; p.add = !!o.add; p.x = o.x; p.y = o.y; p.z = o.z; p.vx = o.vx || 0; p.vy = o.vy || 0; p.vz = o.vz || 0; p.age = 0; p.life = o.life || 1; p.s0 = o.s0 ?? 0.1; p.s1 = o.s1 ?? p.s0; p.r = o.r ?? 1; p.g = o.g ?? 1; p.b = o.b ?? 1; p.a0 = o.a ?? 1;
     p.frame = o.frame || 0; p.rot = o.rot ?? rnd() * 6.283; p.rotv = o.rotv || 0; p.grav = o.grav || 0; p.drag = o.drag || 0; p.stretch = o.stretch || 0; p.len = o.len || 0; p.fade = o.fade ?? 1; p.fin = o.fin || 0; p.bounce = o.bounce || 0; p.r1 = o.r1 ?? p.r; p.g1 = o.g1 ?? p.g; p.b1 = o.b1 ?? p.b; p.ax = o.ax || 0; p.ay = o.ay || 0; p.az = o.az || 0; p.delay = o.delay || 0; p.up = o.up || 0; p.mz = o.mz || 0;
     return p;
@@ -175,7 +183,7 @@ export class Fx {
   }
   // a hole in a surface. attach: null, or {matrix(out Matrix4)} whose matrix carries local -> world each frame (pos/normal are then local)
   decal(kind, pos, n, size, attach = null, tag = null) {
-    const D = this.decals[kind]; if (!D) return; const i = D.i; D.i = (D.i + 1) % D.cap;
+    const D = this.decals[kind]; if (!D) return; D.used = true; D.im.visible = true; const i = D.i; D.i = (D.i + 1) % D.cap;
     _q.setFromUnitVectors(Z, _v.copy(n).normalize()); _q2.setFromAxisAngle(Z, rnd() * 6.283); _q.multiply(_q2);
     const old = D.rec[i]; if (old && old.attach) { const k = this.riding.indexOf(old); if (k >= 0) this.riding.splice(k, 1); }
     const rec = { D, i, attach, tag, local: new THREE.Matrix4().compose(_v2.copy(pos).addScaledVector(n, 0.004), _q, (kind === 'glass' ? _s.set(size, size, size) : _s.set(size * (0.7 + rnd() * 0.7), size * (0.8 + rnd() * 0.45), size))) }      /* wall and metal holes are stretched unevenly, each its own shape (judged, rounds 14-15) */; D.rec[i] = rec;
@@ -191,9 +199,8 @@ export class Fx {
   }
   dropDecals(attach) { if (this.panes) for (let k = this.panes.length - 1; k >= 0; k--) if (this.panes[k].attach === attach) { const m = this.panes[k].m; this.scene.remove(m); m.geometry.dispose(); this.panes.splice(k, 1); } for (let k = this.riding.length - 1; k >= 0; k--) { const r = this.riding[k]; if (r.attach === attach) { _m.makeScale(0, 0, 0); r.D.im.setMatrixAt(r.i, _m); r.D.im.instanceMatrix.needsUpdate = true; r.D.rec[r.i] = null; this.riding.splice(k, 1); } } }
   casing(kind, pos, vel) {
-    let C = this.cas[kind]; if (C === undefined) { const g = this.casingOf(kind); if (!g) { this.cas[kind] = null; return; } let cm = g.material; try { cm = g.material.clone(); if (cm.color) cm.color.multiplyScalar(0.32); if (cm.roughness !== undefined) cm.roughness = Math.max(cm.roughness, 0.5); if (cm.emissiveIntensity !== undefined) cm.emissiveIntensity *= 0.3; } catch (e) { cm = g.material; }      /* brass, not yellow bars: the models' casing material is kept, ours is a darker copy */
-    const im = new THREE.InstancedMesh(g.geometry, cm, 56); im.frustumCulled = false; im.castShadow = true; _m.makeScale(0, 0, 0); for (let i = 0; i < 56; i++) im.setMatrixAt(i, _m); this.group.add(im); C = this.cas[kind] = { im, i: 0, list: [] }; }
-    if (!C) return; const i = C.i; C.i = (C.i + 1) % 56; C.list = C.list.filter((c) => c.i !== i);
+    const C = this.casOf(kind);
+    if (!C) return; C.im.visible = true; const i = C.i; C.i = (C.i + 1) % 56; C.list = C.list.filter((c) => c.i !== i);
     C.list.push({ i, x: pos.x, y: pos.y, z: pos.z, vx: vel.x, vy: vel.y, vz: vel.z, q: new THREE.Quaternion().setFromEuler(_e.set(rs(3), rs(3), rs(3))), wx: rs(1), wy: rs(1), wz: rs(1), w: rr(18, 40), age: 0, rest: false, hit: 0 });
   }
   // a loose rigid thing (a dropped magazine): falls, bounces once or twice, lies there

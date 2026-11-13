@@ -45,8 +45,18 @@ const n3 = (x, y, z) => { const xi = Math.floor(x), yi = Math.floor(y), zi = Mat
   for (let k = 0; k < 8; k++) { const a = k & 1, b = (k >> 1) & 1, c = (k >> 2) & 1; r += hsh3(xi + a, yi + b, zi + c) * (a ? u : 1 - u) * (b ? v : 1 - v) * (c ? w : 1 - w); } return r; };
 const SEAT = typeof location !== 'undefined' && /[?&]seat=1/.test(location.search);   // round 31: the trunk goes down into level mulch: no chips painted up the bark, no cone heaped at the foot; damp dark bark at the ground, a hard dense trunk shadow
 const NETR = typeof location !== 'undefined' ? (parseFloat((/[?&]netr=([0-9.]+)/.exec(location.search) || [])[1]) || 0) : 0;   // round 31: the grown twigs thicker by this many metres of radius (scan units)
+const GEOFAR = typeof location !== 'undefined' && /[?&]geofar=1/.test(location.search);   // round 35: real single-leaf meshes out to 24 m (levels 1 and 2 of the scan's leaf meshes) instead of cut-out grids from 4.6 m
+const SPECFADE = typeof location !== 'undefined' && /[?&]specfade=1/.test(location.search);   // round 35 (camera lane: leaf-edge speckle): the leaf cards' sun glint fades with distance (a card a pixel or two wide cannot hold a highlight still) and is capped
+const PLANE = typeof location !== 'undefined' && /[?&]bark=plane/.test(location.search);   // round 35: the scan tree's trunk and limbs wear a photographed London-plane bark (patchwork of flaking plates: brown old plates standing proud of olive and cream), with the plates' relief and the shade at their edges; &pk= brightness (0.42), &pt= metres a tile across (0.36)
+const LATE = typeof location !== 'undefined' && typeof document !== 'undefined' && !/[?&]late=0/.test(location.search);   // default on from Nov 12 16:xx (pod frames after load the same as before); ?late=0 = everything before first paint   // Nov 12 (first load on weak machines): pictures only a tree within a few metres shows (the scan's bark and leaf relief, the photographed trunk bark, the boughs' wood, the mulch) are fetched after the page is ready; a flat stand-in colour until then
 const qnum = (k, d) => typeof location !== 'undefined' ? (parseFloat((new RegExp('[?&]' + k + '=([0-9.]+)').exec(location.search) || [])[1]) || d) : d;
+const WOODK = qnum('woodk', 1.0).toFixed(3), WOODG = qnum('woodg', 1.0).toFixed(3), WOODI = qnum('woodi', 1.0).toFixed(3);   // round 35: the scan tree's bark tone (times, contrast power about 0.1, share of the sky/bounce light kept)
+const PK = qnum('pk', 0.42).toFixed(3), PT = qnum('pt', 0.36).toFixed(3);
 const MG = PHOTO ? qnum('mg', SUNM ? 0.28 : 0.5).toFixed(2) : '1.00', MSV = qnum('ms', SUNM ? 0.75 : 1.8).toFixed(2), MK = (PHOTO ? (SUNM ? 'u' : 'f') + MG + '_' + MSV : '') + (SEAT ? 's' : '') + (CRISP ? 'c' : '');
+const TRK2 = typeof location !== 'undefined' && !/[?&]trunk2=0/.test(location.search);   // Nov 13 (Matt 22:47 Nov 12, "smooth trunks", city-wide): every GENERATED trunk and limb wears the photographed bark of the hero trunks (Poly Haven bark_willow_02: colour, relief, furrow shade, at real size from three sides), and the generator gives it an out-of-round trunk, a swelling under the fork and a collar at each limb joint
+const PITALL = typeof location !== 'undefined' && !/[?&]pitall=0/.test(location.search);   // Nov 13 (Matt 22:47 Nov 12, "white tree pits", city-wide): EVERY street tree stands in the sunk mulch pit of the hero blocks (hole in the paving, dark soil and chips, worn cut edge), not in the flat pit with the pale stone rim
+const PDK = [qnum('pdk', 0.42) * 1.0, qnum('pdk', 0.42) * 0.92, qnum('pdk', 0.42) * 0.86].map((v) => v.toFixed(3));
+const TRKN = qnum('trkn', 2.4).toFixed(2), TRKK = qnum('trkk', 1.15).toFixed(2), TRKT = qnum('trkt', 0.75).toFixed(2);
 const PIT3 = typeof location !== 'undefined' && /[?&]pit3=1/.test(location.search);   // round 29: a hard-edged, dense trunk shadow over the mulch, a firm dark contact at the bark, dark rotted pieces and soil showing between the chips
 const MDARK = typeof location !== 'undefined' && /[?&]mdark=1/.test(location.search);   // round 27: the mulch a quarter darker and browner (at the street's exposure it bleached to straw)
 const BIG = typeof location !== 'undefined' && /[?&]big=1/.test(location.search);   // round 27: the near twigs and their leaves a quarter larger
@@ -96,6 +106,7 @@ function leafMaterial(shared, far, imp, spray) {   // spray: { c, n, mean }: the
   if (spray && spray.geo) { m.alphaTest = 0; m.alphaToCoverage = false; m.defines.GEO = 1; }   // every leaf is its own mesh: no cut-out
   if (spray && spray.fringe) { m.alphaTest = 0; m.alphaToCoverage = false; m.transparent = true; m.depthWrite = false; m.forceSinglePass = true; m.defines.FRINGE = 1; }
   if (spray && spray.fade) m.defines.FADE = 1;
+  if (spray && spray.vis8) m.defines.VIS8 = 1;
   const LEAF = imp ? 'iLeaf' : 'vLeaf', SUNF = imp ? 'iSunFace' : 'vSunFace';
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, shared, imp ? { tImpA: { value: imp.a }, tImpN: { value: imp.n } } : {}, spray ? { uMean: { value: new THREE.Vector3(spray.mean[0], spray.mean[1], spray.mean[2]) }, uTrans: { value: spray.trans || 0.85 }, uGlow: { value: spray.glow || 1.0 }, uSelfK: { value: spray.selfK || 1.6 }, uOwn: { value: spray.own ? 1 : 0 }, uSpec: { value: spray.spec || 1.6 }, uSat: { value: spray.sat || 1.0 }, uShade: { value: spray.shade || 1.0 }, uFwd: { value: spray.fwd || 0.0 }, uThru: { value: new THREE.Vector3(...(spray.thru || [1.0, 1.1, 0.55])) }, uFade: { value: new THREE.Vector4(...(spray.fade || [1e9, 2e9, -2, -1])) }, uZoomK: ZOOMK } : {});
@@ -105,7 +116,7 @@ function leafMaterial(shared, far, imp, spray) {   // spray: { c, n, mean }: the
         #ifdef CARD
           uniform float uSelfK;
         #endif
-        #ifdef GEO
+        #if defined(GEO) || defined(VIS8)
           attribute vec4 aVisA; attribute vec4 aVisB;
         #endif
         #ifdef FADE
@@ -132,7 +143,7 @@ function leafMaterial(shared, far, imp, spray) {   // spray: { c, n, mean }: the
         #endif
         vSunFace = dot(normalize(mat3(tM) * normal.xyz), uSunDir); vSelf = 1.0;
         ${imp ? '' : `
-        #ifdef GEO
+        #if defined(GEO) || defined(VIS8)
         { // whether the sun reaches this leaf through the crown: baked for eight compass directions in the tree's own frame
           vec3 sl = normalize(transpose(mat3(tM)) * uSunDir); float fa = mod(atan(sl.z, sl.x) / 0.7853982 + 8.0, 8.0); int i0 = int(floor(fa));
           float v8[8] = float[8](aVisA.x, aVisA.y, aVisA.z, aVisA.w, aVisB.x, aVisB.y, aVisB.z, aVisB.w);
@@ -276,7 +287,12 @@ function leafMaterial(shared, far, imp, spray) {   // spray: { c, n, mean }: the
           #ifdef GEO
             float sv = ${DEEP ? '0.06 + 0.94' : '0.22 + 0.78'} * smoothstep(${DEEP ? '0.30, 0.58' : '0.22, 0.50'}, vSelf + (fract(vLeaf.r * 91.7 + vLeaf.b * 13.1) - 0.5) * 0.16);   // in the sun or in the shade of the leaves above; an open crown is full of scattered light, so its shade is never dark
           #else
-            float sv = max(vSelf, 0.6 * step(0.86, fract(vLeaf.r * 91.7 + vLeaf.b * 13.1 + vLeaf.a * 5.3)));   // a few leaves deep inside catch a fleck of sun through a gap
+            #ifdef VIS8
+            float sv = 0.10 + 0.90 * smoothstep(0.22, 0.50, vSelf + (fract(vLeaf.r * 91.7 + vLeaf.b * 13.1) - 0.5) * 0.16);   // the sun reaches this piece through the crown, or it does not
+            #else
+            float sv = max(vSelf, 0.6 * step(0.86, fract(vLeaf.r * 91.7 + vLeaf.b * 13.1 + vLeaf.a * 5.3)));
+            #endif
+            //   // a few leaves deep inside catch a fleck of sun through a gap
           #endif
           #ifdef GEO
             float k = mix(mix(0.7, 1.0, lAo) * sv, selfVis, tFar);
@@ -286,6 +302,7 @@ function leafMaterial(shared, far, imp, spray) {   // spray: { c, n, mean }: the
           reflectedLight.directDiffuse *= k; reflectedLight.directSpecular *= k * (1.0 - lfFlip) * ${imp ? '0.5' : '1.0'};
           #ifdef CARD
             reflectedLight.directSpecular *= uSpec;   // the waxy upper face of a leaf glints in the sun
+            ${SPECFADE ? 'reflectedLight.directSpecular = min(reflectedLight.directSpecular * mix(0.12, 1.0, smoothstep(26.0, 7.0, length(vViewPosition))), vec3(0.6) * dot(reflectedLight.directDiffuse, vec3(0.333)) + 0.02);' : ''}
             // a crown that takes no shadow from the shadow map (its own shade is worked out leaf by leaf above): buildings' shade comes from the ground bake
             { float bk = mix(1.0, mix(bakeV.g, 1.0, tFar), uOwn);
               // leaf by leaf, some stand in the shade of their neighbours and some in a shaft of sun: fewer shaded on the outside of the crown
@@ -294,13 +311,13 @@ function leafMaterial(shared, far, imp, spray) {   // spray: { c, n, mean }: the
           #endif
         }`);
   };
-  m.customProgramCacheKey = () => 'stTreeLeaf23' + (FARFIX ? 'z' : '') + (DEEP ? 'd' : '') + (far ? 'f' : '') + (imp ? 'i' : '') + (spray ? 'c' : '') + (spray && spray.geo ? 'g' : '') + (spray && spray.fringe ? 'F' : '') + (spray && spray.fade ? 'D' : '');
+  m.customProgramCacheKey = () => 'stTreeLeaf23' + (FARFIX ? 'z' : '') + (DEEP ? 'd' : '') + (far ? 'f' : '') + (imp ? 'i' : '') + (spray ? 'c' : '') + (spray && spray.geo ? 'g' : '') + (spray && spray.fringe ? 'F' : '') + (spray && spray.fade ? 'D' : '') + (spray && spray.vis8 ? 'V' : '') + (SPECFADE ? 'S' : '');
   return m;
 }
 
 function woodMaterial(shared, map, normalMap, kind, tSoil, scan, detail, bark2) {   // detail: [albedo, normal] of a fine tiling bark cut into a scanned trunk (round 16, with ?crown=twigs)
   const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.93, metalness: 0, map, normalMap });
-  { const ns = kind === 0 ? 1.5 : kind === 3 ? 2.1 : kind === 4 ? 1.4 : kind === 5 ? (bark2 ? 0.7 : 1.5) : 2.4; m.normalScale.set(ns, ns); }
+  { const ns = kind === 0 ? 1.5 : kind === 3 ? 2.1 : kind === 4 ? 1.4 : kind === 5 ? (bark2 ? (PLANE ? 0.45 : 0.7) : 1.5) : 2.4; m.normalScale.set(ns * (bark2 && kind < 4 ? 0.45 : 1), ns * (bark2 && kind < 4 ? 0.45 : 1)); }
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, shared, { tSoil: { value: tSoil }, uProj: PROJ }, scan ? { tScanN: { value: scan.normal } } : {}, detail ? { tBarkD: { value: detail[0] }, tBarkDN: { value: detail[1] } } : {}, bark2 ? { tB2: { value: bark2[0] }, tB2N: { value: bark2[1] }, tB2D: { value: bark2[2] } } : {});
     sh.vertexShader = sh.vertexShader
@@ -316,10 +333,11 @@ function woodMaterial(shared, map, normalMap, kind, tSoil, scan, detail, bark2) 
           ${bark2 ? 'vBP = vWPos - (modelMatrix * instanceMatrix)[3].xyz; vBN = mat3(modelMatrix * instanceMatrix) * normal;' : ''}
         #else
           vWPos = (modelMatrix * vec4(position, 1.0)).xyz;
+          ${bark2 ? 'vBP = vWPos - modelMatrix[3].xyz; vBN = mat3(modelMatrix) * normal;' : ''}
         #endif`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        varying vec4 vW; varying vec3 vLoc; varying vec3 vLocN; uniform sampler2D tSoil; float wShed; ${bark2 ? 'varying vec3 vBP; varying vec3 vBN; uniform sampler2D tB2; uniform sampler2D tB2N; uniform sampler2D tB2D; vec3 b2n; float b2k; float b2ao;' : ''} ${scan ? 'varying vec2 vUv2; uniform sampler2D tScanN;' : ''} ${detail ? 'uniform sampler2D tBarkD; uniform sampler2D tBarkDN; varying mat3 vNM; vec3 barkDn;' : ''}
+        varying vec4 vW; varying vec3 vLoc; varying vec3 vLocN; uniform sampler2D tSoil; float wShed; ${bark2 ? 'varying vec3 vBP; varying vec3 vBN; uniform sampler2D tB2; uniform sampler2D tB2N; uniform sampler2D tB2D; vec3 b2n = vec3(0.0); float b2k = 0.0; float b2ao = 1.0;' : ''} ${scan ? 'varying vec2 vUv2; uniform sampler2D tScanN;' : ''} ${detail ? 'uniform sampler2D tBarkD; uniform sampler2D tBarkDN; varying mat3 vNM; vec3 barkDn;' : ''}
         ${COMMON_FRAG}
         ${SLAB_GLSL}`)
       .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
@@ -367,14 +385,15 @@ function woodMaterial(shared, map, normalMap, kind, tSoil, scan, detail, bark2) 
             c = mix(vec3(lum), c, ${PIT2 ? 'mix(0.6, 0.9, smoothstep(0.5, 1.2, vLoc.y)) * smoothstep(0.03, 0.09, vLoc.y)' : '0.9'}) * vec3(0.84, 0.82, 0.79)${PIT2 ? ' * 1.12' : ''};
             ${PIT2 ? 'c *= mix(' + (BASE2 ? '0.8' : '0.6') + ', 1.0, smoothstep(0.0, 0.05, vWPos.y - 0.15 - 0.05));   // the dark line where the trunk goes into the mulch' : ''}
             ${bark2 ? `{ // photographed bark at the tree's real size: laid from the two sides and from above in world metres, 1.3 m to the tile
-              b2k = step(vMapUv.x, 0.5) * ${BARKALL ? '1.0' : '(1.0 - smoothstep(1.15, 1.9, vLoc.y))'};   // the trunk only: limbs are young, smooth bark (the scan's own)   // the trunk and limbs (the twigs keep their own picture)
-              vec3 bn = normalize(vBN), bw = pow(abs(bn), vec3(6.0)); bw.y *= 0.4; bw /= bw.x + bw.y + bw.z; vec3 q = vBP / 1.3;
+              b2k = step(vMapUv.x, 0.5) * ${BARKALL || PLANE ? '1.0' : '(1.0 - smoothstep(1.15, 1.9, vLoc.y))'};   // the trunk only: limbs are young, smooth bark (the scan's own)   // the trunk and limbs (the twigs keep their own picture)
+              vec3 bn = normalize(vBN), bw = pow(abs(bn), vec3(6.0)); bw.y *= 0.4; bw /= bw.x + bw.y + bw.z; vec3 q = vBP / ${PLANE ? 'vec3(' + PT + ', 2.0 * ' + PT + ', ' + PT + ')' : '1.3'};
               vec3 bc = texture2D(tB2, q.zy).rgb * bw.x + texture2D(tB2, q.xz).rgb * bw.y + texture2D(tB2, q.xy).rgb * bw.z;
               vec2 da = texture2D(tB2D, q.zy).rg * bw.x + texture2D(tB2D, q.xz).rg * bw.y + texture2D(tB2D, q.xy).rg * bw.z; b2ao = mix(1.0, da.g, b2k);
               vec2 nX = texture2D(tB2N, q.zy).xy * 2.0 - 1.0, nY = texture2D(tB2N, q.xz).xy * 2.0 - 1.0, nZ = texture2D(tB2N, q.xy).xy * 2.0 - 1.0;
               b2n = bw.x * vec3(0.0, nX.y, nX.x) + bw.y * vec3(nY.x, 0.0, nY.y) + bw.z * vec3(nZ.x, nZ.y, 0.0);
               float bl = dot(bc, vec3(0.333)); vec3 lowc = texture2D(map, vMapUv, 5.0).rgb; float big = clamp(dot(lowc, vec3(0.333)) / 0.11, 0.75, 1.25);   // the scan's own light and dark patches stay, at large scale only
               vec3 c2 = mix(vec3(bl), bc, 0.62) * vec3(1.0, 0.97, 0.95) * big * ${BK} * mix(0.62, 1.0, smoothstep(0.30, 0.82, da.g));                               // a city tree: greyer, sooty in the furrows
+              ${PLANE ? 'c2 = bc * ' + PK + ' * mix(0.85, 1.12, clamp(big - 0.75, 0.0, 0.5) * 2.0) * mix(0.5, 1.0, da.g);' : ''}
               c = mix(c, c2, b2k); }` : ''}
           ` : kind === 4 ? `
             // a scanned limb with its own photographed bark: as it is, a little greyed
@@ -389,9 +408,18 @@ function woodMaterial(shared, map, normalMap, kind, tSoil, scan, detail, bark2) 
             // callery pear, elm, oak: grey-brown with lighter ridges
             c = mix(vec3(lum), c, 0.25) * vec3(0.42, 0.385, 0.34) * (0.7 + 0.6 * fbm(vLoc.xy * 2.3 + vLoc.zy * 1.3));
           `}
+          ${bark2 && kind < 4 ? `{ // a generated trunk: the photographed bark at real size (1.1 m to the tile, from the two sides and from above); the species keeps its own tone
+            b2k = smoothstep(0.22, 0.70, vW.g) * (1.0 - 0.5 * wShed);
+            vec3 bn = normalize(vBN), bw = pow(abs(bn), vec3(6.0)); bw.y *= 0.4; bw /= bw.x + bw.y + bw.z; vec3 q = vBP / ${TRKT};
+            vec3 bc = texture2D(tB2, q.zy).rgb * bw.x + texture2D(tB2, q.xz).rgb * bw.y + texture2D(tB2, q.xy).rgb * bw.z;
+            vec2 da = texture2D(tB2D, q.zy).rg * bw.x + texture2D(tB2D, q.xz).rg * bw.y + texture2D(tB2D, q.xy).rg * bw.z; b2ao = mix(1.0, da.g, b2k);
+            vec2 nX = texture2D(tB2N, q.zy).xy * 2.0 - 1.0, nY = texture2D(tB2N, q.xz).xy * 2.0 - 1.0, nZ = texture2D(tB2N, q.xy).xy * 2.0 - 1.0;
+            b2n = (bw.x * vec3(0.0, nX.y, nX.x) + bw.y * vec3(nY.x, 0.0, nY.y) + bw.z * vec3(nZ.x, nZ.y, 0.0)) * ${TRKN};
+            float bl = dot(bc, vec3(0.333)); vec3 ratio = clamp(mix(vec3(bl / 0.098), bc / vec3(0.117, 0.098, 0.080), 0.5), 0.3, 2.0);
+            c = mix(c, c * ratio * mix(0.30, 1.0, smoothstep(0.30, 0.82, da.g)) * ${TRKK}, b2k); }` : ''}
           // green-grey algae stain low on the shaded side, dirt at the foot
           // furrows are shaded, ridges catch the light; grey and green-grey patches; damp and dirt low down, lapping up unevenly
-          ${kind >= 3 ? '' : 'c *= mix(0.66 + 0.55 * clamp((lum - 0.2) / 0.28, 0.0, 1.0), 1.0, wShed);'}
+          ${kind >= 3 ? '' : bark2 ? 'c *= mix(mix(0.66 + 0.55 * clamp((lum - 0.2) / 0.28, 0.0, 1.0), 1.0, wShed), 0.92, 0.85 * b2k);   // the tiled bark under it runs in stretched streaks: the photographed bark carries the furrows' : 'c *= mix(0.66 + 0.55 * clamp((lum - 0.2) / 0.28, 0.0, 1.0), 1.0, wShed);'}
           float pn = fbm(vLoc.xy * 1.4 + vLoc.zy * 0.9 + 5.0);
           c *= mix(vec3(1.0), vec3(0.86, 0.94, 0.80), smoothstep(0.5, 0.7, pn) * smoothstep(3.0, 0.2, vLoc.y) * 0.6);
           c *= mix(vec3(1.0), vec3(1.12, 1.1, 1.08), smoothstep(0.5, 0.3, pn) * 0.7);
@@ -407,20 +435,23 @@ function woodMaterial(shared, map, normalMap, kind, tSoil, scan, detail, bark2) 
           ${SEAT && kind === 5 ? 'crumb = 0.0; c *= mix(0.42, 1.0, smoothstep(-0.01, 0.11, vWPos.y - 0.15 + (dn - 0.5) * 0.07));' : ''}
           c = mix(c, so * 0.45, crumb); wShed *= 1.0 - crumb;
           c *= mix(1.25, 1.0, vW.g);
+          ${kind === 5 && (WOODK !== '1.000' || WOODG !== '1.000') ? 'c = pow(max(c, vec3(1e-4)) / 0.1, vec3(' + WOODG + ')) * 0.1 * ' + WOODK + ';' : ''}
           diffuseColor.rgb = c;
         }`)
       .replace('#include <aomap_fragment>', BAKE_LIGHT_GLSL + `
         {
           float wAo = vW.r;
           ${bark2 ? 'wAo *= mix(0.7, 1.0, b2ao);' : ''}
+          ${bark2 && PLANE ? 'reflectedLight.directDiffuse *= mix(0.45, 1.0, b2ao) * mix(0.55, 1.0, smoothstep(0.25, 0.8, vW.r)); reflectedLight.indirectDiffuse *= mix(0.45, 1.0, smoothstep(0.2, 0.85, vW.r));   // shade in the lee of each plate edge; deeper contact shade in the forks and at the limb joints (the scan-baked occlusion)' : ''}
           reflectedLight.indirectDiffuse *= mix(0.55, 1.0, wAo); reflectedLight.indirectSpecular *= wAo * 0.15;
           ${kind === 5 ? (detail ? 'reflectedLight.indirectDiffuse *= 2.2 + 0.9 * smoothstep(1.5, 3.0, vLoc.y); reflectedLight.directDiffuse *= 1.0 + 0.35 * smoothstep(1.5, 3.0, vLoc.y);' : bark2 ? 'reflectedLight.indirectDiffuse *= 1.5 + 0.9 * smoothstep(1.1, 2.4, vLoc.y); reflectedLight.directDiffuse *= 1.0 + 0.15 * smoothstep(1.1, 2.4, vLoc.y);' : LIMBS ? 'reflectedLight.indirectDiffuse *= 1.7 + 2.0 * smoothstep(1.1, 2.4, vLoc.y); reflectedLight.directDiffuse *= 1.0 + 0.5 * smoothstep(1.1, 2.4, vLoc.y);   // round 19: limbs up in the crown are young, paler bark standing in sky light and the light the leaves pass on' : 'reflectedLight.indirectDiffuse *= 1.7;') : ''}
           ${kind >= 3 ? 'reflectedLight.indirectDiffuse *= 1.0 + 1.5 * exp(-max(vWPos.y - 0.15, 0.0) / 1.1);   // the sunlit paving throws its light back up the trunk' : ''}
+          ${kind === 5 && WOODI !== '1.000' ? 'reflectedLight.indirectDiffuse *= ' + WOODI + ';' : ''}
           float tFar = smoothstep(uShadowFar * 0.72, uShadowFar * 0.95, length(vWPos.xz - uShadowCenter.xz));
           reflectedLight.directDiffuse *= mix(1.0, mix(0.25, 1.0, wAo), tFar);
         }`);
   };
-  m.customProgramCacheKey = () => 'stTreeWood29_' + kind + (scan ? 's' : '') + (detail ? 'd' : '') + (LIMBS ? 'l' : '') + (PIT2 ? '4' : '') + (BASE2 ? 'b' : '') + (FLARE ? 'f' : '') + (WC3 ? 'w' : '') + (bark2 ? 'B' : '') + BK + (SEAT ? 's' : '') + (BARKALL ? 'a' : '');
+  m.customProgramCacheKey = () => 'stTreeWood29_' + kind + (scan ? 's' : '') + (detail ? 'd' : '') + (LIMBS ? 'l' : '') + (PIT2 ? '4' : '') + (BASE2 ? 'b' : '') + (FLARE ? 'f' : '') + (WC3 ? 'w' : '') + (bark2 ? 'B' : '') + (bark2 && kind < 4 ? 'G2' + TRKN + TRKK + TRKT : '') + BK + (SEAT ? 's' : '') + (BARKALL ? 'a' : '') + WOODK + WOODG + WOODI + (PLANE ? 'P' + PK + PT : '');
   return m;
 }
 
@@ -454,7 +485,10 @@ const MULCH_GLSL = `
       ${PIT3 ? `{ float hb = textureLod(tDisp, uvc, lod).b, pcs = vnoise(q * 43.0 + seed * 9.0), soilP = smoothstep(0.50, 0.70, fbm(q * 3.1 + seed * 7.0));
         cc = mix(cc, cc * vec3(0.42, 0.36, 0.31), smoothstep(0.60, 0.70, pcs));                                    // dark, rotted pieces among the fresh ones
         cc = mix(cc, vec3(0.055, 0.045, 0.036) * (0.7 + 0.6 * vnoise(q * 210.0)), soilP * (1.0 - smoothstep(0.36, 0.50, hb)) * 0.85);   // soil and fines show between the chips in patches
-        cc *= 0.55 + 0.45 * smoothstep(0.0, 0.11, dr); }` : ''}                                                           // the gaps between the pieces are dark
+        cc *= 0.55 + 0.45 * smoothstep(0.0, 0.11, dr); }` : ''}
+      ${PITALL ? `{ float soilQ = smoothstep(0.34, 0.58, fbm(q * 2.6 + seed * 7.0)), hq = textureLod(tDisp, uvc, lod).b;
+        cc = mix(vec3(dot(cc, vec3(0.333))), cc, 0.7) * vec3(${PDK[0]}, ${PDK[1]}, ${PDK[2]}) * mix(1.0, 0.62, smoothstep(0.55, 0.68, vnoise(q * 41.0 + seed * 9.0)));                // a season old: weathered dark brown, some pieces rotted nearly black
+        cc = mix(cc, vec3(0.050, 0.041, 0.033) * (0.7 + 0.6 * vnoise(q * 190.0)), soilQ * (1.0 - smoothstep(0.42, 0.62, hq)) * 0.9); }` : ''}   // trodden dark soil shows between the pieces in patches                                                           // the gaps between the pieces are dark
       return cc * (0.38 + 0.62 * smoothstep(0.0, 0.04, dr)); }` : ''}
     vec3 chips = textureLod(tChips, uvc, lod).rgb; float cl = dot(chips, vec3(0.333)), chH = textureLod(tDisp, uvc, lod).r;
     vec3 c = mix(vec3(cl), chips, 0.42) * vec3(3.0, 2.95, 2.6) * (0.2 + 1.2 * smoothstep(0.2, 0.8, chH)) * (0.8 + 0.4 * fbm(q * 1.7 + seed * 5.0)) * (0.6 + 0.4 * smoothstep(0.0, 0.14, dr));
@@ -700,7 +734,7 @@ function sunkPitMaterial(shared, T) {
           reflectedLight.directSpecular *= (1.0 - sh) * (1.0 - skSh); reflectedLight.indirectSpecular *= kS * skAo;
         }`);
   };
-  m.customProgramCacheKey = () => 'stTreePitSunk15' + (MPATH ? 'p' : WC3 ? 'w' : '') + (PIT3 ? '3' : '') + (PIT2 ? '2' : '') + (MDARK ? 'm' : '') + MK;
+  m.customProgramCacheKey = () => (PITALL ? 'A' + PDK[0] : '') + 'stTreePitSunk15' + (MPATH ? 'p' : WC3 ? 'w' : '') + (PIT3 ? '3' : '') + (PIT2 ? '2' : '') + (MDARK ? 'm' : '') + MK;
   return m;
 }
 
@@ -739,7 +773,7 @@ function spillMaterial(shared, T) {
         }`)
       .replace('#include <aomap_fragment>', BAKE_LIGHT_GLSL);
   };
-  m.customProgramCacheKey = () => 'stTreeSpill5' + (MPATH ? 'p' : WC3 ? 'w' : '') + (PIT3 ? '3' : '') + (PIT2 ? '2' : '') + (MDARK ? 'm' : '') + MK;
+  m.customProgramCacheKey = () => (PITALL ? 'A' + PDK[0] : '') + 'stTreeSpill5' + (MPATH ? 'p' : WC3 ? 'w' : '') + (PIT3 ? '3' : '') + (PIT2 ? '2' : '') + (MDARK ? 'm' : '') + MK;
   return m;
 }
 
@@ -786,7 +820,7 @@ function chipsGeometry(L, Wd, seed) {
     const tonesS = TONE ? [[0.50, 0.38, 0.24], [0.42, 0.31, 0.19], [0.40, 0.25, 0.13], [0.33, 0.20, 0.10], [0.36, 0.27, 0.17], [0.20, 0.145, 0.10], [0.30, 0.275, 0.24], [0.46, 0.33, 0.20], [0.27, 0.17, 0.09]] : [[0.50, 0.38, 0.24], [0.42, 0.31, 0.19], [0.56, 0.45, 0.30], [0.36, 0.27, 0.17], [0.46, 0.36, 0.25]];
     const plate = (x, z, stick) => { const l = stick ? 0.05 + 0.06 * R() : SLABS2 ? 0.012 + 0.022 * R() * R() + 0.006 * R() : 0.022 + 0.03 * R(), w = l * (stick ? 0.05 + 0.05 * R() : 0.28 + 0.3 * R()), a = R() * 6.283, c = Math.cos(a), sn = Math.sin(a), t = tonesS[Math.floor(R() * tonesS.length)], k = (SLABS2 ? 0.6 : 0.8) + (SLABS2 ? 0.7 : 0.4) * R(), y0 = (TONE ? 0.007 : 0.004) + (TONE ? 0.011 : 0.006) * R(), tilt = SLABS2 ? (R() - 0.3) * 0.02 : (R() - 0.5) * 0.012, nv = 5 + Math.floor(R() * 3), a0 = R() * 6.283, pts = [];
       for (let q = 0; q < nv; q++) { const b = a0 + (q + (R() - 0.5) * 0.6) / nv * 6.283, rr = 0.65 + 0.35 * R(), u = Math.cos(b) * l * rr, v = Math.sin(b) * w * rr; pts.push([x + u * c - v * sn, y0 + tilt * u / l, z + u * sn + v * c, SLABS2 ? 0.75 + 0.5 * R() : 1]); }
-      for (const kind of [1, 0]) { const o = P.length / 3; for (const v of pts) { if (kind) { P.push(v[0], 0.0012, v[2]); C.push(0.014, 0.011, 0.009); K.push(1, Math.max(v[1], 0.002), x, z); } else { P.push(v[0], v[1], v[2]); C.push(t[0] * k * v[3] * (MDARK ? 0.8 : 1), t[1] * k * v[3] * (MDARK ? 0.74 : 1), t[2] * k * v[3] * (MDARK ? 0.7 : 1)); K.push(0, 0, x, z); } } for (let q = 1; q < nv - 1; q++) I.push(o, o + q, o + q + 1); } };
+      for (const kind of [1, 0]) { const o = P.length / 3; for (const v of pts) { if (kind) { P.push(v[0], 0.0012, v[2]); C.push(0.014, 0.011, 0.009); K.push(1, Math.max(v[1], 0.002), x, z); } else { P.push(v[0], v[1], v[2]); { const tl = (t[0] + t[1] + t[2]) / 3, g = PITALL ? 0.45 : 0; C.push((t[0] + (tl - t[0]) * g) * k * v[3] * (PITALL ? 0.62 * PDK[0] : MDARK ? 0.8 : 1), (t[1] + (tl - t[1]) * g) * k * v[3] * (PITALL ? 0.62 * PDK[1] : MDARK ? 0.74 : 1), (t[2] + (tl - t[2]) * g) * k * v[3] * (PITALL ? 0.62 * PDK[2] : MDARK ? 0.7 : 1)); } K.push(0, 0, x, z); } } for (let q = 1; q < nv - 1; q++) I.push(o, o + q, o + q + 1); } };
     const nS = Math.round(L * Wd * (SLABS3 ? 480 : SLABS2 ? 190 : 55)), nK = Math.round(L * Wd * 14);
     for (let i = 0; i < nS; i++) plate((R() * 2 - 1) * (hx - 0.06), (R() * 2 - 1) * (hz - 0.06), false);
     for (let i = 0; i < nK; i++) plate((R() * 2 - 1) * (hx - 0.1), (R() * 2 - 1) * (hz - 0.1), true); }
@@ -957,7 +991,7 @@ function moundMaterial(shared, T) {
           reflectedLight.directDiffuse *= kS; reflectedLight.indirectDiffuse *= mix(1.0, kS, 0.5) * ao; reflectedLight.directSpecular *= 1.0 - sh; reflectedLight.indirectSpecular *= kS * ao;
         }`);
   };
-  m.customProgramCacheKey = () => 'stTreeMound7' + (MPATH ? 'p' : WC3 ? 'w' : '') + (PIT3 ? '3' : '') + (PIT2 ? '2' : '') + (BASE2 ? 'b' : '') + (MDARK ? 'm' : '') + MK;
+  m.customProgramCacheKey = () => (PITALL ? 'A' + PDK[0] : '') + 'stTreeMound7' + (MPATH ? 'p' : WC3 ? 'w' : '') + (PIT3 ? '3' : '') + (PIT2 ? '2' : '') + (BASE2 ? 'b' : '') + (MDARK ? 'm' : '') + MK;
   return m;
 }
 
@@ -970,7 +1004,7 @@ function pitGeometry(L, Wd, seed, rim, planted, hero) {
   const quad = (a, b, c, d, col, cols) => { const o = P.length / 3; [a, b, c, d].forEach((v, i) => { P.push(v[0], v[1], v[2]); const k = cols ? cols[i] : 1; C.push(col[0] * k, col[1] * k, col[2] * k); LF.push(v[3] !== undefined ? v[3] : lift === 1 ? rimFade(v[0], v[2]) : lift); DR.push(dv); }); I.push(o, o + 1, o + 2, o, o + 2, o + 3); };
   const tri = (a, b, c, col, cols) => { const o = P.length / 3; [a, b, c].forEach((v, i) => { P.push(v[0], v[1], v[2]); const k = cols ? cols[i] : 1; C.push(col[0] * k, col[1] * k, col[2] * k); LF.push(lift === 1 ? rimFade(v[0], v[2]) : lift); DR.push(dv); }); I.push(o, o + 1, o + 2); };
   const hx = L / 2, hz = Wd / 2, bw = rim === 'flush' ? 0.03 : rim === 'lip' ? 0.05 : rim === 'cobble' ? 0.11 : 0.125, rimH = rim === 'lip' ? 0.032 : rim === 'cobble' ? 0.052 : 0.06, ix = hx - bw, iz = hz - bw;
-  const wet = [0.034, 0.027, 0.021], dry = [0.125, 0.104, 0.078], stoneC = [0.215, 0.212, 0.205];
+  const wet = [0.034, 0.027, 0.021], dry = PITALL ? [0.046, 0.038, 0.030] : [0.125, 0.104, 0.078], stoneC = PITALL ? [0.082, 0.082, 0.082] : [0.215, 0.212, 0.205];   // city-wide rule (Nov 13): no pale rim, no pale sandy patches: weathered grey setts, dark trodden soil
   // relief: ridges and hollows; dryness: pale sandy dirt on the high ground, black compost in the hollows and in patches
   const ph = [R() * 6.3, R() * 6.3, R() * 6.3, R() * 6.3], fq = [2.1 + R() * 2, 3.3 + R() * 3, 5 + R() * 4, 6 + R() * 5];
   const relief = (x, z) => 0.009 * Math.sin(x * fq[0] + ph[0]) * Math.cos(z * fq[1] + ph[1]) + 0.007 * Math.sin((x + z) * fq[2] + ph[2]) + 0.005 * Math.cos((x - z * 1.3) * fq[3] + ph[3]);
@@ -1345,6 +1379,7 @@ async function unpackBin(url, pack) {
       if (k[0] === 'd') { const a = w === 1 ? new Uint8Array(out.buffer, off, n) : w === 2 ? new Uint16Array(out.buffer, off, n) : new Uint32Array(out.buffer, off, n); for (let i = c; i < n; i++) a[i] += a[i - c]; } } }
   if (p !== src.length) throw new Error('trees: ' + url + ' unpacked ' + p + ' of ' + src.length);
   return out.buffer; }
+const SUNVIS = typeof location !== 'undefined' && /[?&]sunvis=1/.test(location.search);   // round 34: the cut-out crown (4.6-44 m) takes the sun leaf by leaf: whether the sun reaches each piece through the crown is worked out at load for eight compass directions (a march through the crown's own leaf density), as the near band's baked values are; before, an ellipsoid stood in for the crown
 const GENW = typeof location === 'undefined' || !/[?&]genw=0/.test(location.search);
 function genInWorkers(jobs, init) {
   const src = `import { makeTree, SPECIES } from ${JSON.stringify(new URL('./trees_gen_next.js', import.meta.url).href)};
@@ -1352,7 +1387,7 @@ function genInWorkers(jobs, init) {
     onmessage = (e) => { const d = e.data;
       if (d.init) { let boughs = null; if (d.boughs) { boughs = {}; for (const slug in d.boughs) { const meta = d.boughs[slug].meta, buf = d.boughs[slug].buf; keep.add(buf); const f32 = (o) => new Float32Array(buf, o[0], o[1]), u32 = (o) => new Uint32Array(buf, o[0], o[1]);
           boughs[slug] = { list: meta.boughs.map((b) => ({ r0: b.r0, wP: f32(b.wP), wN: f32(b.wN), wUV: f32(b.wUV), wI: u32(b.wI), lP: f32(b.lP), lN: f32(b.lN), lUV: f32(b.lUV), lI: u32(b.lI), lF: u32(b.lF), cen: f32(b.cen) })) }; } }
-        opt = { sprays: d.sprays, flare: d.flare, boughs }; return; }
+        opt = { sprays: d.sprays, flare: d.flare, boughs, trunk2: d.trunk2 }; return; }
       const T = makeTree(SPECIES[d.sp], d.seed, opt), tr = new Set();
       const walk = (o, dep) => { if (!o || dep > 4) return; if (ArrayBuffer.isView(o)) { if (!keep.has(o.buffer)) tr.add(o.buffer); return; } if (typeof o === 'object' && !Array.isArray(o)) for (const k in o) walk(o[k], dep + 1); else if (Array.isArray(o) && o.length < 8) for (const v of o) walk(v, dep + 1); };
       walk(T, 0); postMessage({ id: d.id, T }, [...tr]); };`;
@@ -1442,6 +1477,39 @@ export async function add(game, ctx) {
     for (const t of trees) if (!t.park && t.pk < 2.4 && grass.length) { from.set(t.x, 60, -t.y); rc.set(from, dn); t.onGrass = rc.intersectObjects(grass, false).length > 0;
       // hard against the grass there is no room for a pit on the paving: the tree stands just inside the lawn instead
       if (!t.onGrass && t.pk < 0.7) { const l = Math.hypot(t.pkv[0], t.pkv[1]) || 1; t.from = [t.x, t.y]; t.x += t.pkv[0] / l * (t.pk + 0.7); t.y += t.pkv[1] / l * (t.pk + 0.7); t.onGrass = true; } } }
+  // Nov 12 (trees out of the lanes): no trunk stands in a roadway. Every tree is tested against every road: inside a travel lane (the whole
+  // edge, ends included: roads.inLane skips the first and last 0.5 m), or off the sidewalk and between the kerbs, or off the sidewalk and inside a
+  // junction's circle. Such a tree is moved straight out onto the sidewalk (or lawn) beside the road when that is under 3.5 m away and free;
+  // otherwise it is not drawn. Its collision circle goes with it. ?lanefix=0 = before; ?lanechk=1 prints the list as a page error line.
+  let laneFix = null;
+  if (game.roads && game.roads.edges && !/[?&]lanefix=0/.test(location.search)) { try {
+    const R = game.roads, St = game.statics, moved = [], dropped = [], blds = ctx.city.buildings.filter((b) => !b.far && (b.minh || 0) < 5);
+    for (const e of R.edges) if (!e.box) e.box = e.pts.reduce((a, p) => [Math.min(a[0], p[0]), Math.min(a[1], p[1]), Math.max(a[2], p[0]), Math.max(a[3], p[1])], [1e9, 1e9, -1e9, -1e9]);
+    const onSw = (x, y) => !!(St && St.onSidewalk && St.onSidewalk(x, y));
+    const test = (x, y, r) => { let worst = null; const sw = onSw(x, y);
+      for (const e of R.edges) { const b = e.box, hw = Math.max(e.width || 0, e.lanes * e.lw) / 2 + r + 0.3; if (x < b[0] - hw || x > b[2] + hw || y < b[1] - hw || y > b[3] + hw) continue;
+        const pr = e.line.project(x, y), lane = pr.d - (e.lanes * e.lw) / 2 - r, kerb = pr.d - (e.width || 0) / 2 - r;
+        if (lane < 0.3 || (!sw && kerb < 0)) { const need = Math.max(0.3 - lane, sw ? 0 : -kerb); if (!worst || need > worst.need) worst = { need, pr, e, why: lane < 0 ? 'lane' : lane < 0.3 ? 'lane edge' : 'roadway' }; } }
+      if (!sw && !worst) for (const n of R.nodes) if (Math.hypot(x - n.p[0], y - n.p[1]) < (n.r || 0) + r) { worst = { need: 9, why: 'junction' }; break; }
+      return worst; };
+    const circAt = (x, y) => { const a = St && St.circ && St.circ.get(St.key(Math.floor(x / St.cell), Math.floor(y / St.cell))); if (a) for (const o of a) if (o.tag === 'tree' && o.on && Math.abs(o.x - x) < 0.02 && Math.abs(o.y - y) < 0.02) return o; return null; };
+    for (let i = trees.length - 1; i >= 0; i--) { const t = trees[i], w = test(t.x, t.y, 0.25); if (!w) continue;
+      let ok = false, nx = 0, ny = 0;
+      if (w.pr && w.need + 0.8 <= 3.5) { let ux = t.x - w.pr.x, uy = t.y - w.pr.y; const l = Math.hypot(ux, uy);
+        if (l > 0.02) { ux /= l; uy /= l; const d = (w.e.width || w.e.lanes * w.e.lw) / 2 + 0.25 + 0.8; nx = w.pr.x + ux * Math.max(d, l + 0.3); ny = w.pr.y + uy * Math.max(d, l + 0.3);
+          ok = !test(nx, ny, 0.25) && (onSw(nx, ny) || parks.some((p) => inPoly(nx, ny, p))) && !blds.some((b) => inPoly(nx, ny, b.poly)) && !trees.some((o) => o !== t && Math.hypot(o.x - nx, o.y - ny) < 3); } }
+      const rec = [+t.x.toFixed(2), +t.y.toFixed(2), 0.25, w.why, t.hero ? 'census' : t.park ? 'park' : 'street'];
+      if (ok) { if (t.hero) { const c1 = circAt(t.x, t.y); if (c1) c1.on = false; if (St && St.addCircle) St.addCircle(nx, ny, 0.25, 'tree'); }   // a census tree's circle is moved here; the others' where trees moved off the paving get theirs (t.from, below)
+        if (!t.from) t.from = [t.x, t.y];
+        t.x = nx; t.y = ny; rec.push('moved to', +nx.toFixed(2), +ny.toFixed(2)); moved.push(rec); nearestEdge(blds.map((b) => b.poly), [t], 'wall', 12); nearestEdge(ctx.city.blocks.map((b) => b.ext), [t], 'kerb', 12); nearestEdge(parks, [t], 'pk', 12); }
+      else { const c0 = circAt(t.x, t.y) || (t.from && circAt(t.from[0], t.from[1])); if (c0) c0.on = false; trees.splice(i, 1); rec.push('dropped'); dropped.push(rec); } }
+    laneFix = { moved, dropped }; window.__treesLaneFix = laneFix;
+    if (moved.length || dropped.length) console.log('[trees] out of the lanes: moved ' + moved.length + ', dropped ' + dropped.length);
+    if (/[?&]lanechk=1/.test(location.search)) { let left = 0; for (const t of trees) if (test(t.x, t.y, 0.25)) left++; let cl = 0, ca = 0; if (St && St.circ) for (const a of St.circ.values()) for (const o of a) if (o.tag === 'tree' && o.on !== false) { ca++; if (R.inLane(o.x, o.y, 0)) cl++; }
+      const line = 'LANECHK trees ' + trees.length + ' still failing ' + left + ' | tree circles now ' + ca + ' inLane ' + cl + ' (the circles of trees moved here are added further down) | ' + 'moved ' + moved.length + ' dropped ' + dropped.length; setTimeout(() => { throw new Error(line); }, 0);
+      setTimeout(() => { let n = 0, a2 = 0; for (const a of St.circ.values()) for (const o of a) if (o.tag === 'tree' && o.on !== false) { a2++; if (test(o.x, o.y, o.r)) n++; } setTimeout(() => { throw new Error('LANECIRC live tree circles failing the test ' + n + ' of ' + a2); }, 0); }, 15000);
+      moved.concat(dropped).forEach((q, i) => setTimeout(() => { throw new Error('LANEFIX ' + (i + 1) + ' ' + q.join(',')); }, 0)); }
+  } catch (e) { console.warn('[trees] lane fix failed', e); } }
   for (const t of trees) if (!t.park) { const v = t.kerbv, l = Math.hypot(v[0], v[1]); t.kh = l > 0.05 && t.kerb < 6 ? Math.atan2(v[0], -v[1]) : t.h; }
 
   mark('place');
@@ -1453,15 +1521,21 @@ export async function add(game, ctx) {
   const genP = (GENW && V2 && BOUGHS && typeof Worker !== 'undefined') ? (async () => { try {
     const A0 = ctx.A + TDIR, sj = await (await fetch(A0 + 'sprays.json')).json(), bg = {};
     for (const slug of ['jacaranda']) bg[slug] = await getPk('boughs_' + slug);
-    return await genInWorkers(genJobs, { sprays: sj, flare: V2, boughs: bg });
+    return await genInWorkers(genJobs, { sprays: sj, flare: V2, boughs: bg, trunk2: TRK2 });
   } catch (e) { console.warn('[trees] model workers not started', e); return null; } })() : Promise.resolve(null);
   const tl = new THREE.TextureLoader(), A = ctx.A + TDIR;
   const tex = async (f, srgb) => { let t; for (let k = 0; ; k++) { try { t = await tl.loadAsync(A + f); break; } catch (e) { if (k >= 3) throw new Error('trees: texture ' + f + ' did not load'); await new Promise((r) => setTimeout(r, 300 * (k + 1))); } } t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; if (srgb) t.colorSpace = THREE.SRGBColorSpace; return t; };
+  const lateQ = [], texL = (f, srgb, px) => { if (!LATE) return tex(f, srgb); const cv = document.createElement('canvas'); cv.width = cv.height = 2; const g = cv.getContext('2d'); g.fillStyle = 'rgb(' + px[0] + ',' + px[1] + ',' + px[2] + ')'; g.fillRect(0, 0, 2, 2);
+    const t = new THREE.Texture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; if (srgb) t.colorSpace = THREE.SRGBColorSpace; t.needsUpdate = true; lateQ.push([t, f]); return t; };
+  if (LATE) (async () => { const nap = (ms) => new Promise((r) => setTimeout(r, ms)); for (let i = 0; i < 600 && !window.__ready; i++) await nap(100); await nap(400); const t0 = performance.now(); let n = 0;
+    for (let i = 0; i < lateQ.length; i++) { const [t, f] = lateQ[i]; try { const r = await tex(f); t.dispose(); t.image = r.image; t.needsUpdate = true; n++; } catch (e) { console.warn('[trees] late picture not loaded: ' + f); } }
+    console.log('[trees] late pictures: ' + n + ' of ' + lateQ.length + ' in ' + Math.round(performance.now() - t0) + ' ms'); window.__treesLate = { n, of: lateQ.length, ms: Math.round(performance.now() - t0) }; })();
   const [b12c, b12n, b14c, b14n, soilC, soilN] = await Promise.all([tex('Bark012_color.jpg', true), tex('Bark012_normal.jpg'), tex('Bark014_color.jpg', true), tex('Bark014_normal.jpg'), tex('Ground048_color.jpg', true), tex('Ground048_normal.jpg')]);
   const feet = (await (await fetch(A + 'feet.json')).json()).feet;
-  const [phBarkC, phBarkN, chipsC, chipsN, chipsD, dirtC, dirtN] = await Promise.all([tex('ph_barkbrown02_diff.webp', true), tex('ph_barkbrown02_nor.webp'), tex(SUNM ? 'sun_mulch_color.webp' : PHOTO ? 'photo_mulch_color.webp' : MPATH ? 'ph_chippath_diff.webp' : WC3 ? 'acg_woodchips003_color.webp' : 'ph_woodchips_diff.webp', true), tex(SUNM ? 'sun_mulch_normal.webp' : PHOTO ? 'photo_mulch_normal.webp' : MPATH ? 'ph_chippath_nor.webp' : WC3 ? 'acg_woodchips003_normal.webp' : 'ph_woodchips_nor.webp'), tex(SUNM ? 'sun_mulch_da.webp' : PHOTO ? 'photo_mulch_da.webp' : MPATH ? 'ph_chippath_disp.webp' : WC3 ? 'acg_woodchips003_da.webp' : 'ph_woodchips_disp.webp'), tex('ph_parkdirt_diff.webp', true), tex('ph_parkdirt_nor.webp')]);
+  const [phBarkC, phBarkN, chipsC, chipsN, chipsD, dirtC, dirtN] = await Promise.all([tex('ph_barkbrown02_diff.webp', true), tex('ph_barkbrown02_nor.webp'), texL(SUNM ? 'sun_mulch_color.webp' : PHOTO ? 'photo_mulch_color.webp' : MPATH ? 'ph_chippath_diff.webp' : WC3 ? 'acg_woodchips003_color.webp' : 'ph_woodchips_diff.webp', true, [122, 96, 72]), texL(SUNM ? 'sun_mulch_normal.webp' : PHOTO ? 'photo_mulch_normal.webp' : MPATH ? 'ph_chippath_nor.webp' : WC3 ? 'acg_woodchips003_normal.webp' : 'ph_woodchips_nor.webp', false, [128, 128, 255]), texL(SUNM ? 'sun_mulch_da.webp' : PHOTO ? 'photo_mulch_da.webp' : MPATH ? 'ph_chippath_disp.webp' : WC3 ? 'acg_woodchips003_da.webp' : 'ph_woodchips_disp.webp', false, [128, 230, 0]), tex('ph_parkdirt_diff.webp', true), tex('ph_parkdirt_nor.webp')]);
   for (const t of [phBarkC, phBarkN]) t.repeat.set(0.45, 0.55);   // the generator's bark u/v run 0.45 m round and 0.55 m up per unit; the photo covers 1 m
-  const woodMats = [woodMaterial(shared, b12c, b12n, 0, soilC), woodMaterial(shared, b14c, b14n, 1, soilC), woodMaterial(shared, b12c, b12n, 2, soilC), woodMaterial(shared, phBarkC, phBarkN, 3, soilC)];
+  const b2G = TRK2 && BARK2 && !PLANE ? [texL('ph_barkwillow02_diff.webp', true, [96, 88, 80]), texL('ph_barkwillow02_nor.webp', false, [128, 128, 255]), texL('ph_barkwillow02_da.webp', false, [128, 230, 0])] : null; if (b2G) for (const t of b2G) t.anisotropy = 8;
+  const woodMats = [woodMaterial(shared, b12c, b12n, 0, soilC, null, null, b2G), woodMaterial(shared, b14c, b14n, 1, soilC, null, null, b2G), woodMaterial(shared, b12c, b12n, 2, soilC, null, null, b2G), woodMaterial(shared, phBarkC, phBarkN, 3, soilC, null, null, b2G)];
   const scans = await Promise.all(feet.map(async (f) => { if (V2) return { map: null, normal: b12n }; const normal = await tex('foot_' + f.src + '_normal.webp'); normal.flipY = false; normal.needsUpdate = true; return { map: null, normal }; }));
   const footMatCache = new Map(), footMat = (bark, fi) => { const key = bark + '_' + fi; if (!footMatCache.has(key)) { const fm = woodMaterial(shared, bark === 3 ? phBarkC : bark === 1 ? b14c : b12c, bark === 3 ? phBarkN : bark === 1 ? b14n : b12n, bark, soilC, scans[fi]); fm.side = THREE.DoubleSide; fm.shadowSide = THREE.DoubleSide; footMatCache.set(key, fm); } return footMatCache.get(key); };
   const leafMat = leafMaterial(shared), proxyMat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
@@ -1482,7 +1556,7 @@ export async function add(game, ctx) {
       const { meta, buf } = await getPk('boughs_' + slug);
       const f32 = (o) => new Float32Array(buf, o[0], o[1]), u32 = (o) => new Uint32Array(buf, o[0], o[1]);
       const list = meta.boughs.map((b) => ({ r0: b.r0, wP: f32(b.wP), wN: f32(b.wN), wUV: f32(b.wUV), wI: u32(b.wI), lP: f32(b.lP), lN: f32(b.lN), lUV: f32(b.lUV), lI: u32(b.lI), lF: u32(b.lF), cen: f32(b.cen) }));
-      const [lc, ln, wc, wn] = await Promise.all([tex('bough_' + slug + '_leaf.webp', true), tex('bough_' + slug + '_leaf_n.webp'), tex('bough_' + slug + '_wood.webp', true), tex('bough_' + slug + '_wood_n.webp')]);
+      const [lc, ln, wc, wn] = await Promise.all([tex('bough_' + slug + '_leaf.webp', true), texL('bough_' + slug + '_leaf_n.webp', false, [128, 128, 255]), texL('bough_' + slug + '_wood.webp', true, [92, 82, 72]), texL('bough_' + slug + '_wood_n.webp', false, [128, 128, 255])]);
       for (const t of [lc, ln, wc, wn]) { if (FULL) t.flipY = false; t.anisotropy = 8; t.needsUpdate = true; } for (const t of [lc, ln]) t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
       const lm = leafMaterial(shared, false, null, { c: lc, n: ln, mean: meta.mean_srgb.map((v) => Math.pow(v, 2.2)), trans: 1.45, glow: 4.0 });
       boughs = boughs || {}; boughs[slug] = { list }; boughMats[slug] = { leaf: lm, wood: woodMaterial(shared, wc, wn, 4, soilC) };
@@ -1493,7 +1567,7 @@ export async function add(game, ctx) {
   let scan = null;
   if (V2 && SCAN && sprays) try {
     const slug = 'small02', dslug = DENSE ? 'small02d' : slug, { meta: q, buf } = await getPk('scan_' + dslug);
-    const [lc, ln, wc, wn] = await Promise.all([tex('scan_' + slug + '_leaf.webp', true), tex('scan_' + slug + '_leaf_n.webp'), tex('scan_' + slug + '_wood.webp', true), tex('scan_' + slug + '_wood_n.webp')]);
+    const [lc, ln, wc, wn] = await Promise.all([tex('scan_' + slug + '_leaf.webp', true), texL('scan_' + slug + '_leaf_n.webp', false, [128, 128, 255]), texL('scan_' + slug + '_wood.webp', true, [92, 84, 76]), texL('scan_' + slug + '_wood_n.webp', false, [128, 128, 255])]);
     for (const t of [lc, ln, wc, wn]) { if (FULL) t.flipY = false; t.anisotropy = 8; t.needsUpdate = true; } for (const t of [lc, ln]) t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
     mark('scan_fetch');
     if (q.v !== 2) throw new Error('scan file is not the round-16 format');
@@ -1531,7 +1605,20 @@ export async function add(game, ctx) {
         const cg = [0, 1, 2].map((k) => (q.llo[k] + q.lhi[k]) / 2), eg = [0, 1, 2].map((k) => (q.lhi[k] - q.llo[k]) / 2 + 0.25);
     const lv = q.levels.map((L) => ({ P: f32(L.P), N: f32(L.N), UV: f32(L.UV), F: u8(L.F), I: u16(L.I), rg: L.ranges }));
     const cc = [(q.lo[0] + q.hi[0]) / 2, q.crown0 + (q.hi[1] - q.crown0) * 0.42, (q.lo[2] + q.hi[2]) / 2], ce = [(q.hi[0] - q.lo[0]) / 2, (q.hi[1] - q.crown0) / 2, (q.hi[2] - q.lo[2]) / 2];
-    const mkBand = (B) => { const src = q[B.src], X = f32(src.X), Qt = new Int16Array(buf, src.Q[0], src.Q[1]), A8 = u8(src.A), V8 = u8(src.V), NI = src.n, L = lv[B.level], nUse = Math.round(NI * B.keep), take = (i) => (q.kinds[A8[i * 4]] !== 2 || (i * 0.61803 % 1) < B.stems) && (!CLUMP || n3(X[i * 4] * 2.2, X[i * 4 + 1] * 2.2, X[i * 4 + 2] * 2.2) > 0.43 || (i * 0.3819 % 1) < 0.12); let nv = 0, ni = 0;
+    // ?sunvis=1: sun visibility of every piece of the cut-out crown for eight compass directions at 48 degrees (the near band's baked convention):
+    // the pieces' areas go into a 10 cm grid, a march from each piece toward the sun adds up what lies in the way; the extinction is set so the same
+    // share of pieces is sunlit as in the near band's baked values
+    const sunVis8 = (X, n) => { if (q._sv) return q._sv; const CS = 0.10, lo = q.llo, nx = Math.ceil((q.lhi[0] - lo[0]) / CS) + 3, ny = Math.ceil((q.lhi[1] - lo[1]) / CS) + 3, nz = Math.ceil((q.lhi[2] - lo[2]) / CS) + 3, G = new Float32Array(nx * ny * nz);
+      const cell = (x, y, z) => { const i = Math.floor((x - lo[0]) / CS) + 1, j = Math.floor((y - lo[1]) / CS) + 1, k = Math.floor((z - lo[2]) / CS) + 1; return (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz) ? -1 : (k * ny + j) * nx + i; };
+      for (let i = 0; i < n; i++) { const c = cell(X[i * 4], X[i * 4 + 1], X[i * 4 + 2]); if (c >= 0) G[c] += X[i * 4 + 3] * X[i * 4 + 3]; }
+      const el = 48 * Math.PI / 180, tau = new Float32Array(n * 8);
+      for (let d = 0; d < 8; d++) { const az = d * Math.PI / 4, dx = Math.cos(el) * Math.cos(az) * CS, dy = Math.sin(el) * CS, dz = Math.cos(el) * Math.sin(az) * CS;
+        for (let i = 0; i < n; i++) { let x = X[i * 4] + dx * 1.5, y = X[i * 4 + 1] + dy * 1.5, z = X[i * 4 + 2] + dz * 1.5, sum = 0; for (let t = 0; t < 64; t++) { const c = cell(x, y, z); if (c < 0) break; sum += G[c]; x += dx; y += dy; z += dz; } tau[i * 8 + d] = sum; } }
+      const nearV = u8(q.inst.V); let lit = 0; for (let i = 0; i < nearV.length; i++) if (nearV[i] > 127) lit++; const share = Math.min(0.8, Math.max(0.2, lit / nearV.length));
+      const st = Float32Array.from(tau).sort(), tq = Math.max(st[Math.floor(st.length * share)], 1e-6), kx = Math.LN2 / tq, V = new Uint8Array(n * 8);
+      for (let i = 0; i < n * 8; i++) V[i] = Math.round(255 * Math.min(1, 0.04 + 0.96 * Math.exp(-kx * tau[i])));
+      q._sv = V; console.log('[trees] sunvis: ' + n + ' pieces, share sunlit ' + share.toFixed(2)); return V; };
+    const mkBand = (B) => { const src = q[B.src], X = f32(src.X), Qt = new Int16Array(buf, src.Q[0], src.Q[1]), A8 = u8(src.A), NI = src.n, V8 = (SUNVIS && B.src === 'inst0') ? sunVis8(X, NI) : u8(src.V), L = lv[B.level], nUse = Math.round(NI * B.keep), take = (i) => (q.kinds[A8[i * 4]] !== 2 || (i * 0.61803 % 1) < B.stems) && (!CLUMP || n3(X[i * 4] * 2.2, X[i * 4 + 1] * 2.2, X[i * 4 + 2] * 2.2) > 0.43 || (i * 0.3819 % 1) < 0.12); let nv = 0, ni = 0;
       for (let i = 0; i < nUse; i++) if (take(i)) { const r = L.rg[A8[i * 4]]; nv += r[1]; ni += r[3]; }
       const pos = new Float32Array(nv * 3), nrm = new Int8Array(nv * 4), col = new Uint8Array(nv * 4), uv = new Float32Array(nv * 2), va = new Uint8Array(nv * 4), vb = new Uint8Array(nv * 4), fdv = new Uint8Array(nv), crw = new Int8Array(nv * 3), idx = new Uint32Array(ni); let v = 0, k = 0;
       for (let i = 0; i < nUse; i++) { if (!take(i)) continue;
@@ -1556,14 +1643,16 @@ export async function add(game, ctx) {
     let SB = TWIGS ? [{ d: 4.2, src: 'inst', level: 0, keep: 1, scale: 1, own: 1, crown: 0.12, stems: 1, wood: 'all' }, { d: 8.0, src: 'inst', level: 1, keep: 1, scale: 1, own: 1, crown: 0.15, stems: 0.5, wood: 'all' },
       { d: 14, src: 'inst', level: 2, keep: 0.5, scale: 1.4, own: 0.8, crown: 0.5, stems: 0.3, wood: 'big' }, { d: 26, src: 'inst', level: 2, keep: 0.34, scale: 1.7, own: 0.8, crown: 0.5, stems: 0, wood: 'thin' }, { d: 44, src: 'inst', level: 2, keep: 0.16, scale: 2.4, own: 0.8, crown: 0.55, stems: 0, wood: 'thin' }]
       : HYBRID ? [{ d: 4.6, src: 'inst', level: 0, keep: 1, scale: BIG ? 1.25 : 1, own: 1, crown: 0.12, stems: 1, wood: TWK ? 'near' : 'big' }].concat(CUT) : CUT;
+    if (GEOFAR && HYBRID && !TWIGS) SB = [SB[0], { d: 13, src: 'inst', level: 1, keep: 1, scale: 1, own: 1, crown: 0.15, stems: 1, wood: 'big' }, { d: 24, src: 'inst', level: 2, keep: 1, scale: 1.15, own: 0.9, crown: 0.3, stems: 0.6, wood: 'big' }, CUT[1]];
     if (wgNetA) for (const b of SB) if (b.wood === 'big') b.wood = b.d < 5 ? 'netA' : 'netB';
-    if (LODFADE && HYBRID && !TWIGS) { SB[0].fade = [3.8, 4.8, -2, -1]; SB[1].fade = [8.0, 9.4, 3.8, 4.8]; SB[2].fade = [1e9, 2e9, 8.0, 9.4]; }
+    if (GEOFAR && LODFADE && HYBRID && !TWIGS) { SB[0].fade = [3.8, 4.8, -2, -1]; SB[1].fade = [11.6, 13.0, 3.8, 4.8]; SB[2].fade = [22.0, 24.0, 11.6, 13.0]; SB[3].fade = [1e9, 2e9, 22.0, 24.0]; }
+    else if (LODFADE && HYBRID && !TWIGS) { SB[0].fade = [3.8, 4.8, -2, -1]; SB[1].fade = [8.0, 9.4, 3.8, 4.8]; SB[2].fade = [1e9, 2e9, 8.0, 9.4]; }
     const proxy = new THREE.BufferGeometry(); proxy.setAttribute('position', new THREE.BufferAttribute(f32(q.proxy.P), 3)); proxy.setIndex(new THREE.BufferAttribute(new Uint32Array(buf, q.proxy.I[0], q.proxy.I[1]), 1));
-    { const bd = phBarkC.clone(), bn = phBarkN.clone(); for (const t of [bd, bn]) { t.repeat.set(1, 1); t.needsUpdate = true; } let b2 = null; if (BARK2) { b2 = await Promise.all([tex('ph_barkwillow02_diff.webp', true), tex('ph_barkwillow02_nor.webp'), tex('ph_barkwillow02_da.webp')]); for (const t of b2) t.anisotropy = 8; }
+    { const bd = phBarkC.clone(), bn = phBarkN.clone(); for (const t of [bd, bn]) { t.repeat.set(1, 1); t.needsUpdate = true; } let b2 = null; if (BARK2) { b2 = await Promise.all(PLANE ? [tex('plane_bark_c.webp', true), tex('plane_bark_n.webp'), tex('plane_bark_da.webp')] : b2G || [texL('ph_barkwillow02_diff.webp', true, [96, 88, 80]), texL('ph_barkwillow02_nor.webp', false, [128, 128, 255]), texL('ph_barkwillow02_da.webp', false, [128, 230, 0])]); for (const t of b2) t.anisotropy = 8; }
       woodMats.push(woodMaterial(shared, wc, wn, 5, chipsC, null, /[?&]barkd=1/.test(location.search) ? [bd, bn] : null, b2)); }   // the fine tiling bark read as 'blurry, grey-purple' in the pit view: off (?barkd=1)
     const lmGeo = leafMaterial(shared, false, null, { c: lc, n: ln, mean: [0.0788, 0.1440, 0.0433], trans: GLOW ? 1.7 : 1.1, glow: GLOW ? 2.2 : 1.0, selfK: 0.85, own: true, spec: GLOSS ? 3.0 : 0.5, sat: 0.72, shade: 1.0, fwd: 0.0, geo: true, thru: [0.92, 1.0, 0.72] }); lmGeo.roughness = GLOSS ? 0.34 : 0.62;
-    const lmCut = leafMaterial(shared, false, null, { c: lc, n: ln, mean: [0.0788, 0.1440, 0.0433], trans: BACK ? 0.95 : 1.5, glow: BACK ? 0.8 : 3.5, selfK: 0.85, own: true, spec: 2.6, sat: 1.0, shade: 1.0, fwd: 0.0, thru: BACK ? [0.78, 1.05, 0.34] : [1.0, 1.1, 0.55] }); lmCut.roughness = 0.42;
-    const geoSpec = { c: lc, n: ln, mean: [0.0788, 0.1440, 0.0433], trans: GLOW ? 1.7 : 1.1, glow: GLOW ? 2.2 : 1.0, selfK: 0.85, own: true, spec: GLOSS ? 3.0 : 0.5, sat: 0.72, shade: 1.0, fwd: 0.0, geo: true, thru: [0.92, 1.0, 0.72] }, cutSpec = { c: lc, n: ln, mean: [0.0788, 0.1440, 0.0433], trans: BACK ? 0.95 : 1.5, glow: BACK ? 0.8 : 3.5, selfK: 0.85, own: true, spec: 2.6, sat: 1.0, shade: 1.0, fwd: 0.0, thru: BACK ? [0.78, 1.05, 0.34] : [1.0, 1.1, 0.55] };
+    const lmCut = leafMaterial(shared, false, null, { c: lc, n: ln, mean: [0.0788, 0.1440, 0.0433], trans: BACK ? 0.95 : 1.5, glow: BACK ? 0.8 : 3.5, selfK: 0.85, own: true, vis8: SUNVIS, spec: 2.6, sat: 1.0, shade: 1.0, fwd: 0.0, thru: BACK ? [0.78, 1.05, 0.34] : [1.0, 1.1, 0.55] }); lmCut.roughness = 0.42;
+    const geoSpec = { c: lc, n: ln, mean: [0.0788, 0.1440, 0.0433], trans: GLOW ? 1.7 : 1.1, glow: GLOW ? 2.2 : 1.0, selfK: 0.85, own: true, spec: GLOSS ? 3.0 : 0.5, sat: 0.72, shade: 1.0, fwd: 0.0, geo: true, thru: [0.92, 1.0, 0.72] }, cutSpec = { c: lc, n: ln, mean: [0.0788, 0.1440, 0.0433], trans: BACK ? 0.95 : 1.5, glow: BACK ? 0.8 : 3.5, selfK: 0.85, own: true, vis8: SUNVIS, spec: 2.6, sat: 1.0, shade: 1.0, fwd: 0.0, thru: BACK ? [0.78, 1.05, 0.34] : [1.0, 1.1, 0.55] };
     mark('scan_wood');
     const bands = SB.map(mkBand); mark('scan_bands');
     for (const b of bands) { if (b.fade) { b.mat = leafMaterial(shared, false, null, Object.assign({}, b.geo ? geoSpec : cutSpec, { fade: b.fade })); b.mat.roughness = b.geo ? (GLOSS ? 0.34 : 0.62) : 0.42; }
@@ -1577,7 +1666,7 @@ export async function add(game, ctx) {
   for (const [sp, n] of VARIANTS) {
     bySpecies[sp] = [];
     for (let k = 0; k < n; k++) {
-      const T = (genT && genT[vi]) ? (nGenW++, genT[vi]) : makeTree(SPECIES[sp], 101 + vi * 37 + k * 11, { sprays, flare: V2, boughs });
+      const T = (genT && genT[vi]) ? (nGenW++, genT[vi]) : makeTree(SPECIES[sp], 101 + vi * 37 + k * 11, { sprays, flare: V2, boughs, trunk2: TRK2 });
       const big = sp === 'planeBig' || sp === 'broad', fi = big ? (k % 2 ? 0 : 2) : (vi + k) % 2, foot = footGeometry(feet[fi], T, SPECIES[sp], 3 + vi * 5 + k);
       if (!V2) T.info.rMin = foot.rMin; foot.fi = fi;
       const wpos = new THREE.BufferAttribute(T.wood.pos, 3), wnrm = new THREE.BufferAttribute(T.wood.nrm, 3), wuv = new THREE.BufferAttribute(T.wood.uv, 2), waw = new THREE.BufferAttribute(T.wood.col, 4, true), widx = new THREE.BufferAttribute(T.wood.idx, 1);
@@ -1775,7 +1864,7 @@ export async function add(game, ctx) {
     .concat([['flush', false], ['flush', false], ['flush', true], ['flush', true]].map(([rim, pl], v) => pitGeometry(s[0], s[1], 7 + i * 5 + v * 13 + 3, rim, pl, true))));
   const guardG = sizes.map((s, i) => [guardGeometry(s[0], s[1], 'rail', 31 + i), guardGeometry(s[0], s[1], 'hoop', 47 + i)]);
   for (const gs of guardG) for (const g of gs) { const n = g.attributes.position.count; g.setAttribute('aDry', new THREE.Float32BufferAttribute(new Float32Array(n).fill(-1), 1)); g.setAttribute('aLift', new THREE.Float32BufferAttribute(new Float32Array(n), 1)); }
-  const TT = 48, tiles = new Map(), pitTiles = [], flat = [], sunk = sizes.map(() => []); let nPit = 0, nGuard = 0, pitTris = 0;
+  const TT = 48, tiles = new Map(), pitTiles = [], flat = [], sunk = sizes.map(() => []), sunkCity = new Map(); let nPit = 0, nGuard = 0, pitTris = 0;
   const tsh = [];
   for (const t of trees) {
     if (t.park || t.skip || t.onGrass) continue;
@@ -1788,7 +1877,7 @@ export async function add(game, ctx) {
     let back = Math.max(0, sizes[si][1] / 2 + 0.06 - t.kerb);              // keep the pit on the sidewalk side of the kerb
     if (t.pk < 1.1) { const l = Math.hypot(t.pkv[0], t.pkv[1]) || 1, pkz = (t.pkv[0] * Math.sin(t.kh) - t.pkv[1] * Math.cos(t.kh)) / l; back = Math.max(-0.3, Math.min(0.3, back + (1.1 - t.pk) * pkz)); }   // and on the paved side of a park's edge
     E.set(0, t.kh, 0); Q2.setFromEuler(E); P.set(t.x - Math.sin(t.kh) * back, 0.15, -t.y - Math.cos(t.kh) * back); Sc.set(1, 1, 1); M.compose(P, Q2, Sc);
-    const mm = M.clone(); mm.pit = [t.R, back, r(6), guard ? sizes[si][0] / 2 - 0.06 : 0]; mm.kerb = Math.min(9, t.kerb + back); mm.kh = t.kh; mm.si = si; if (TSHADOW && t.sc) tsh.push([mm, t]); if (t.hero && V2) sunk[si].push(mm); else { tile.p[si][v].push(mm); flat.push([mm, si]); tile.a[si].push(mm); } if (guard) tile.g[si][r(5) < 0.5 ? 0 : 1].push(M.clone());
+    const mm = M.clone(); mm.pit = [t.R, back, r(6), guard ? sizes[si][0] / 2 - 0.06 : 0]; mm.kerb = Math.min(9, t.kerb + back); mm.kh = t.kh; mm.si = si; if (TSHADOW && t.sc) tsh.push([mm, t]); if (t.hero && V2) sunk[si].push(mm); else if (PITALL && V2 && r(3) < 0.55) { let sc = sunkCity.get(k); if (!sc) sunkCity.set(k, sc = sizes.map(() => [])); sc[si].push(mm); } else { tile.p[si][v].push(mm); flat.push([mm, si]); tile.a[si].push(mm); } if (guard) tile.g[si][r(5) < 0.5 ? 0 : 1].push(M.clone());
     if (guard && game.statics && game.statics.addSeg && !/[?&]guardsolid=0/.test(location.search)) {   // round 28 (ITEM12 'Added 18:30'): a guard is a low iron fence on three sides (open to the kerb): nobody walks through it
       const gx = sizes[si][0] / 2 - 0.06, gz = sizes[si][1] / 2 - 0.06, e = M.elements, W = (lx, lz) => [e[0] * lx + e[8] * lz + e[12], -(e[2] * lx + e[10] * lz + e[14])];
       const a0 = W(-gx, gz), a1 = W(-gx, -gz), a2 = W(gx, -gz), a3 = W(gx, gz); game.statics.addSeg(a0[0], a0[1], a1[0], a1[1]); game.statics.addSeg(a1[0], a1[1], a2[0], a2[1]); game.statics.addSeg(a2[0], a2[1], a3[0], a3[1]); }
@@ -1812,7 +1901,8 @@ export async function add(game, ctx) {
   }
   if (V2) { const sm = sunkPitMaterial(shared, { chips: chipsC, chipsN, disp: chipsD }), chipMat = chipsMaterial(shared), spillMat = spillMaterial(shared, { chips: chipsC, chipsN, disp: chipsD }), bedMat = chipBedMaterial(shared, { chips: chipsC });
 
-    sizes.forEach((sz, si) => { const list = sunk[si]; if (!list.length) return;
+    sizes.forEach((sz, si) => { const sets = (sunk[si].length ? [sunk[si]] : []).concat([...sunkCity.values()].map((sc) => sc[si]).filter((l) => l.length)); if (!sets.length) return;   // the hole itself is one mesh for the city (two triangles a pit); what only a near pit shows (spill, chips) is one mesh per set: the hero blocks' pits, then each 48 m tile's
+      const list = [].concat(...sets);
       const hx = sz[0] / 2, hz = sz[1] / 2, mx = hx + 0.12, mz = hz + 0.12, g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute([-mx, 0.007, -mz, -mx, 0.007, mz, mx, 0.007, mz, mx, 0.007, -mz], 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], 3));
       g.setAttribute('aHalf', new THREE.Float32BufferAttribute([hx, hz, hx, hz, hx, hz, hx, hz], 2)); g.setIndex([0, 1, 2, 0, 2, 3]);
@@ -1823,8 +1913,9 @@ export async function add(game, ctx) {
       { const sx = hx + 0.45, sz2 = hz + 0.45, sg = new THREE.BufferGeometry();
         sg.setAttribute('position', new THREE.Float32BufferAttribute([-sx, 0.009, -sz2, -sx, 0.009, sz2, sx, 0.009, sz2, sx, 0.009, -sz2], 3)); sg.setAttribute('normal', new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], 3));
         sg.setAttribute('aHalf', new THREE.Float32BufferAttribute([hx, hz, hx, hz, hx, hz, hx, hz], 2)); sg.setIndex([0, 1, 2, 0, 2, 3]); sg.setAttribute('aPit', g.attributes.aPit); sg.setAttribute('aKerb', g.attributes.aKerb);
-        const sp = new THREE.InstancedMesh(sg, spillMat, list.length); sp.instanceMatrix = im.instanceMatrix;
-        Object.assign(sp, { frustumCulled: false, matrixAutoUpdate: false, castShadow: false, receiveShadow: true, renderOrder: 3 }); sp.userData.kind = 'st_treepit'; sp.userData.near = list; sp.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e9); group.add(sp); pitTiles.push(sp); pitTris += list.length * 2; }
+        for (const ls of sets) { if (ls !== sunk[si]) continue; const sgi = sets.length === 1 ? sg : new THREE.BufferGeometry(); if (sgi !== sg) { for (const k of ['position', 'normal', 'aHalf']) sgi.setAttribute(k, sg.attributes[k]); sgi.setIndex(sg.index); const api = new Float32Array(ls.length * 4); ls.forEach((mm, i) => api.set(mm.pit, i * 4)); sgi.setAttribute('aPit', new THREE.InstancedBufferAttribute(api, 4)); sgi.setAttribute('aKerb', new THREE.InstancedBufferAttribute(new Float32Array(ls.map((mm) => mm.kerb)), 1)); }
+        const sp = new THREE.InstancedMesh(sgi, spillMat, ls.length); if (sets.length === 1) sp.instanceMatrix = im.instanceMatrix; else { ls.forEach((mm, i) => sp.setMatrixAt(i, mm)); sp.instanceMatrix.needsUpdate = true; }
+        Object.assign(sp, { frustumCulled: false, matrixAutoUpdate: false, castShadow: false, receiveShadow: true, renderOrder: 3 }); sp.userData.kind = 'st_treepit'; sp.userData.near = ls; sp.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e9); group.add(sp); pitTiles.push(sp); pitTris += ls.length * 2; } }
       if (BED) { const bg = chipBedGeometry(sz[0], sz[1], 811 + si * 7); bg.setAttribute('aPit', g.attributes.aPit); bg.setAttribute('aKerb', g.attributes.aKerb);
         { const n = bg.attributes.position.count, hh = new Float32Array(n * 2); for (let q = 0; q < n; q++) { hh[q * 2] = hx; hh[q * 2 + 1] = hz; } bg.setAttribute('aHalf', new THREE.BufferAttribute(hh, 2)); }
         // one mesh per pit (the same vertex buffers), so only the pits within a few metres are drawn
@@ -1841,8 +1932,9 @@ export async function add(game, ctx) {
       // drawn after the hole: the loose chips; then the hole is closed again in the depth buffer at paving level, so nothing drawn later falls into it
       const cg = chipsGeometry(sz[0], sz[1], 301 + si); cg.setAttribute('aPit', new THREE.InstancedBufferAttribute(ap, 4)); { const n = cg.attributes.position.count, hh = new Float32Array(n * 2); for (let q = 0; q < n; q++) { hh[q * 2] = hx; hh[q * 2 + 1] = hz; } cg.setAttribute('aHalf', new THREE.BufferAttribute(hh, 2)); }
       if (!cg.index.count) return;
-      const ch = new THREE.InstancedMesh(cg, chipMat, list.length); ch.instanceMatrix = im.instanceMatrix; Object.assign(ch, { frustumCulled: false, matrixAutoUpdate: false, castShadow: false, receiveShadow: true, renderOrder: 4 }); ch.userData.kind = 'st_treepit'; group.add(ch); pitTiles.push(ch); ch.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e9); ch.userData.near = list; ch.userData.nearD = 12;   // round 28: the real pieces are drawn only for pits within 12 m (they are a few pixels beyond)
-pitTris += list.length * cg.index.count / 3; }); }
+      for (const ls of sets) { const cgi = sets.length === 1 ? cg : new THREE.BufferGeometry(); if (cgi !== cg) { for (const k in cg.attributes) if (k !== 'aPit') cgi.setAttribute(k, cg.attributes[k]); cgi.setIndex(cg.index); const api = new Float32Array(ls.length * 4); ls.forEach((mm, i) => api.set(mm.pit, i * 4)); cgi.setAttribute('aPit', new THREE.InstancedBufferAttribute(api, 4)); }
+      const ch = new THREE.InstancedMesh(cgi, chipMat, ls.length); if (sets.length === 1) ch.instanceMatrix = im.instanceMatrix; else { ls.forEach((mm, i) => ch.setMatrixAt(i, mm)); ch.instanceMatrix.needsUpdate = true; } Object.assign(ch, { frustumCulled: false, matrixAutoUpdate: false, castShadow: false, receiveShadow: true, renderOrder: 4 }); ch.userData.kind = 'st_treepit'; group.add(ch); pitTiles.push(ch); ch.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e9); ch.userData.near = ls; ch.userData.nearD = 12;   // round 28: the real pieces are drawn only for pits within 12 m (they are a few pixels beyond)
+pitTris += ls.length * cg.index.count / 3; } }); }
   // round 33: the trunk's own shadow on the paving. One mesh for the city: a square of paving round each street trunk, drawn as a multiply
   // over what is there, only where the shadow map says the sun reaches (so never doubled inside another shadow), not inside the pit (the
   // mulch draws its own), not past the kerb, gone by 52 m. Same strip as the pit's (radius, penumbra), ending where the shadow map's trunk begins.
@@ -1873,9 +1965,9 @@ pitTris += list.length * cg.index.count / 3; }); }
   // for the sidewalks part (items/trees/ASK.md): the hero pits as rectangles in map metres, [x, y, heading, length along the kerb, width]
   game.heroPits = [].concat(...sunk).map((mm) => [+mm.elements[12].toFixed(2), +(-mm.elements[14]).toFixed(2), +mm.kh.toFixed(3), sizes[mm.si][0], sizes[mm.si][1]]);
   if (V2 && typeof location !== 'undefined' && /[?&]pitdump=1/.test(location.search)) console.log('[game] trees hero pits [x, y, heading, length, width] ' + JSON.stringify([].concat(...sunk).map((mm) => [+mm.elements[12].toFixed(2), +(-mm.elements[14]).toFixed(2), +mm.kh.toFixed(3), sizes[mm.si][0], sizes[mm.si][1]])));
-  if (V2) { const all = [].concat(...sunk); if (all.length) {
-      const mg = moundGeometry(), ap = new Float32Array(all.length * 4); all.forEach((mm, i) => ap.set(mm.pit, i * 4)); mg.setAttribute('aPit', new THREE.InstancedBufferAttribute(ap, 4));
-      const md = new THREE.InstancedMesh(mg, moundMaterial(shared, { chips: chipsC, chipsN, disp: chipsD }), all.length); all.forEach((mm, i) => md.setMatrixAt(i, mm)); md.instanceMatrix.needsUpdate = true;
+  if (V2) { const mg0 = moundGeometry(), mdMat = moundMaterial(shared, { chips: chipsC, chipsN, disp: chipsD }); for (const all of [[].concat(...sunk)]) if (all.length) {   // (the generated trunks of the city pits bring their own root flare: no mound heaped against them)
+      const mg = new THREE.BufferGeometry(); for (const k in mg0.attributes) mg.setAttribute(k, mg0.attributes[k]); mg.setIndex(mg0.index); const ap = new Float32Array(all.length * 4); all.forEach((mm, i) => ap.set(mm.pit, i * 4)); mg.setAttribute('aPit', new THREE.InstancedBufferAttribute(ap, 4));
+      const md = new THREE.InstancedMesh(mg, mdMat, all.length); all.forEach((mm, i) => md.setMatrixAt(i, mm)); md.instanceMatrix.needsUpdate = true;
       Object.assign(md, { frustumCulled: false, matrixAutoUpdate: false, castShadow: false, receiveShadow: true, renderOrder: 5 }); md.userData.kind = 'st_treepit'; md.userData.near = all; md.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e9); group.add(md); pitTiles.push(md); } }
   // every pit is also a plain dark patch (two triangles, one draw call for the city), which is all that is drawn of it past ~46 m
   { const fg = new THREE.PlaneGeometry(1, 1); fg.rotateX(-Math.PI / 2); const fm = new THREE.MeshStandardMaterial({ color: 0x241d17, roughness: 1, metalness: 0 }); fm.polygonOffset = true; fm.polygonOffsetFactor = -1; fm.polygonOffsetUnits = -1;

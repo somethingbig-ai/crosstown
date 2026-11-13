@@ -232,7 +232,13 @@ export class World {
   }
 
   // light L28: local tone strength follows the exposure (see LIGHT.ltmH)
-  setLtm() { const u = this.film.uniforms; if (!u.uLtmH) return; const e = Math.min(1, Math.max(0, (this.ltmEx - LIGHT.ltmLo) / Math.max(1e-3, LIGHT.ltmHi - LIGHT.ltmLo))), k = e * e * (3 - 2 * e); u.uLtmH.value = LIGHT.ltmH * k; u.uLtmS.value = LIGHT.ltmS * k; }
+  // light L33: the switch is worked out in the camera pass itself from the exposure it already reads (uLtmLo / uLtmHi), so nothing is read back to the
+  // page: the one-float read-back of handoff10 stalled the frame it landed on (Metal waits for the GPU): 1.4 ms a frame on an M2 Pro, 2.6 ms on an M2 Max.
+  // world.ltmGPU = false (or ?ltmread=1) is the handoff10 way, for like-for-like checks.
+  setLtm() { const u = this.film.uniforms; if (!u.uLtmH) return;
+    if (this.ltmGPU) { u.uLtmH.value = LIGHT.ltmH; u.uLtmS.value = LIGHT.ltmS; u.uLtmLo.value = LIGHT.ltmLo; u.uLtmHi.value = Math.max(LIGHT.ltmHi, LIGHT.ltmLo + 1e-3); return; }
+    if (u.uLtmLo) { u.uLtmLo.value = -2; u.uLtmHi.value = -1; }
+    const e = Math.min(1, Math.max(0, (this.ltmEx - LIGHT.ltmLo) / Math.max(1e-3, LIGHT.ltmHi - LIGHT.ltmLo))), k = e * e * (3 - 2 * e); u.uLtmH.value = LIGHT.ltmH * k; u.uLtmS.value = LIGHT.ltmS * k; }
 
   setupLights() {
     const I = Math.max(...LIGHT.sunE) * LIGHT.sunK, sunCol = new THREE.Color(LIGHT.sunE[0] * LIGHT.sunK / I, LIGHT.sunE[1] * LIGHT.sunK / I, LIGHT.sunE[2] * LIGHT.sunK / I);
@@ -422,7 +428,11 @@ export class World {
       fragmentShader: 'uniform sampler2D t; uniform sampler2D prev; uniform float uFirst, uKey, uMin, uMax, uEase, uHi, uPk, uPkMin, uPkLo; void main(){ float s = 0.0, w = 0.0, h = 0.0, ps = 0.0, pw = 0.0; for (int y = 0; y < 18; y++) for (int x = 0; x < 32; x++) { float k = (1.0 - 0.4 * length(vec2((float(x) - 15.5) / 16.0, (float(y) - 7.5) / 9.0))) * (y < 10 ? 1.0 : 0.35); vec2 LL = texelFetch(t, ivec2(x, y), 0).rg; float L = LL.r; s += L * k; h += exp(4.0 * L) * k; w += k; if (y < 10) { ps += exp(8.0 * LL.g) * k; pw += k; } } float want = uKey / exp(s / w); float hi = pow(h / w, 0.25) * want; want = clamp(want * clamp(pow(uHi / max(hi, 1e-4), 0.7), 0.88, 1.24), uMin, uMax); if (uPk > 0.0) { float pk = pow(ps / pw, 0.125), fr = 0.0; for (int y = 0; y < 10; y++) for (int x = 0; x < 32; x++) { float k = 1.0 - 0.4 * length(vec2((float(x) - 15.5) / 16.0, (float(y) - 7.5) / 9.0)); fr += step(uPk, exp(texelFetch(t, ivec2(x, y), 0).g) * want) * k; } want = max(min(want, uPk / max(pk, 1e-4)), want * mix(uPkMin, uPkLo, smoothstep(0.10, 0.20, fr / pw))); }   /* light L5: the bright part of the frame (4th-power mean) is steered toward uHi, so a frame full of sunlit paving closes down and a frame with no brights opens up */ float p = texelFetch(prev, ivec2(0), 0).r; gl_FragColor = vec4(uFirst > 0.5 ? want : p + (want - p) * uEase, 0.0, 0.0, 1.0); }' });
     this.expScene = new THREE.Scene(); this.expScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.expMat)); this.expI = 0; this.expGPU = !Q.has('capture') && !Q.has('shot') && Q.get('meter') !== 'cpu';
     installCamera(this, Q, LIGHT);     // camera lane: temporal anti-aliasing and the camera grade (src/camera.js); ?cam=0 off
-    if (this.cam && this.cam.film) { const u = this.film.uniforms; u.uLtmT.value = 1.5; u.uLtmSky.value = 0.0; this.ltmBuf = new Float32Array(4); this.ltmEx = 1; }
+    if (this.cam && this.cam.film) { const u = this.film.uniforms; u.uLtmT.value = 1.5; u.uLtmSky.value = 0.0; this.ltmEx = 1;
+      const m = this.film.material, A = 'hk = uLtmH;', B = '(e > 0.0 ? hk : uLtmS)';
+      const fix = () => { const s = m.fragmentShader; if (s.includes('uLtmLo')) return true; if (!s.includes(A) || !s.includes(B)) return false; m.fragmentShader = 'uniform float uLtmLo, uLtmHi;\n' + s.replace(A, 'lk = smoothstep(uLtmLo, uLtmHi, ex), hk = uLtmH * lk;').replace(B, '(e > 0.0 ? hk : uLtmS * lk)'); m.needsUpdate = true; return true; };
+      if (fix()) { u.uLtmLo = { value: LIGHT.ltmLo }; u.uLtmHi = { value: LIGHT.ltmHi }; this.ltmGPU = Q.get('ltmread') !== '1'; if (this.cam.old) { const o0 = this.cam.old; this.cam.old = (on) => { o0(on); if (!on) fix(); }; } }     /* if the camera lane's shader text ever changes, the two anchors miss and the handoff10 read-back runs as before */
+      this.setLtm(); }
   }
 
   updateStreet() {
@@ -489,11 +499,11 @@ export class World {
       const meter = () => {
         let s = 0, w = 0, hs = 0, ps = 0, pw = 0; for (let y = 0; y < 18; y++) for (let x = 0; x < 32; x++) { const k = (1.0 - 0.4 * Math.hypot((x - 15.5) / 16, (y - 7.5) / 9)) * (y < 10 ? 1.0 : 0.35); /* rows count up from the bottom: the street weighs more than the sky */ const L = this.meterBuf[(y * 32 + x) * 4]; s += L * k; hs += Math.exp(4 * L) * k; w += k; if (y < 10) { ps += Math.exp(8 * this.meterBuf[(y * 32 + x) * 4 + 1]) * k; pw += k; } }
         const avg = Math.exp(s / w), w0 = LIGHT.key / avg, hi = Math.pow(hs / w, 0.25) * w0; let want = Math.min(LIGHT.expMax, Math.max(LIGHT.expMin, w0 * Math.min(1.24, Math.max(0.88, Math.pow(LIGHT.hi / Math.max(hi, 1e-4), 0.7))))); if (LIGHT.pk > 0) { let fr = 0; for (let y = 0; y < 10; y++) for (let x = 0; x < 32; x++) if (Math.exp(this.meterBuf[(y * 32 + x) * 4 + 1]) * want >= LIGHT.pk) fr += 1.0 - 0.4 * Math.hypot((x - 15.5) / 16, (y - 7.5) / 9); const e = Math.min(1, Math.max(0, (fr / pw - 0.10) / 0.10)); want = Math.max(Math.min(want, LIGHT.pk / Math.max(Math.pow(ps / pw, 0.125), 1e-4)), want * (LIGHT.pkMin + (LIGHT.pkLo - LIGHT.pkMin) * e * e * (3 - 2 * e))); } const first = !this.meterDone; this.meterDone = true;
-        this.lastAvg = avg; this.exposure = first ? want : this.exposure + (want - this.exposure) * 0.12; this.film.uniforms.uExposure.value = this.exposure; if (this.ltmBuf) { this.ltmEx = this.exposure; this.setLtm(); }
+        this.lastAvg = avg; this.exposure = first ? want : this.exposure + (want - this.exposure) * 0.12; this.film.uniforms.uExposure.value = this.exposure; if (this.film.uniforms.uLtmH) { this.ltmEx = this.exposure; this.setLtm(); }
       };
       if (this.expGPU) { const dst = this.expRT[this.expI ^= 1], src = this.expRT[this.expI ^ 1], u = this.expMat.uniforms; u.t.value = this.meterRT.texture; u.prev.value = src.texture; u.uKey.value = LIGHT.key; u.uHi.value = LIGHT.hi; u.uMin.value = LIGHT.expMin; u.uMax.value = LIGHT.expMax;
         r.setRenderTarget(dst); r.render(this.expScene, this.meterCam); r.setRenderTarget(old); u.uFirst.value = 0; this.film.uniforms.tExp.value = dst.texture; this.film.uniforms.uExpTex.value = 1;
-        if (this.ltmBuf && !this.ltmBusy && r.readRenderTargetPixelsAsync) { this.ltmBusy = true; r.readRenderTargetPixelsAsync(dst, 0, 0, 1, 1, this.ltmBuf).then(() => { this.ltmEx = this.ltmBuf[0]; this.setLtm(); }).catch(() => {}).finally(() => { this.ltmBusy = false; }); }   /* light L28: one float back through a fence, no stall */
+        if (this.ltmGPU) this.setLtm(); else if (this.film.uniforms.uLtmH && !this.ltmBusy && r.readRenderTargetPixelsAsync) { this.ltmBusy = true; this.ltmBuf ||= new Float32Array(4); r.readRenderTargetPixelsAsync(dst, 0, 0, 1, 1, this.ltmBuf).then(() => { this.ltmEx = this.ltmBuf[0]; this.setLtm(); }).catch(() => {}).finally(() => { this.ltmBusy = false; }); }   /* light L28: one float back through a fence, no stall */
         return; }
       if (this.meterN === 1 || Q.has('capture') || Q.has('shot') || !r.readRenderTargetPixelsAsync) { r.readRenderTargetPixels(this.meterRT, 0, 0, 32, 18, this.meterBuf); meter(); }
       else if (!this.meterBusy) { this.meterBusy = true; r.readRenderTargetPixelsAsync(this.meterRT, 0, 0, 32, 18, this.meterBuf).then(meter).catch(() => {}).finally(() => { this.meterBusy = false; }); }

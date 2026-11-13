@@ -336,6 +336,10 @@ export function makeTree(S, seed, opt) {
           let lobe = 0; for (const [la, lw, lk] of roots) lobe = Math.max(lobe, lk * wr2(a - la, lw));
           rib *= 1 + flareK * Math.exp(-hh / 0.15) * (0.38 + 0.62 * lobe) + 0.5 * flareK * lobe * Math.exp(-hh / 0.05) + 0.07 * Math.exp(-hh / 0.6);
         }
+        if (opt && opt.trunk2 && !far) {   // Nov 13 ("smooth trunks"): no trunk is a lathe-turned pole and no limb leaves it as a pipe
+          if (B.lvl === 0) rib *= (1 + 0.085 * Math.sin(a * 2 + p[1] * 1.3 + seed * 1.7) + 0.05 * Math.sin(a * 3 - p[1] * 2.9 + seed * 0.6) + 0.035 * Math.sin(a * 5 + p[1] * 5.7 + seed * 2.3) + 0.04 * Math.sin(p[1] * 4.3 + seed)) * (1 + 0.24 * Math.exp(-Math.pow((p[1] - forkH + 0.12) / 0.34, 2))) * (1 + 0.30 * Math.exp(-Math.max(0, p[1]) / 0.22));   // out of round, a slow waist and belly, and the swelling under the fork
+          else if (r0 > 0.025) rib *= 1 + 0.75 * Math.exp(-vlen / Math.max(0.08, 3.0 * r0)) + 0.06 * Math.sin(vlen * 7.0 + a * 2 + seed);   // a collar where the limb joins, lumps along it
+        }
         if (B.lvl === 0 && p[1] >= 0.04 && (rMinY < 0 || rMinY === i)) { rMinY = i; rMin = Math.min(rMin, r * rib); }
         const n = [nx[0] * c + bx[0] * s, nx[1] * c + bx[1] * s, nx[2] * c + bx[2] * s];
         wp.push(p[0] + n[0] * r * rib, p[1] + n[1] * r * rib, p[2] + n[2] * r * rib); wn.push(n[0], n[1], n[2]); wu.push((j / sides) * urep, vlen / 0.55);

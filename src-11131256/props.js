@@ -14,7 +14,11 @@
 //       game.__props.impulse(point, vec, radius = 0.6)                                             a kick: vec is kg*m/s
 import * as THREE from 'three';
 
-const LOOSE = ['pchair', 'ptable', 'pbin', 'basket', 'basketFull', 'cone', 'aframe', 'crate', 'cbox', 'bag', 'newsbox'];
+const LOOSE = ['pchair', 'ptable', 'pbin', 'basket', 'basketFull', 'cone', 'aframe', 'crate', 'cbox', 'bag', 'newsbox', 'can', 'canRust', 'delin', 'chalk', 'ubox', 'barrier', 'cart', 'bike', 'bikeB'];
+// v3 (Nov 13): things that are FIXED to the ground and stand until a car at speed or a blast breaks them off: sign posts, parking meters, fence panels.
+// The plates on a post (PLATE) come down with it. A walking player and a bullet leave all of these alone.
+const FIXED = ['spost', 'meter', 'fence'], PLATE = ['psign', 'psignP', 'blade', 'oneway', 'hblade', 'honeway', 'hpsign'], BREAK_SPEED = 5;
+const TWINS = { bike: ['bikeM', 'bikeL'], bikeB: ['bikeM', 'bikeL'], psign: ['psignL'], psignP: ['psignL'] };
 const G = 9.81, SUB = 1 / 120, CELL = 4, MAXB = 360, PLAYER_R = 0.34, PLAYER_M = 80;
 const _v = new THREE.Vector3(), _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3(), _r = new THREE.Vector3(), _n = new THREE.Vector3(), _q = new THREE.Quaternion(), _qi = new THREE.Quaternion(), _e = new THREE.Euler(), _m = new THREE.Matrix4(), _s = new THREE.Vector3(), _o = {};
 const UP = new THREE.Vector3(0, 1, 0);
@@ -22,7 +26,7 @@ const DIRS = (() => { const out = []; for (let x = -1; x <= 1; x++) for (let y =
 
 export function install(game, opts = {}) {
   if (game.__props) return game.__props;
-  const S = (game.__props = { on: true, bodies: [], awake: 0, woken: 0, recs: 0, ray: () => null, blast: () => 0, impulse: () => 0, strike: () => false });
+  const S = (game.__props = { on: true, bodies: [], awake: 0, woken: 0, recs: 0, broken: 0, unwalled: 0, force: false, ray: () => null, blast: () => 0, impulse: () => 0, strike: () => false });
   if (game.P && game.P.get('props') === '0') { S.on = false; return S; }
   const F = game.streets && game.streets.parts && game.streets.parts.furniture, st = game.statics, world = game.world;
   if (!F || !F.kinds || !F.meshes || !st) { S.on = false; S.why = 'no furniture'; return S; }
@@ -42,9 +46,9 @@ export function install(game, opts = {}) {
   }
   function shapeOf(name) { let sh = shapes.get(name); if (sh === undefined) { const K = F.kinds[name]; sh = K ? shapeFrom((K.parts || []).map((q) => q.geometry), K.scale || 1) : null; shapes.set(name, sh); } return sh; }
   const shOf = (rec) => rec.sh || shapeOf(rec.name);
-  for (const name of LOOSE) { const K = F.kinds[name]; if (!K || !K.list || !K.list.length || !shapeOf(name)) continue;
+  for (const name of LOOSE.concat(FIXED, PLATE)) { const K = F.kinds[name], fx = FIXED.includes(name) ? 1 : PLATE.includes(name) ? 2 : 0; if (!K || !K.list || !K.list.length || !shapeOf(name)) continue;
     for (const it of K.list) { const o = it[4]; if (o && o.tilt && Math.abs(o.tilt[0]) > 1) continue;       // (already lying on its side as set dressing: left as it is)
-      const rec = { name, x: it[0], y: it[1], z: it[2], h: it[3], o, body: null }, k = hk(rec.x, rec.y); let a = hash.get(k); if (!a) hash.set(k, (a = [])); a.push(rec); S.recs++; } }
+      const rec = { name, x: it[0], y: it[1], z: it[2], h: it[3], o, body: null, fx }, k = hk(rec.x, rec.y); let a = hash.get(k); if (!a) hash.set(k, (a = [])); a.push(rec); S.recs++; } }
   const add = (rec) => { const k = hk(rec.x, rec.y); let a = hash.get(k); if (!a) hash.set(k, (a = [])); a.push(rec); S.recs++; };
   // the streets lane's clutter.js draws its own bins, boxes, crates, cans and cones in the hero blocks (parts.clutter.dyn): those are loose too
   const CL = game.streets.parts.clutter; S.clutter = 0;
@@ -87,6 +91,7 @@ export function install(game, opts = {}) {
     for (const m of byName.get('st_' + rec.name) || []) { const i = findIn(m, x, z, 0.02); if (i >= 0) { own.push([m, i]); } }
     if (!own.length) return null;
     for (const sfx of ['L', 'Lod']) for (const m of byName.get('st_' + rec.name + sfx) || []) { const i = findIn(m, x, z, 0.02); if (i >= 0) zero(m, i); }
+    for (const tw of TWINS[rec.name] || []) for (const m of byName.get('st_' + tw) || []) { const i = findIn(m, x, z, 0.02); if (i >= 0) zero(m, i); }
     if (rec.name === 'basketFull') for (const m of byName.get('st_basketL') || []) { const i = findIn(m, x, z, 0.02); if (i >= 0) zero(m, i); }
     for (const [nm, list] of byName) { if (nm !== 'st_blob' && !nm.startsWith('st_sh_')) continue; for (const m of list) { const i = findIn(m, x, z, 0.02); if (i >= 0) zero(m, i); } }
     if (sunR[rec.name]) for (const m of byName.get('st_sunsh') || []) { if (!inTile(m, x, z)) continue; const a = m.instanceMatrix.array;       // the sun shadow lies off to one side: its near end is the prop
@@ -98,6 +103,7 @@ export function install(game, opts = {}) {
 
   // ---------------------------------------------------------------- a body
   function wake(rec) {
+    if (rec.fx && !rec.body && !S.force) return null;      // fixed to the ground: only a car at speed or a blast (S.force) breaks it off
     if (rec.body) { const b = rec.body; if (!b.awake) { b.awake = true; b.rest = 0; S.awake++; if (b.circle) { b.circle.on = false; b.circle = null; } } return b; }
     if (S.bodies.length >= MAXB && !retire()) return null;
     const own = takeOut(rec); if (!own) { if (PZ && PZ.loose && (rec.name === 'pchair' || rec.name === 'ptable') && (rec.miss = (rec.miss || 0) + 1) < 40) return null;      /* a hero-plaza piece is only in its near mesh close to the camera: try again later */ rec.dead = true; return null; }
@@ -152,13 +158,27 @@ export function install(game, opts = {}) {
   const cars = [];
   function carList() { cars.length = 0; const pl = game.player; for (const v of game.vehicles || []) if (Math.abs(v.x - pl.x) < 70 && Math.abs(v.y - pl.y) < 70) cars.push({ c: v, vx: v.vx || 0, vy: v.vy || 0, own: v === pl.vehicle });
     for (const c of (game.traffic && game.traffic.cars) || []) if (Math.abs(c.x - pl.x) < 70 && Math.abs(c.y - pl.y) < 70) cars.push({ c, vx: Math.cos(c.h) * (c.v || 0), vy: Math.sin(c.h) * (c.v || 0), own: false }); }
+  // a fence panel that has been knocked flat is no wall any more: its line is taken out of the game's walls
+  function unwall(rec) { const c = st.cell, hx = Math.cos(rec.h), hy = Math.sin(rec.h); let n = 0;
+    for (let i = Math.floor((rec.x - 3) / c); i <= Math.floor((rec.x + 3) / c); i++) for (let j = Math.floor((rec.y - 3) / c); j <= Math.floor((rec.y + 3) / c); j++) { const a = st.segs.get(st.key(i, j)); if (!a) continue;
+      for (let q = a.length - 1; q >= 0; q--) { const s = a[q], dx = s[2] - s[0], dy = s[3] - s[1], l = Math.hypot(dx, dy); if (l > 4 || l < 0.2) continue; const t = Math.max(0, Math.min(1, ((rec.x - s[0]) * dx + (rec.y - s[1]) * dy) / (l * l))), d = Math.hypot(rec.x - s[0] - dx * t, rec.y - s[1] - dy * t);
+        if (d < 0.12 && (Math.abs(dx * hy - dy * hx) / l < 0.15 || Math.abs(dx * hx + dy * hy) / l < 0.15)) { a.splice(q, 1); n++; } } }
+    S.unwalled += n; return n; }
   // before the game moves anything: props about to be touched wake up (their circles go, so the car or the player is not stopped dead)
   function pre() {
     const pl = game.player;
     if (!pl.vehicle) { const sp = pl.speed || 0; if (sp > 0.05) { const fx = Math.cos(pl.h), fy = Math.sin(pl.h); near(pl.x, pl.y, 1.6, (rec) => { if (rec.body || rec.dead) return; const sh = shOf(rec), dx = rec.x - pl.x, dy = rec.y - pl.y, d = Math.hypot(dx, dy), rr = 0.5 * Math.max(sh.size.x, sh.size.z) * sh.k; if (d < Math.max(rr, 0.32) + PLAYER_R + 0.16 && dx * fx + dy * fy > 0) wake(rec); }); } }
     carList();
     for (const k of cars) { const sp = Math.hypot(k.vx, k.vy); if (sp < 0.4) continue; const c = k.c, L = (c.def ? c.def.len : 4.4) / 2 + 0.5 + sp * 0.12, W = (c.def ? c.def.wid : 1.8) / 2 + 0.45, ch = Math.cos(c.h), shn = Math.sin(c.h);
-      near(c.x, c.y, L + 1, (rec) => { if (rec.body || rec.dead) return; const dx = rec.x - c.x, dy = rec.y - c.y, lx = dx * ch + dy * shn, ly = -dx * shn + dy * ch; if (Math.abs(lx) < L && Math.abs(ly) < W) wake(rec); }); }
+      near(c.x, c.y, L + 1, (rec) => { if (rec.body || rec.dead || rec.fx === 2) return; const dx = rec.x - c.x, dy = rec.y - c.y, lx = dx * ch + dy * shn, ly = -dx * shn + dy * ch;
+        if (!rec.fx) { if (Math.abs(lx) < L && Math.abs(ly) < W) wake(rec); return; }
+        // a fixed thing: the car has to be going at it fast enough, and the blow costs the car speed and a dent
+        const L2 = (c.def ? c.def.len : 4.4) / 2 + 0.3 + sp * 0.04, W2 = (c.def ? c.def.wid : 1.8) / 2 + (rec.name === 'fence' ? 0.9 : 0.12); if (sp < BREAK_SPEED || Math.abs(lx) > L2 || Math.abs(ly) > W2 || (dx * k.vx + dy * k.vy) < 0) return;
+        S.force = true; let b = null; try { b = wake(rec); if (b) { S.broken++; near(rec.x, rec.y, 0.5, (pl2) => { if (pl2.fx === 2 && !pl2.body && !pl2.dead && Math.hypot(pl2.x - rec.x, pl2.y - rec.y) < 0.35) { const b2 = wake(pl2); if (b2) b2.v.set(k.vx * 0.5, 0.5, -k.vy * 0.5); } }); } } finally { S.force = false; }
+        if (!b) return; if (rec.name === 'fence') unwall(rec);
+        b.v.set(k.vx * 0.4, 0.9 + sp * 0.04, -k.vy * 0.4); b.w.set(-k.vy / sp * 2.2, 0, -k.vx / sp * 2.2);
+        const lose = rec.name === 'fence' ? 0.9 : 0.86; if (c.vx !== undefined) { c.vx *= lose; c.vy *= lose; } else if (c.v !== undefined) c.v *= lose;
+        if (game.__crash && game.__crash.hit) { try { game.__crash.hit(c, _v.set(rec.x, (c.z || 0) + 0.5, -rec.y), _a.set(-k.vx / sp, 0, k.vy / sp), sp * 0.7, rec.name === 'fence' ? undefined : { narrow: true }); } catch (e) {} } }); }
   }
   function contacts(dt) {
     const pl = game.player, B = S.bodies;
@@ -206,7 +226,7 @@ export function install(game, opts = {}) {
   // ---------------------------------------------------------------- for guns, breaks and explosions (world coordinates)
   const wakeNear = (p, r) => { near(p.x, -p.z, r + 1, (rec) => { if (rec.body || rec.dead) return; const sh = shOf(rec), hy = sh.size.y * sh.k; if (Math.hypot(rec.x - p.x, rec.y + p.z) < r + 0.5 * Math.max(sh.size.x, sh.size.z) * sh.k && p.y > rec.z - r && p.y < rec.z + hy + r) wake(rec); }); };
   S.impulse = (point, vec, radius = 0.6) => { if (!S.on) return 0; wakeNear(point, radius); let n = 0; for (const b of S.bodies) { if (b.p.distanceTo(point) > radius + b.r) continue; if (!b.awake) wake(b.rec); push(b, vec, point); n++; } return n; };
-  S.blast = (point, power = 1, radius = 6) => { if (!S.on) return 0; wakeNear(point, radius); let n = 0;
+  S.blast = (point, power = 1, radius = 6) => { if (!S.on) return 0; S.force = power >= 1; try { wakeNear(point, S.force ? Math.min(radius, 3.5 * power) : radius); if (!S.force) wakeNear(point, radius); else { S.force = false; wakeNear(point, radius); } } finally { S.force = false; } let n = 0;
     for (const b of S.bodies) { _n.copy(b.p).sub(point); const d = _n.length(); if (d > radius) continue; if (!b.awake) wake(b.rec); _n.y = Math.abs(_n.y) + 0.6 * Math.max(0.3, d); _n.normalize(); const f = power * 9 * Math.pow(1 - d / radius, 1.5) * Math.min(b.m, 14); _d.copy(_n).multiplyScalar(f); _a.copy(b.p).addScaledVector(_n, -b.r * 0.4); _a.y -= b.hgt * 0.2; push(b, _d, _a); n++; } return n; };
   S.ray = (origin, dir, impulse = 40, maxDist = 80) => { if (!S.on) return null; const d = _b.copy(dir).normalize(); let best = null, bt = maxDist;
     const test = (cx, cy, cz, r, what) => { _v.set(cx - origin.x, cy - origin.y, cz - origin.z); const t = _v.dot(d); if (t < 0 || t > bt) return; const m2 = _v.lengthSq() - t * t; if (m2 > r * r) return; bt = t - Math.sqrt(r * r - m2) * 0.5; best = what; };
@@ -215,6 +235,6 @@ export function install(game, opts = {}) {
     if (!best) return null; const b = best.rec ? (best.awake ? best : wake(best.rec)) : wake(best); if (!b) return null; const at = new THREE.Vector3().copy(origin).addScaledVector(d, bt); push(b, _d.copy(d).multiplyScalar(impulse), at); return { point: at, kind: b.rec.name }; };
   // a break at `point` (the breakable pass calls this): true when a loose prop took the blow
   S.strike = (point, dir, power = 2) => { if (!S.on) return false; const n = S.impulse(point, _c.copy(dir).normalize().multiplyScalar(30 * power).setY(8 * power), 0.25); if (power >= 3) S.blast(point, power * 0.5, 2 + power); return n > 0; };
-  S.stats = () => ({ recs: S.recs, clutter: S.clutter, plazaMeshes: S.plaza, bodies: S.bodies.length, awake: S.awake, woken: S.woken, pools: pools.size });
+  S.stats = () => ({ recs: S.recs, clutter: S.clutter, plazaMeshes: S.plaza, bodies: S.bodies.length, awake: S.awake, woken: S.woken, broken: S.broken, unwalled: S.unwalled, pools: pools.size });
   return S;
 }

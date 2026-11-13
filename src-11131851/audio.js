@@ -1,9 +1,18 @@
 // audio.js: all sound is synthesised (WebAudio): engine, tyres, city bed, and a few one-shots. Starts on the first key or click.
 export class Sound {
-  constructor(game) { this.g = game; this.on = false; this.muted = false; }
+  constructor(game) { this.g = game; this.on = false; this.muted = false; try { addEventListener('pointerdown', () => this.wake(), true); } catch (e) {} }
+  /* input, Nov 13 (player report 1de458, "no sound effects"): the audio output was made once and never looked at again; one that starts or falls suspended
+     (made without a counted key or click, e.g. Play pressed on a controller; an output device that changed) stayed silent for good. Every key and click now
+     asks it to run until it does, and the log says once if that was needed or failed. His record also shows the sound switched off with M: the chip says so. */
+  wake() {
+    const a = this.ac; if (!a || a.state === 'running' || a.state === 'closed' || this._waking) return; this._waking = true; const was = a.state, late = performance.now() - this._made > 1500;
+    const done = (err) => { this._waking = false; if (err) { if (!this._wakeErr) { this._wakeErr = true; console.log('[sound] the audio output would not start (' + was + '): ' + (err.message || err.name || err)); } } else if (late && !this._wakeSaid) { this._wakeSaid = true; console.log('[sound] the audio output was ' + was + '; started on a key or click'); } };
+    try { const p = a.resume(); if (p && p.then) p.then(() => done(), (e) => done(e || 'refused')); else done(); } catch (e) { done(e); }
+  }
+  chip() { try { let d = this._chip; if (!d) { if (!this.muted) return; d = this._chip = document.createElement('div'); d.id = 'mutechip'; d.textContent = 'Sound off \u00b7 M'; d.style.cssText = 'position:fixed;right:12px;bottom:46px;z-index:59;pointer-events:none;font:600 12px system-ui,sans-serif;color:#fff;background:rgba(14,16,20,.72);border:1px solid rgba(255,255,255,.22);padding:4px 9px;border-radius:8px'; document.body.appendChild(d); } d.style.display = this.muted ? '' : 'none'; } catch (e) {} }
   unlock() {
-    if (this.on || this.g.capture) return; const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
-    const a = (this.ac = new AC()); this.on = true; const out = (this.out = a.createGain()); out.gain.value = 0.8; out.connect(a.destination);
+    if (this.on) { this.wake(); return; } if (this.g.capture) return; const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+    const a = (this.ac = new AC()); this.on = true; this._made = performance.now(); const out = (this.out = a.createGain()); out.gain.value = this.muted ? 0 : 0.8;     /* M pressed before the first sound used to leave the sound on with the switch saying off */ out.connect(a.destination);
     const noise = (secs, brown) => { const b = a.createBuffer(1, a.sampleRate * secs, a.sampleRate), d = b.getChannelData(0); let l = 0, s = 12345; for (let i = 0; i < d.length; i++) { s = (s * 1664525 + 1013904223) >>> 0; const w = s / 2147483648 - 1; if (brown) { l = (l + 0.02 * w) / 1.02; d[i] = l * 3.5; } else d[i] = w; } return b; };
     this.white = noise(2, false);
     // engine: two detuned saws through a low-pass, pitch from speed inside a gear
@@ -16,7 +25,7 @@ export class Sound {
     const rs = a.createBufferSource(); rs.buffer = noise(3, true); rs.loop = true; const rf = a.createBiquadFilter(); rf.type = 'lowpass'; rf.frequency.value = 260; const rg = (this.rg = a.createGain()); rg.gain.value = 0; rs.connect(rf); rf.connect(rg); rg.connect(out); rs.start();
     this.hornT = 3;
   }
-  toggle() { this.muted = !this.muted; if (this.out) this.out.gain.value = this.muted ? 0 : 0.8; }
+  toggle() { this.muted = !this.muted; if (this.out) this.out.gain.value = this.muted ? 0 : 0.8; this.chip(); }
   shot(freq, dur, type = 'sine', vol = 0.2, slide = 0) { if (!this.on) return; const a = this.ac, o = a.createOscillator(), g = a.createGain(); o.type = type; o.frequency.setValueAtTime(freq, a.currentTime); if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, freq + slide), a.currentTime + dur); g.gain.setValueAtTime(vol, a.currentTime); g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + dur); o.connect(g); g.connect(this.out); o.start(); o.stop(a.currentTime + dur + 0.02); }
   burst(dur, vol, freq) { if (!this.on) return; const a = this.ac, s = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain(); s.buffer = this.white; f.type = 'lowpass'; f.frequency.value = freq; g.gain.setValueAtTime(vol, a.currentTime); g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + dur); s.connect(f); f.connect(g); g.connect(this.out); s.start(); s.stop(a.currentTime + dur + 0.02); }
   crash(f) { this.burst(0.35, Math.min(0.9, 0.15 + f * 0.05), 900); this.shot(70, 0.25, 'triangle', 0.4, -30); }

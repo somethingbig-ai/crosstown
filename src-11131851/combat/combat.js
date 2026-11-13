@@ -104,7 +104,7 @@ class Combat {
 
   bind() {
     const g = this.g, I = this.inp, c = g.world.renderer.domElement;
-    addEventListener('mousedown', (e) => { if (document.pointerLockElement !== c) return; if (e.button === 0) { I.mfire = true; I.tap = 0.45; } if (e.button === 2) I.maim = true; });      /* tap: a quick click still fires once the gun is up (a 50 ms click used to raise the gun and fire nothing) */
+    addEventListener('mousedown', (e) => { if (document.pointerLockElement !== c && !(e.target === c && g.look && g.look.free())) return;     /* input, Nov 13: a player whose browser refuses to capture the mouse still fires and aims, with clicks on the picture */ if (e.button === 0) { I.mfire = true; I.tap = 0.45; } if (e.button === 2) I.maim = true; });      /* tap: a quick click still fires once the gun is up (a 50 ms click used to raise the gun and fire nothing) */
     addEventListener('mouseup', (e) => { if (e.button === 0) I.mfire = false; if (e.button === 2) I.maim = false; });
     addEventListener('contextmenu', (e) => { if (e.target === c || document.pointerLockElement === c) e.preventDefault(); });
     addEventListener('wheel', (e) => { if (g.fly && g.fly.on || !this.canCarry()) return; I.wheel += Math.sign(e.deltaY); }, { passive: true });

@@ -232,7 +232,13 @@ class DoorCar {
   clear() { if (this.cur) this.cur.K.group.visible = false; this.cur = null; }
   // board/car: one frame with a freshly cut kind in the picture's own passes (1 cm big, 40 m under the camera), so its materials are compiled and its
   // index buffers uploaded before the door is first opened. Returns the kind to hide again after the frame.
-  warmOne(cam) { const K = this.warmQ && this.warmQ.shift(); if (!K || !K.group.parent) return null; try { _mr.makeScale(0.01, 0.01, 0.01).setPosition(cam.position.x, cam.position.y - 40, cam.position.z);
+  // board/car 3: ... and it stays there until BOTH the main picture and a face of the street mirror cube have drawn it (the cube draws one face every
+  // third to sixth frame and has program variants of its own: with one warm frame they were built in the frame the first door opened, 55 ms).
+  warmOne(cam) { let K = this.warmK; if (!K) { K = this.warmQ && this.warmQ.shift(); if (!K || !K.group.parent) return null; this.warmK = K; K.wn = 0; K.wseen = 0; const w = this.g.world, sv = this.sv(), m0 = K.group.children[0];
+      try { if (sv && sv.group.children.some((c) => c !== K.group && c.layers.isEnabled(3))) K.group.traverse((o) => o.layers.enable(3)); } catch (e) {}      /* the cube tags what it draws only every 120th frame */
+      if (m0) m0.onBeforeRender = (r, sc, camera) => { K.wseen |= camera === w.camera ? 1 : camera.parent && camera.parent === w.streetCam ? 2 : 0; }; }
+    if (K.wn++ >= 14 || K.wseen === 3 || (K.wseen === 1 && (this.g.world.streetOff || this.g.P.get('ewarm') === '1')) || !K.group.parent) { this.warmK = null; const m0 = K.group.children[0]; if (m0) delete m0.onBeforeRender; (this.warmLog ||= []).push([K.type, K.wn - 1, K.wseen]); return this.warmQ && this.warmQ.length ? this.warmOne(cam) : null; }
+    try { _mr.makeScale(0.01, 0.01, 0.01).setPosition(cam.position.x, cam.position.y - 40, cam.position.z);
       for (const a of [K.body, K.doorM, K.wm, K.tm]) if (a) { for (let i = 0; i < a.count; i++) _mr.toArray(a.array, i * 16); a.needsUpdate = true; }
       if (K.blob) { K.blob.setMatrixAt(0, _mr); K.blob.instanceMatrix.needsUpdate = true; } if (K.tblob) { for (let i = 0; i < 4; i++) K.tblob.setMatrixAt(i, _mr); K.tblob.instanceMatrix.needsUpdate = true; }
       if (K.card) { K.card.matrix.copy(_mr); K.card.matrixWorldNeedsUpdate = true; } K.group.visible = true; return K; } catch (e) { return null; } }
@@ -328,7 +334,7 @@ class Entry {
     g.readInput = function () { read0(); if (E.script) E.runScript(1 / 60); };
     const world = g.world, render0 = world.render.bind(world);
     world.render = function (...a) {
-      const c = E.cars.cur; if (!c) { const wk = E.cars.warmQ && E.cars.warmQ.length && !g.player.busy && g.P.get('ewarm') !== '0' ? E.cars.warmOne(world.camera) : null; if (!wk) return render0(...a); try { return render0(...a); } finally { wk.group.visible = false; } }
+      const c = E.cars.cur; if (!c) { const wk = (E.cars.warmK || (E.cars.warmQ && E.cars.warmQ.length)) && !g.player.busy && g.P.get('ewarm') !== '0' ? E.cars.warmOne(world.camera) : null; if (!wk) return render0(...a); try { return render0(...a); } finally { wk.group.visible = false; } }
       const i = g.vehicles.indexOf(c.v); if (i < 0 || !c.v._vv) return render0(...a);
       E.cars.place(); g.vehicles.splice(i, 1); try { return render0(...a); } finally { g.vehicles.splice(i, 0, c.v); }
     };

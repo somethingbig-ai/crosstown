@@ -9,10 +9,19 @@
 //   - around it: people within 15 m shout and run from the spot.
 //   - scaled by speed: under 12 km/h a shove that sits the person down; at 60 km/h up over the bonnet and through the air.
 // No gore. Bodies come to rest and stay about 25 s. At most MAX ragdolls at once (the oldest goes).
+// WALLS (gameplay/people, Nov 13, Matt on the 16:16 build: "They flew into a building and literally just went through the wall. They just
+// disappeared inside the building."). Before: a body point was only pushed out of a wall it overlapped at the END of a step, to the nearer side
+// of a line with no thickness, and only below 3.2 m. A fast point (0.16 m a step at 70 km/h, its radius 5-14 cm) or one dragged by the rest of
+// the body or shoved by the car got across in one step and was then pushed out on the FAR side; anything thrown higher than 3.2 m met no wall at
+// all. Measured in node on 300 hits in front of walls (10-160 km/h): 268 bodies passed a wall, 201 ended inside a building. Now every point's whole move
+// (from where it stood after the last step to where the step, the sticks, the cars and the posts have put it) is swept against the walls: it
+// stops at the first wall it meets, on the side it came from, and gives up speed there; a move that cannot be made safe is not made. Building
+// walls and shop fronts hold at any height; low things (fences, tree guards: collision lines more than 1.5 m from any building) hold below
+// LOWH, so a body can go over them. The step costs no more than before (node: 0.05-0.09 ms a body a drawn frame, before 0.08-0.13).
 import * as THREE from 'three';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
-const MAX = 7, G = 9.81, SUB = 1 / 120;
+const MAX = 7, G = 9.81, SUB = 1 / 120, LOWH = 1.0, WREST = 0.2, WFRIC = 0.8, WKEEP = 0.004;
 const PTS = ['hips', 'chest', 'head', 'shL', 'shR', 'elL', 'elR', 'haL', 'haR', 'hpL', 'hpR', 'knL', 'knR', 'ftL', 'ftR'];
 const RAD = { hips: 0.13, chest: 0.14, head: 0.11, shL: 0.07, shR: 0.07, elL: 0.05, elR: 0.05, haL: 0.045, haR: 0.045, hpL: 0.09, hpR: 0.09, knL: 0.06, knR: 0.06, ftL: 0.055, ftR: 0.055 };
 const MASS = { hips: 14, chest: 20, head: 5, shL: 3, shR: 3, elL: 2, elR: 2, haL: 1, haR: 1, hpL: 6, hpR: 6, knL: 4, knR: 4, ftL: 1.5, ftR: 1.5 };
@@ -66,6 +75,7 @@ export function install(game, opts = {}) {
       const hgt = THREE.MathUtils.clamp(w.y / 1.7, 0, 1), k1 = (1.12 - 0.42 * hgt) * (0.9 + 0.2 * Math.random());
       const vel = cv.clone().multiplyScalar(k1 * sh).addScaledVector(right, side * (0.5 + 1.2 * Math.random()) * Math.min(1, sp / 8)); vel.y = lift * (0.75 + 0.5 * hgt) + 0.6 * Math.random();
       R.P[k] = { p: w.clone(), q: w.clone().addScaledVector(vel, -SUB), r: RAD[k], im: 1 / MASS[k], k }; }
+    try { startSafe(R.P, p.x, p.y); } catch (e) {}
     for (const [a, b] of STICKS) R.sticks.push([R.P[a], R.P[b], R.P[a].p.distanceTo(R.P[b].p)]);
     R.apart = APART.map(([a, b, d]) => [R.P[a], R.P[b], Math.min(d, R.P[a].p.distanceTo(R.P[b].p) * 0.9)]);
     // the pose at the moment of the hit: the torso's frame, each limb's direction and its bone's attitude
@@ -85,6 +95,48 @@ export function install(game, opts = {}) {
     else if (R.fig.ped) { const p = R.fig.ped; p.t = 99; if (p.vis.mixer) p.vis.mixer.timeScale = 1; }      // the game's own clean-up takes the figure back
   }
 
+  // ---------------------------------------------------------------- walls: the game's collision lines, swept
+  const st = game.statics, city = world.city || game.city || {}, bedge = new Map(), tallOf = new Map(), cand = [], _h = { t: 1, s: null };
+  try { for (const b of city.buildings || []) { if (b.minh >= 2.5) continue; for (const P of [b.poly, ...(b.holes || [])]) for (let i = 0; i < P.length; i++) { const p = P[i], q = P[(i + 1) % P.length], s = [p[0], p[1], q[0], q[1]];
+    for (let ci = Math.floor(Math.min(p[0], q[0]) / 16); ci <= Math.floor(Math.max(p[0], q[0]) / 16); ci++) for (let cj = Math.floor(Math.min(p[1], q[1]) / 16); cj <= Math.floor(Math.max(p[1], q[1]) / 16); cj++) { const k = ci * 100003 + cj; let a = bedge.get(k); if (!a) bedge.set(k, (a = [])); a.push(s); } } } } catch (e) {}
+  const segDist = (x, y, s) => { const dx = s[2] - s[0], dy = s[3] - s[1], t = Math.max(0, Math.min(1, ((x - s[0]) * dx + (y - s[1]) * dy) / (dx * dx + dy * dy || 1e-9))); return Math.hypot(x - s[0] - dx * t, y - s[1] - dy * t); };
+  // is this collision line a building wall or a shop front (it lies on or within 1.5 m of a building's outline), or something low in the street?
+  function tall(s) { let v = tallOf.get(s); if (v !== undefined) return v; v = false; const mx = (s[0] + s[2]) / 2, my = (s[1] + s[3]) / 2; if (Math.hypot(s[2] - s[0], s[3] - s[1]) > 200) v = true;
+    for (let ci = Math.floor((mx - 1.5) / 16); ci <= Math.floor((mx + 1.5) / 16) && !v; ci++) for (let cj = Math.floor((my - 1.5) / 16); cj <= Math.floor((my + 1.5) / 16) && !v; cj++) { const a = bedge.get(ci * 100003 + cj); if (a) for (const e of a) if (segDist(mx, my, e) < 1.5 && (segDist(s[0], s[1], e) < 1.5 || segDist(s[2], s[3], e) < 1.5)) { v = true; break; } }
+    tallOf.set(s, v); return v; }
+  // the lines a move from (ax, ay) to (bx, by) of a point of radius r at height y could meet
+  function near(ax, ay, bx, by, r, y) { cand.length = 0; if (!st || !st.segs) return 0; const c = st.cell || 16, m = r + 0.05, x0 = Math.min(ax, bx) - m, x1 = Math.max(ax, bx) + m, y0 = Math.min(ay, by) - m, y1 = Math.max(ay, by) + m;
+    for (let ci = Math.floor(x0 / c); ci <= Math.floor(x1 / c); ci++) for (let cj = Math.floor(y0 / c); cj <= Math.floor(y1 / c); cj++) { const a = st.segs.get(st.key(ci, cj)); if (a) for (const s of a) {
+      if ((s[0] < x0 && s[2] < x0) || (s[0] > x1 && s[2] > x1) || (s[1] < y0 && s[3] < y0) || (s[1] > y1 && s[3] > y1)) continue; if (y >= LOWH && !tall(s)) continue; cand.push(s); } }
+    return cand.length; }
+  // the first of those lines the move crosses: _h.t in [0, 1), _h.s the line; false if none
+  function first(ax, ay, bx, by) { const rx = bx - ax, ry = by - ay; let best = 2, bs = null;
+    for (const s of cand) { const sx = s[2] - s[0], sy = s[3] - s[1], den = rx * sy - ry * sx; if (Math.abs(den) < 1e-14) continue; const t = ((s[0] - ax) * sy - (s[1] - ay) * sx) / den, u = ((s[0] - ax) * ry - (s[1] - ay) * rx) / den; if (t >= 0 && t <= 1 && u >= -1e-9 && u <= 1 + 1e-9 && t < best) { best = t; bs = s; } }
+    _h.t = best; _h.s = bs; return bs !== null; }
+  // one point's move this step, from where it stood (a.q) to where it has been put (a.p), made safe against the walls. Map metres: (x, -z).
+  function walls(a) {
+    // (a.sx, a.sz) is where the point stood after the last step. a.q is NOT that any more: the cars and posts above have already written
+    // the speed they give the point into it (a point riding a van's roof into a wall got through on that: 9 of 60 at one spot in the node run)
+    const qx = a.sx, qy = -a.sz; let px = a.p.x, py = -a.p.z; if (!near(qx, qy, px, py, a.r, a.p.y)) return;
+    let wx = px - a.q.x, wy = py + a.q.z, touched = false;       // the point's speed (metres a step) as it will leave this step
+    if (first(qx, qy, px, py)) { const s = _h.s, L = Math.hypot(s[2] - s[0], s[3] - s[1]) || 1e-9; let nx = -(s[3] - s[1]) / L, ny = (s[2] - s[0]) / L; if ((qx - s[0]) * nx + (qy - s[1]) * ny < 0) { nx = -nx; ny = -ny; }
+      px = qx + (px - qx) * _h.t + nx * a.r; py = qy + (py - qy) * _h.t + ny * a.r; const vn = Math.min(0, wx * nx + wy * ny), tx = wx - (wx * nx + wy * ny) * nx, ty = wy - (wx * nx + wy * ny) * ny; wx = tx * WFRIC - vn * WREST * nx; wy = ty * WFRIC - vn * WREST * ny; touched = true; }
+    for (let it = 0; it < 2; it++) for (const s of cand) { const dx = s[2] - s[0], dy = s[3] - s[1], t = Math.max(0, Math.min(1, ((px - s[0]) * dx + (py - s[1]) * dy) / (dx * dx + dy * dy || 1e-9))); let ex = px - s[0] - dx * t, ey = py - s[1] - dy * t; const d = Math.hypot(ex, ey);
+      if (d < a.r && d > 1e-7) { ex /= d; ey /= d; px += ex * (a.r - d); py += ey * (a.r - d); const vn = wx * ex + wy * ey; if (vn < 0) { wx -= vn * (1 + WREST * 0.5) * ex; wy -= vn * (1 + WREST * 0.5) * ey; } wx *= 0.985; wy *= 0.985; touched = true; } }
+    if (!touched) return;
+    // the place it has been given must itself be reachable from where it stood, and not on a wall: else it stays where it stood
+    near(qx, qy, px, py, a.r, a.p.y); let bad = first(qx, qy, px, py); if (!bad) for (const s of cand) if (segDist(px, py, s) < WKEEP && (a.p.y >= LOWH || tall(s))) { bad = true; break; }
+    if (bad) { px = qx; py = qy; wx = 0; wy = 0; }
+    a.p.x = px; a.p.z = -py; a.q.x = px - wx; a.q.z = -(py - wy);
+  }
+  // posts, trees, hydrants, chairs: the map's round things, below the height of a storey (as before, without the lines)
+  function posts(a) { if (!st || !st.circ) return; const c = st.cell || 16, x = a.p.x, y = -a.p.z, r = a.r;
+    for (let ci = Math.floor((x - r) / c); ci <= Math.floor((x + r) / c); ci++) for (let cj = Math.floor((y - r) / c); cj <= Math.floor((y + r) / c); cj++) { const L = st.circ.get(st.key(ci, cj)); if (L) for (const o of L) { if (!o.on) continue; const ex = -a.p.z - o.y, dx = a.p.x - o.x, d = Math.hypot(dx, ex), R = r + o.r;
+      if (d < R && d > 1e-6) { const k = (R - d) / d, mx = dx * k, mz = -ex * k; a.p.x += mx; a.p.z += mz; a.q.x += mx * 0.7; a.q.z += mz * 0.7; } } } }
+  // a person standing at a wall may have a hand or an elbow across its line at the moment of the hit: every point starts on the person's side
+  function startSafe(P, ax, ay) { for (const k of PTS) { const a = P[k], bx = a.p.x, by = -a.p.z; if (!near(ax, ay, bx, by, a.r, a.p.y) || !first(ax, ay, bx, by)) continue; const t = Math.max(0, _h.t - 0.06 / (Math.hypot(bx - ax, by - ay) || 1e-9)), nx = ax + (bx - ax) * t, ny = ay + (by - ay) * t, mx = nx - bx, my = ny - by;
+      a.p.x = nx; a.p.z = -ny; a.q.x += mx; a.q.z -= my; } }
+
   // ---------------------------------------------------------------- the simulation
   const boxes = [];
   function carBoxes(c) {
@@ -95,7 +147,7 @@ export function install(game, opts = {}) {
   }
   function step(R, h) {
     const P = R.P; let vmax = 0;
-    for (const k of PTS) { const a = P[k], vx = (a.p.x - a.q.x), vy = (a.p.y - a.q.y), vz = (a.p.z - a.q.z); a.q.copy(a.p); a.p.x += vx * 0.999; a.p.y += vy * 0.999 - G * h * h; a.p.z += vz * 0.999; }
+    for (const k of PTS) { const a = P[k], vx = (a.p.x - a.q.x), vy = (a.p.y - a.q.y), vz = (a.p.z - a.q.z); a.q.copy(a.p); a.sx = a.p.x; a.sz = a.p.z; a.p.x += vx * 0.999; a.p.y += vy * 0.999 - G * h * h; a.p.z += vz * 0.999; }
     for (let it = 0; it < 7; it++) {
       for (const [a, b, L] of R.sticks) { _v.copy(b.p).sub(a.p); const d = _v.length() || 1e-6, e = (d - L) / d / (a.im + b.im); a.p.addScaledVector(_v, e * a.im); b.p.addScaledVector(_v, -e * b.im); }
       for (const [a, b, L] of R.apart) { _v.copy(b.p).sub(a.p); const d = _v.length() || 1e-6; if (d >= L) continue; const e = (d - L) / d / (a.im + b.im); a.p.addScaledVector(_v, e * a.im); b.p.addScaledVector(_v, -e * b.im); }
@@ -107,8 +159,9 @@ export function install(game, opts = {}) {
         if (pt < pf && pt < ps) { a.p.y += pt; a.q.x += (a.p.x - a.q.x - c.vx * h) * 0.35; a.q.z += (a.p.z - a.q.z - c.vz * h) * 0.35; a.q.y = Math.max(a.q.y, a.p.y - 0.02 * h); }
         else { const along = pf < ps, sg = Math.sign(along ? f : s) || 1, nx = along ? c.ch * sg : c.sh * sg, nz = along ? -c.sh * sg : c.ch * sg, pen = along ? pf : ps; a.p.x += nx * pen; a.p.z += nz * pen;
           const vn = (a.p.x - a.q.x) * nx + (a.p.z - a.q.z) * nz, cn = (c.vx * nx + c.vz * nz) * h; if (vn < cn) { a.q.x -= (cn - vn) * nx; a.q.z -= (cn - vn) * nz; } } }
-      // walls, posts, hydrants (the game's own 2D collision map), below the height of a storey
-      if (a.p.y < 3.2 && game.statics.resolve(a.p.x, -a.p.z, a.r, _o)) { const nx = _o.x - a.p.x, nz = -_o.y - a.p.z; a.p.x = _o.x; a.p.z = -_o.y; a.q.x += nx * 0.7; a.q.z += nz * 0.7; }
+      // posts and hydrants below the height of a storey, then the walls: the whole move of this step is swept (see WALLS at the top)
+      if (a.p.y < 3.2) posts(a);
+      walls(a);
       // the ground (the pavement stands 15 cm above the road), with friction that lets a body roll and then stop
       const gy = (game.statics.onSidewalk(a.p.x, -a.p.z) ? 0.15 : 0) + a.r;
       if (a.p.y < gy) { const vy = a.p.y - a.q.y; a.p.y = gy; a.q.y = gy + vy * 0.25; a.q.x += (a.p.x - a.q.x) * 0.22; a.q.z += (a.p.z - a.q.z) * 0.22; }
@@ -168,7 +221,9 @@ export function install(game, opts = {}) {
     for (let i = S.list.length - 1; i >= 0; i--) { const R = S.list[i]; R.t += dt;
       if (R.fig.ped) { const p = R.fig.ped; if (p.state !== 'down') { S.list.splice(i, 1); continue; } p.t = Math.min(p.t, 5); p.vx = p.vy = 0; p.fall = 0; p.x = R.P.hips.p.x; p.y = -R.P.hips.p.z; }
       if (R.t > 25 || R.P.hips.p.distanceTo(cam) > 140) { release(R); S.list.splice(i, 1); continue; }
-      if (!R.frozen) { carBoxes(R.P.hips.p); let vm = 0; for (let k = 0; k < n; k++) vm = step(R, SUB); if (n) { R.rest = vm < 0.25 ? R.rest + dt : 0; if (R.rest > 0.9 && R.t > 1.5) R.frozen = true; } }
+      // a body at rest wakes when one of the player's cars comes at it: asleep, the car drove into it and stood in it (node run: the car rolled back 6 m onto the body it had thrown); awake it is pushed along or aside like any struck body, and the walls hold it
+      if (R.frozen) { const hp = R.P.hips.p; for (const e of game.vehicles) if (Math.abs(e.x - hp.x) < 4.5 && Math.abs(e.y + hp.z) < 4.5 && Math.abs(e.vx) + Math.abs(e.vy) > 0.5) { R.frozen = false; R.rest = 0; for (const k of PTS) R.P[k].q.copy(R.P[k].p); break; } }
+      if (!R.frozen) { carBoxes(R.P.hips.p); let vm = 0; for (let k = 0; k < n; k++) { vm = step(R, SUB); if (S.probe) S.probe(R); }      /* S.probe: the lane's test (people-state/wall/tools/hits.mjs) looks at every step; nothing sets it in the game */ if (n) { R.rest = vm < 0.25 ? R.rest + dt : 0; if (R.rest > 0.9 && R.t > 1.5 && R.P.hips.p.y < (game.statics.onSidewalk(R.P.hips.p.x, -R.P.hips.p.z) ? 0.65 : 0.5)) R.frozen = true;      /* a body lying on a bonnet or a roof is never frozen: frozen there it stayed in the air when the car drove off (6 of 300 in the node run before the wall fix, 16 after it: more bodies now drop back onto the car that hit them) */ } }
       pose(R); }
   };
   const render = world.render.bind(world); world.render = (t, f) => { const now = performance.now(), dt = game.capture ? 1 / 60 : Math.min(0.05, (now - last) / 1000); last = now; if (!game.paused) S.update(dt); return render(t, f); };

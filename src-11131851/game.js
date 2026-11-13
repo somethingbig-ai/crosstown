@@ -8,6 +8,7 @@ import { Missions } from './mission.js';
 import { Autopilot } from './demo.js';
 import { Sound } from './audio.js';
 import { Fly } from './fly.js';
+import { LookCtl } from './look.js';
 
 const DT = 1 / 60;
 const SPEC = {   // per car type: top speed m/s, acceleration m/s2, grip
@@ -138,6 +139,7 @@ export class Game {
     if (this.P.get('unstick') !== '0') try { (await import('./motion/unstick.js')).install(this); } catch (e) { console.warn('[motion] unstick not loaded', e); }     /* motion lane, Nov 12: a parked car the player's car touches comes loose and can be pushed (public report: stuck across a one-lane street) */
     try { (await import('./crash.js')).install(this); } catch (e) { console.log('[game] crash not loaded: ' + (e && e.message)); }     // car crash deformation v2 from nyc-breakable (crash.js 4d945bfd); ?crash=0 off
     if (this.P.get('entry') !== '0') try { await (await import('./entry/entry.js')).addEntry(this); } catch (e) { console.log('[entry] not loaded: ' + (e && (e.stack || e.message))); }     // gameplay lane: real car entry and exit (door, seat, camera); ?entry=0 off
+    if (this.P.get('unwedge') !== '0') try { (await import('./combat/unwedge.js')).install(this); } catch (e) { console.log('[unwedge] not loaded: ' + (e && e.message)); }     /* gameplay lane, Nov 13 (public report 1b7ddd, car held by the invisible wall at the map's edge): the edge says so and turns the car round; a wedged car is set on the nearest clear lane; ?unwedge=0 off */
     try { (await import('./feedback.js')).install(this); } catch (e) { console.log('[game] feedback not loaded: ' + (e && e.message)); }     // lead: Feedback link + session trace (src/feedback.js)
     if (!/^(0|none|off)$/.test(this.P.get('guns') || '')) try { this.combat = await (await import('./combat/combat.js')).addCombat(this); } catch (e) { console.log('[guns] not loaded: ' + (e && (e.stack || e.message))); }     // gameplay lane: guns v1 (src/combat/, pistol and rifle); ?guns=0 off (nothing fetched)
   }
@@ -186,14 +188,16 @@ export class Game {
 
   bindInput() {
     const K = this.keys;
-    addEventListener('keydown', (e) => { if (e.repeat) return; K.add(e.code); if (e.code === 'KeyF' || e.code === 'Enter') this.input.use = true; if (e.code === 'KeyP') this.paused = !this.paused; if (e.code === 'KeyM') this.sound.toggle(); this.sound.unlock(); if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault(); });
+    addEventListener('keydown', (e) => { if (e.repeat) return; if (!this.look || !this.look.key(e)) K.add(e.code);     /* input, Nov 13: while the browser refuses to capture the mouse the arrow keys turn the camera (look.js) */ if (e.code === 'KeyF' || e.code === 'Enter') this.input.use = true; if (e.code === 'KeyP') this.paused = !this.paused; if (e.code === 'KeyM') this.sound.toggle(); this.sound.unlock(); if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault(); });
     addEventListener('keyup', (e) => K.delete(e.code));
     const c = this.world.renderer.domElement;
-    c.addEventListener('click', () => { this.sound.unlock(); if ((!this.demo || this.fly.on) && document.pointerLockElement !== c) c.requestPointerLock?.(); });
+    /* input, Nov 13 (player report 1de458: 19 uncaught 'UnknownError' rejections, the mouse never captured): every request for the mouse goes through look.js, which catches each refusal, tries the other kind of request, waits out Chrome's 1.25 s after an exit, and puts up "Click to look" while the mouse is not captured */
+    this.look = new LookCtl(this, c);
+    c.addEventListener('click', () => { this.sound.unlock(); if (!this.demo || this.fly.on) this.look.ask('click'); });
     // Matt 18:10: the mouse must be clearly free to look. It looks around whether or not the pointer is captured, and the first movement key
     // captures it (before, only a click on the picture did, so with no click the mouse did nothing).
     addEventListener('mousemove', (e) => { const ui = document.getElementById('fbbox'); if (document.pointerLockElement === c || (!this.demo && document.hasFocus() && !(ui && ui.style.display !== 'none') && !window.__startScreen)) {     /* not while the feedback form is open: moving to Send turned the camera (public note, Nov 11) */ this.input.lookX += e.movementX; this.input.lookY += e.movementY; } });
-    addEventListener('keydown', (e) => { if (!e.repeat && /^(Key[WASD]|Arrow)/.test(e.code) && !this.demo && document.pointerLockElement !== c) { try { const pr = c.requestPointerLock?.(); if (pr && pr.catch) pr.catch(() => {}); } catch (err) {} } });
+    addEventListener('keydown', (e) => { if (!e.repeat && /^(Key[WASD]|Arrow)/.test(e.code) && !this.demo && document.pointerLockElement !== c && !(e.target && e.target.closest && e.target.closest('#fbbox'))) this.look.ask('key'); });
     addEventListener('blur', () => K.clear());
   }
   readInput() {
@@ -230,7 +234,7 @@ export class Game {
   step(dt) {
     const pl = this.player, I = this.input;
     this.t += dt; this.frame++;
-    if (this.demo) this.autopilot.drive(dt, I); else this.readInput();
+    if (this.demo) this.autopilot.drive(dt, I); else { this.readInput(); this.look.update(dt, I); }
     if (this.fly.on) {   // flying: the look goes to the fly camera; a human player's character stands still (the autopilot keeps playing)
       this.fly.look(I.lookX, I.lookY); I.lookX = I.lookY = 0;
       if (!this.demo) { I.lock = undefined; I.steer = 0; I.throttle = 0; I.brake = pl.vehicle ? 1 : 0; I.handbrake = false; I.mx = 0; I.my = 0; I.run = false; I.use = false; }

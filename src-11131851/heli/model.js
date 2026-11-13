@@ -172,7 +172,10 @@ function pilotGeometry(s) {
 const assetURL = (name) => new URL('../../assets/heli/model/' + name, import.meta.url).href;
 async function loadGLB(name) { const r = await fetch(assetURL(name)); if (!r.ok) throw new Error(name + ' ' + r.status); return new GLTFLoader().parseAsync(await r.arrayBuffer(), ''); }
 async function loadTex(name, srgb) {
-  try { const t = await new THREE.TextureLoader().loadAsync(assetURL(name)); t.flipY = false; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; return t; } catch (e) { console.log('[heli] model: no ' + name); return null; }
+  try { let t;      /* gameplay/board, Nov 13: decoded off the main thread (as an <img> the two 4096 maps were decoded inside the frame that first drew the helicopter up close: 108 + 65 ms, measured: lanes/gameplay/board-state/car/out3); ?helitex=img = the old way */
+    if (typeof createImageBitmap !== 'function' || /[?&]helitex=img/.test(location.search)) t = await new THREE.TextureLoader().loadAsync(assetURL(name));
+    else { const r = await fetch(assetURL(name)); if (!r.ok) throw new Error(name + ' ' + r.status); t = new THREE.Texture(await createImageBitmap(await r.blob(), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' })); t.needsUpdate = true; }
+    t.flipY = false; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; t.anisotropy = 8; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; return t; } catch (e) { console.log('[heli] model: no ' + name); return null; }
 }
 
 export async function buildHeliModel(ctx) {
@@ -181,6 +184,8 @@ export async function buildHeliModel(ctx) {
   // the camera's shutter: 1/50 s unless ?helishutter=<1/s> says otherwise (a stills camera at 1/1000 nearly freezes the blades). api.shutter may be set while it runs.
   const api = { root, update: null, lods: null, innerTrim: null, exhaust: EXHAUST.slice(), shutter: 1 / Math.max(10, +(P && P.get('helishutter')) || 50) };
   const [gltf, tNormal, tOrm, tTint] = await Promise.all([loadGLB('heli.glb'), loadTex('normal.png'), loadTex('orm.jpg'), loadTex('tint.jpg', true)]);
+  // gameplay/board, Nov 13: the three maps go to the card now, one at a time, not in the frame that first draws the near model (?heliup=0 off)
+  if (W && W.renderer && W.renderer.initTexture && !/[?&](heliup=0|helitex=img)/.test(location.search)) (async () => { for (const t of [tNormal, tOrm, tTint]) if (t) { await new Promise((r) => setTimeout(r, 40)); try { W.renderer.initTexture(t); } catch (e) {} } })();
 
   // ---- the meshes of the file, gathered by level of detail, group and surface class
   const bins = new Map();

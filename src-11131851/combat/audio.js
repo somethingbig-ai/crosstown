@@ -355,10 +355,13 @@ export class GunAudio {
         if (idx && raw) {
           const buf = await new OfflineAudioContext(2, 1, SR).decodeAudioData(raw), L = buf.getChannelData(0), R = buf.numberOfChannels > 1 ? buf.getChannelData(1) : L, k = buf.sampleRate / idx.sr, m = new Map();
           for (const name in idx.clips) { const [o, n] = idx.clips[name], a = Math.round(o * k), e = Math.min(L.length, Math.round((o + n) * k)); if (e > a) m.set(name, [L.slice(a, e), R.slice(a, e)]); }
+          /* input, Nov 13: a decode that gives silence (a broken decoder would leave every recorded gun mute) counts as a failed one, and both cases are named in the log */
+          { let pk = 0; for (let j = 0; j < L.length; j += 97) { const x = Math.abs(L[j]); if (x > pk) pk = x; } if (!(pk > 1e-4)) throw new Error('they decoded to silence'); }
+          if (buf.sampleRate !== SR || !m.size) console.log('[guns] recordings not used (decoded at ' + buf.sampleRate + ' Hz, ' + m.size + ' clips): the synthesized guns play');
           if (buf.sampleRate === SR && m.size) { SMP = m; for (const key of [...this.data.keys(), ...this.bufs.keys()]) if (/^(shot|far|slap|out|in|rack|pump|shell|glass|explosion)(:|$)/.test(key)) { this.data.delete(key); this.bufs.delete(key); } }
         }
       }
-    } catch (e) { /* no recordings: the synthesized guns play instead */ }
+    } catch (e) { /* no recordings: the synthesized guns play instead */ try { console.log('[guns] recordings not used (' + (e && e.message) + '): the synthesized guns play'); } catch (e2) {} }
     /* perf, Nov 12: the sounds of guns the player does not have (this.kinds, set by combat.js: the SMG and the shotgun unless ?gall=1) are not rendered at load; one that is asked for anyway is rendered on first use, like anything missing. The guns in hand come first. */
     try { const has = this.kinds, skip = (k) => { const g = k.split(':')[1]; return !!has && KINDS.includes(g) && !has.includes(g); }; for (const k of allKeys().concat(this._more())) { if (skip(k)) continue; if (!this.bufs.has(k)) this._data(k); await new Promise((r) => setTimeout(r, 0)); } } catch (e) { /* anything missing is rendered on first use */ }
   }

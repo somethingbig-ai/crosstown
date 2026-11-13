@@ -24,7 +24,7 @@ The Flatiron Building above the ground floors (assets/hero/flatiron_upper.glb): 
 
 Building walls: straightened photographs of New York fronts from Wikimedia Commons by Epicgenius, Kidfly182 and others, CC BY-SA 4.0 and CC BY 4.0; every photograph, author and licence is listed in assets/panels/SOURCES.md. The wall textures made from them (the files in assets/panels/) are shared under CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/): you may copy and adapt them on the same terms.
 
-Wall photograph added Nov 11 (the red-brick flats front, assets/panels/lightbrick_1.jpg): "Amsterdam Av Jul 2024 16.jpg" by Epicgenius, CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/), https://commons.wikimedia.org/wiki/File:Amsterdam_Av_Jul_2024_16.jpg , modified (one window bay straightened, cropped, laid twice, haze removed, tone evened and graded, a face behind a window painted out); the texture made from it is shared under CC BY-SA 4.0 like the other wall textures.
+Wall photograph replaced Nov 12 (the brick front, assets/panels/lightbrick_1.jpg): "NoHo Jun 2023 14.jpg" by Epicgenius, CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/), https://commons.wikimedia.org/wiki/File:NoHo_Jun_2023_14.jpg , modified (three window bays of one storey straightened, cropped, set on an even grid, re-coursed so the panel repeats, tone evened, window openings painted dark); the texture made from it is shared under CC BY-SA 4.0 like the other wall textures.
 
 Sky, ground, wall, bark and prop textures and models: Poly Haven (https://polyhaven.com) and ambientCG (https://ambientcg.com), CC0.
 

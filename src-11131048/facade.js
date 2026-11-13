@@ -78,13 +78,13 @@ const WIN_BODY = /* glsl */`
               vec3 gT = h3.x < 0.4 ? vec3(0.78, 0.82, 0.80) : (h3.x < 0.75 ? vec3(0.50, 0.66, 0.62) : vec3(0.52, 0.55, 0.57));
               if (style > 2.5 && style < 3.5 && h4.x > 0.6) gT = vec3(0.56, 0.47, 0.36);
               vec3 bcol = h4.z < 0.5 ? vec3(0.80, 0.79, 0.75) : (h4.z < 0.75 ? vec3(0.78, 0.72, 0.60) : (h4.z < 0.9 ? vec3(0.52, 0.52, 0.50) : vec3(0.42, 0.36, 0.30)));
-              float habit = mix(0.5, 0.85, h4.x); if (fFlat > 0.5) habit = 0.92;
+              float habit = mix(0.5, 0.85, h4.x); if (fFlat > 0.5) habit = 0.80;
               // blinds / shades / curtains just behind the glass; a loft's three lights each have their own
               vec2 bid = id, bp = wc, bh = half_;
               if (style > 3.5) { float li = step(-half_.x * 0.36, wc.x) + step(half_.x * 0.36, wc.x); bid += li * 17.0; bh.x = li == 1.0 ? half_.x * 0.36 : half_.x * 0.32; bp.x = wc.x - (li - 1.0) * half_.x * 0.68; }
               bp -= parW * 0.07; vec4 bc = blindColor(bp, bh, bid, habit, h4.y, bcol, fPx);
               room = room * (1.0 - bc.a) + bc.rgb * bc.a * lit * 0.06;
-              fPane = bc.rgb * bc.a * mix(vec3(1.0), gT, 0.7) * (st3.z > 0.02 ? 0.62 : 0.45) * (1.0 - 0.3 * fFlat) * (1.0 - 0.08 * fFlat * (0.5 + 0.5 * sin(bp.y * 52.0)) * smoothstep(0.03, 0.008, fPx)) * (1.0 - 0.25 * fFlat * smoothstep(0.35, 0.75, vnoise(bp * vec2(1.6, 4.0) + bid)));      // glass60: on flats a shade is a mid-tone cloth with bands and blotches (lit white it read as a blank card)
+              fPane = bc.rgb * bc.a * mix(vec3(1.0), gT, 0.7) * (st3.z > 0.02 ? 0.62 : 0.45) * (1.0 - (st3.z > 0.02 ? 0.0 : 0.3) * fFlat) * (1.0 - 0.08 * fFlat * (0.5 + 0.5 * sin(bp.y * 52.0)) * smoothstep(0.03, 0.008, fPx)) * (1.0 - 0.25 * fFlat * smoothstep(0.35, 0.75, vnoise(bp * vec2(1.6, 4.0) + bid)));      // glass60: on flats a shade is a mid-tone cloth with bands and blotches (lit white it read as a blank card)
               // an air conditioner in some of the old sash windows
               bool acHere = (style < 0.5 && !secondary) ? mod(bi * 7.0 + fi * 13.0 + floor(seed * 512.0) * 3.0, 11.0) < 1.5 : (secondary && hsh > 0.84);
               if (acHere && wc.y < -half_.y + 0.42 && abs(wc.x) < 0.33) { fAlb = vec3(0.55, 0.54, 0.5) * (0.6 + 0.4 * step(0.5, fract(wc.y * 30.0))); fRough = 0.7; return; }
@@ -97,10 +97,10 @@ const WIN_BODY = /* glsl */`
                 vec2 wav = vec2(vnoise(vec2(wc.x * 5.0, wc.y * 0.9) + pid) - 0.5, vnoise(vec2(wc.x * 1.2, wc.y * 3.6) + pid + 9.0) - 0.5) * smoothstep(0.3, 0.06, fPx) / (1.0 + 0.8 * dot(par, par));
                 // every light is its own sheet: set a little off true, and bowed like a pillow (slope greatest at mid-edge), so each mirrors the street its own way
                 vec2 ls = wc / half_; if (ySp) ls.y = (wc.y - sign(wc.y - 0.02) * half_.y * 0.5) / (half_.y * 0.5); if (style > 2.5 && style < 3.5) ls.x = (wc.x - sign(wc.x) * half_.x * 0.5) / (half_.x * 0.5); ls = clamp(ls + (pj.yx - 0.5) * 0.9, -1.4, 1.4) * 1.2;      // the belly of the bow is never dead centre
-                vec2 bowv = (vec2(sin(ls.x) * cos(ls.y), cos(ls.x) * sin(ls.y)) + (vec2(vnoise(wc * 1.7 + pid * 5.0), vnoise(wc * 1.7 + pid * 5.0 + 31.0)) - 0.5) * 0.25) * (pj.z - 0.4) * 0.008;
+                vec2 bowv = (vec2(sin(ls.x) * cos(ls.y), cos(ls.x) * sin(ls.y)) + (vec2(vnoise(wc * 1.7 + pid * 5.0), vnoise(wc * 1.7 + pid * 5.0 + 31.0)) - 0.5) * 0.25) * (fFlat > 0.5 ? (0.4 + 0.6 * pj.z) * 0.020 : (pj.z - 0.4) * 0.008);
                 fNrmT = normalize(vec3((hash32(id * 1.7 + 3.0).xy - 0.5) * vec2(0.025, 0.03) + (pj.xy - 0.5) * vec2(0.017, 0.019) + vec2(0.0, ySp ? (upH ? 0.012 : -0.009) : 0.0) + wav * vec2(0.004, 0.003) * (0.45 + 0.55 * old) + bowv, 1.0));
                 { float sxs = pairS > 0.5 ? step(0.0, wc.x) : 0.0; float rh = hash21(id + sxs * 3.0); if (rh > 0.55 && rh < 0.59 && !upH && wc.y < -0.03 && (style < 1.5 || pairS > 0.5)) { alb = room * 0.6; fGlass = 0.12; fPane = vec3(0.0); } }      // a raised lower sash: open, no pane to reflect
-                alb *= 0.55 + 0.9 * hash21(id + 11.0); fRefl = (0.4 + 0.35 * pj.z) * (0.6 + 0.5 * hash21(id + 61.0)) * (0.78 + 0.22 * smoothstep(0.0, 0.35, half_.y - wc.y)) * (1.0 - 0.55 * bc.a * fFlat);
+                alb *= 0.55 + 0.9 * hash21(id + 11.0); fRefl = (0.4 + 0.35 * pj.z) * (0.6 + 0.5 * hash21(id + 61.0)) * (0.78 + 0.22 * smoothstep(0.0, 0.35, half_.y - wc.y)) * (1.0 - 0.35 * bc.a * fFlat);
                 // dust and rain marks: a pale film that the sun lights, thickest in the lower corners
                 float lyT = (ySp && wc.y < 0.02) ? 0.02 - wc.y : half_.y - wc.y; float lyB = (ySp && wc.y > 0.02) ? wc.y - 0.02 : wc.y + half_.y; float lxE = half_.x - abs(wc.x); if (wk > 0.5 && wk < 1.5) lxE = min(lxE, abs(wc.x));      // metres below the top of this light, above its foot, from its side
                 float runs = smoothstep(0.55, 0.9, vnoise(vec2(wc.x * 46.0, wc.y * 1.3) + pid * 3.0)) * exp(-lyT * (1.2 + 3.0 * pj.x)) + 0.6 * smoothstep(0.6, 0.9, vnoise(vec2(wc.x * 21.0, wc.y * 0.6) + pid * 7.0)) * smoothstep(0.1, 0.9, vnoise(wc * vec2(1.3, 0.9) + pid));      // rain runs from the head and the meeting rail
@@ -136,10 +136,104 @@ const WIN_BODY = /* glsl */`
                   float us = (1.0 - sl) * smoothstep(0.10, 0.0, pS.y + half_.y - snz) * 0.5; alb *= 1.0 - us; fPane *= 1.0 - us; }
               }
 `;
+const WIN_BODY_X6 = /* glsl */`
+              float fb = half_.x > 0.72 ? 0.135 : 0.12;   // frame and sash stile together
+              float ap = fPx * 0.6;      // edges a pixel soft: thin bars fade to their coverage instead of breaking up
+              bool ySp = style < 2.5 || pairS > 0.5;
+              float wk = pairS > 0.5 ? 1.0 : (style > 3.5 ? 3.0 : (style > 2.5 ? (ribbon > 0.5 ? 4.0 : 2.0) : 0.0));
+              // glass34: the window has real depth. The ray is followed through it: casing and upper sash stand 75 mm in front of the lower sash's glass, the upper glass 50 mm,
+              // the lower sash 40 mm; where the ray misses a member's face but meets its footprint further in, it has hit that member's side (its return). wc ends as the point on the glass.
+              vec2 parW = clamp(par, -2.5, 2.5); float zU = 0.075, zG = ySp ? 0.05 : 0.0, zL = 0.04;
+              vec2 wcl = wc; vec2 pF = wc + parW * zU; float lF, lG, mL = 0.0, sideL = 0.0;
+              float mU = winFr(pF, half_, fb, wk, ap, lF);
+              vec2 pUG = wc + parW * zG; bool upH = ySp && pUG.y > 0.02; if (upH) wc = pUG;
+              float mG = winFr(wc, half_, fb, wk, ap, lG); float sideU = max(mG - mU, 0.0);
+              if (ySp && !upH) { winFr(wc + parW * zL, half_, fb, wk, ap, mL); sideL = max(lG - mL, 0.0); }
+              float fr = max(max(mU, mL), max(sideU, sideL));
+              vec3 sideN = vec3(0.0, sign(parW.y), 0.2);
+              if ((1.0 - mU) * (1.0 - mL) * max(sideU, sideL) > 0.01) { float l2; float m2 = winFr(vec2(pF.x, wc.y), half_, fb, wk, ap, l2); if (max(m2, l2) < 0.5) sideN = vec3(sign(parW.x), 0.0, 0.2); }
+              float fsh = 1.0;      // the sun's ray from the glass (or the lower sash) must clear the members in front of it
+              if (st3.z > 0.02) { float l3; fsh = 1.0 - 0.9 * winFr(wc + clamp(spar, -3.0, 3.0) * (zU - (upH ? zG : 0.0)), half_, fb, wk, ap * 2.0 + 0.004, l3); }
+              vec2 id = vec2(bi * 2.0 + half_id, fi) + floor(seed * 512.0) * vec2(3.0, 1.0); float hsh = hash21(id);
+              bool fcG = !(fr >= 1.0 && fcGl0); vec3 room = vec3(0.0); vec3 gT = vec3(0.78, 0.82, 0.80); vec4 bc = vec4(0.0); bool office = false; fPane = vec3(0.0);
+              if (fcG) {
+              office = style > 2.5 || (style > 0.5 && (bigWin > 0.5 || H > 40.0));
+              float lit = step(office ? 0.86 : 0.93, hash21(id + 5.0));
+              vec3 d = normalize(vec3(-par, 1.0));
+              
+              // the building's glass and its tenants' habits
+              gT = h3.x < 0.4 ? vec3(0.78, 0.82, 0.80) : (h3.x < 0.75 ? vec3(0.50, 0.66, 0.62) : vec3(0.52, 0.55, 0.57));
+              if (style > 2.5 && style < 3.5 && h4.x > 0.6) gT = vec3(0.56, 0.47, 0.36);
+              vec3 bcol = h4.z < 0.5 ? vec3(0.80, 0.79, 0.75) : (h4.z < 0.75 ? vec3(0.78, 0.72, 0.60) : (h4.z < 0.9 ? vec3(0.52, 0.52, 0.50) : vec3(0.42, 0.36, 0.30)));
+              float habit = mix(0.5, 0.85, h4.x); if (fFlat > 0.5) habit = 0.80;
+              // blinds / shades / curtains just behind the glass; a loft's three lights each have their own
+              vec2 bid = id, bp = wc, bh = half_;
+              if (style > 3.5) { float li = step(-half_.x * 0.36, wc.x) + step(half_.x * 0.36, wc.x); bid += li * 17.0; bh.x = li == 1.0 ? half_.x * 0.36 : half_.x * 0.32; bp.x = wc.x - (li - 1.0) * half_.x * 0.68; }
+              bp -= parW * 0.07; bc = blindColor(bp, bh, bid, habit, h4.y, bcol, fPx);
+              if (bc.a < 1.0) room = roomColor(wc, d, half_ * 2.0, 4.5, id, lit) * (1.0 + 1.2 * lit);
+              room = room * (1.0 - bc.a) + bc.rgb * bc.a * lit * 0.06;
+              fPane = bc.rgb * bc.a * mix(vec3(1.0), gT, 0.7) * (st3.z > 0.02 ? 0.62 : 0.45) * (1.0 - (st3.z > 0.02 ? 0.0 : 0.3) * fFlat) * (1.0 - 0.08 * fFlat * (0.5 + 0.5 * sin(bp.y * 52.0)) * smoothstep(0.03, 0.008, fPx)) * (1.0 - 0.25 * fFlat * smoothstep(0.35, 0.75, vnoise(bp * vec2(1.6, 4.0) + bid)));      // glass60: on flats a shade is a mid-tone cloth with bands and blotches (lit white it read as a blank card)
+              }
+              // an air conditioner in some of the old sash windows
+              bool acHere = (style < 0.5 && !secondary) ? mod(bi * 7.0 + fi * 13.0 + floor(seed * 512.0) * 3.0, 11.0) < 1.5 : (secondary && hsh > 0.84);
+              if (acHere && wc.y < -half_.y + 0.42 && abs(wc.x) < 0.33) { fAlb = vec3(0.55, 0.54, 0.5) * (0.6 + 0.4 * step(0.5, fract(wc.y * 30.0))); fRough = 0.7; return; }
+              alb = room; rough = 0.07; fGlass = 1.0; fGT = gT; fF0 = office ? 0.20 + 0.08 * h4.y : 0.16 + 0.07 * h4.y;
 
-export function makeFacadeMaterial(shared) {
+              if (fcG) { float lx = style > 3.5 ? step(-half_.x * 0.36, wc.x) + step(half_.x * 0.36, wc.x) : (style > 2.5 ? step(0.0, wc.x) : 0.0);
+                vec2 pid = id * 1.7 + vec2((ySp ? step(0.0, wc.y - 0.02) * 13.0 : 0.0) + lx * 5.0, 3.0 + lx * 7.0); vec3 pj = hash32(pid);
+                float old = (style < 1.5 || style > 3.5) ? 1.0 : 0.3;
+                // each light sits a little off true; old drawn glass ripples, sealed units bow
+                vec2 wav = vec2(vnoise(vec2(wc.x * 5.0, wc.y * 0.9) + pid) - 0.5, vnoise(vec2(wc.x * 1.2, wc.y * 3.6) + pid + 9.0) - 0.5) * smoothstep(0.3, 0.06, fPx) / (1.0 + 0.8 * dot(par, par));
+                // every light is its own sheet: set a little off true, and bowed like a pillow (slope greatest at mid-edge), so each mirrors the street its own way
+                vec2 ls = wc / half_; if (ySp) ls.y = (wc.y - sign(wc.y - 0.02) * half_.y * 0.5) / (half_.y * 0.5); if (style > 2.5 && style < 3.5) ls.x = (wc.x - sign(wc.x) * half_.x * 0.5) / (half_.x * 0.5); ls = clamp(ls + (pj.yx - 0.5) * 0.9, -1.4, 1.4) * 1.2;      // the belly of the bow is never dead centre
+                vec2 bowv = (vec2(sin(ls.x) * cos(ls.y), cos(ls.x) * sin(ls.y)) + (vec2(vnoise(wc * 1.7 + pid * 5.0), vnoise(wc * 1.7 + pid * 5.0 + 31.0)) - 0.5) * 0.25) * (fFlat > 0.5 ? (0.4 + 0.6 * pj.z) * 0.020 : (pj.z - 0.4) * 0.008);
+                fNrmT = normalize(vec3((hash32(id * 1.7 + 3.0).xy - 0.5) * vec2(0.025, 0.03) + (pj.xy - 0.5) * vec2(0.017, 0.019) + vec2(0.0, ySp ? (upH ? 0.012 : -0.009) : 0.0) + wav * vec2(0.004, 0.003) * (0.45 + 0.55 * old) + bowv, 1.0));
+                { float sxs = pairS > 0.5 ? step(0.0, wc.x) : 0.0; float rh = hash21(id + sxs * 3.0); if (rh > 0.55 && rh < 0.59 && !upH && wc.y < -0.03 && (style < 1.5 || pairS > 0.5)) { alb = room * 0.6; fGlass = 0.12; fPane = vec3(0.0); } }      // a raised lower sash: open, no pane to reflect
+                alb *= 0.55 + 0.9 * hash21(id + 11.0); fRefl = (0.4 + 0.35 * pj.z) * (0.6 + 0.5 * hash21(id + 61.0)) * (0.78 + 0.22 * smoothstep(0.0, 0.35, half_.y - wc.y)) * (1.0 - 0.35 * bc.a * fFlat);
+                // dust and rain marks: a pale film that the sun lights, thickest in the lower corners
+                float lyT = (ySp && wc.y < 0.02) ? 0.02 - wc.y : half_.y - wc.y; float lyB = (ySp && wc.y > 0.02) ? wc.y - 0.02 : wc.y + half_.y; float lxE = half_.x - abs(wc.x); if (wk > 0.5 && wk < 1.5) lxE = min(lxE, abs(wc.x));      // metres below the top of this light, above its foot, from its side
+                float runs = smoothstep(0.55, 0.9, vnoise(vec2(wc.x * 46.0, wc.y * 1.3) + pid * 3.0)) * exp(-lyT * (1.2 + 3.0 * pj.x)) + 0.6 * smoothstep(0.6, 0.9, vnoise(vec2(wc.x * 21.0, wc.y * 0.6) + pid * 7.0)) * smoothstep(0.1, 0.9, vnoise(wc * vec2(1.3, 0.9) + pid));      // rain runs from the head and the meeting rail
+                float crn = smoothstep(0.30, 0.0, lyB + lxE * 0.9 + 0.10 * vnoise(wc * 9.0 + pid)) + 0.5 * smoothstep(0.07, 0.0, min(lyB, lxE)) + 0.3 * smoothstep(0.05, 0.0, lyT);      // dust banked in the lower corners and along the putty
+                float dirt = (0.012 + 0.05 * smoothstep(0.4, 0.85, vnoise(wc * vec2(2.3, 1.1) + id * 3.0)) + 0.11 * runs + 0.16 * crn) * (0.5 + 1.3 * h4.y) * (0.5 + 1.1 * hash21(pid + 31.0)) * (st3.z > 0.02 ? 0.7 : 0.45);
+                fPane += vec3(0.40, 0.38, 0.34) * dirt; fDirt = dirt;
+                fVeil = 0.02 + 0.10 * smoothstep(-half_.y, half_.y, wc.y) * pj.z + 0.08 * smoothstep(0.5, 0.9, vnoise(wc * vec2(0.9, 1.6) + pid)); }      // the sheen of the sky on the sheet itself, stronger to the head
+              if (ySp && wc.y < 0.0) { float msh = 1.0 - 0.55 * smoothstep(-0.16, -0.03, wc.y); alb *= msh; fPane *= msh; fRefl *= 0.35 + 0.65 * msh; }
+              float fcSl = 0.0; if (ribbon < 0.5) { float fcNz = fFlat * (1.0 - fStn); float fcSn = 0.05 + 0.045 * fcNz; vec2 fcPS = wcl + parW * 0.15; fcSl = max(1.0 - smoothstep(-ap, ap, fcPS.y + half_.y - fcSn), 1.0 - smoothstep(-ap, ap, wcl.y + half_.y - fcSn)); }
+              bool fcF = fr > 0.0 || fcSl > 0.0; vec3 frc = vec3(0.0); if (fcF) { frc = frameCol * (0.95 + 0.55 * hash21(id + 23.0)) * (0.92 + 0.16 * vnoise(wcl * vec2(2.0, 2.6) + id * 5.0)); frc = mix(frc, vec3(0.20, 0.19, 0.17), 0.10 * smoothstep(0.4, 0.9, vnoise(wcl * vec2(37.0, 41.0) + id * 3.0)) * smoothstep(0.03, 0.01, fPx)) * (1.0 - 0.3 * smoothstep(0.5, 0.0, wcl.y + half_.y)); }      // chalked, worn paint in patches; grime gathers low
+              { float deF = min(half_.x - abs(pF.x), half_.y - abs(pF.y)); float sdx = st3.x >= 0.0 ? 1.0 : -1.0;
+                frc *= 1.0 - 0.7 * AAL(abs(deF - 0.074), 0.007, ap) * mU * smoothstep(0.035, 0.012, fPx);      // the dark joint where the sash meets the casing
+                float cas = step(deF, 0.07); vec3 casC = h3.z < 0.6 ? frc * 1.7 : vec3(0.15, 0.10, 0.08); casC *= mix(0.3, 1.0, smoothstep(0.0, 0.012 + 1.5 * fPx, min(half_.x - abs(wcl.x), half_.y - abs(wcl.y))));      // the casing is painted with the trim, the sash is its own colour; where it meets the masonry it is in the joint's shade (a pale casing against the hard reveal edge drew a stair-stepped white line)      // casing, upper sash and lower sash are three pieces of joinery: each its own tone, its upper arris catching the sky
+                float hl = 0.0, hd = 0.0; if (fPx < 0.035 && max(mU, mL) > 0.5) { vec2 lo = vec2(0.0, 0.022); float nf = smoothstep(0.035, 0.015, fPx); float l4; float m4 = winFr((mU > 0.5 ? pF : wc + parW * zL) + lo, half_, fb, wk, ap, l4); hl = (1.0 - (mU > 0.5 ? m4 : l4)) * nf; float l5; float m5 = winFr((mU > 0.5 ? pF : wc + parW * zL) - lo, half_, fb, wk, ap, l5); hd = (1.0 - (mU > 0.5 ? m5 : l5)) * nf; }      // every member has a lit arris (up and to the sun) and a shaded one
+                float ush = (ySp && !upH) ? 1.0 - 0.55 * smoothstep(-0.14, -0.04, wc.y + parW.y * zL) : 1.0;      // the lower sash under the meeting rail
+                vec3 fc = vec3(0.0); if (fcF) fc = mix(mix(frc * 0.42, frc * 0.62 * ush, mL), mix(frc, casC * mix(1.12, 0.9, clamp(deF / 0.07, 0.0, 1.0)) * (0.9 + 0.2 * vnoise(wcl * vec2(3.0, 2.0) + id)), cas), mU) * (1.0 + 2.4 * hl) * (1.0 - 0.55 * hd) + vec3(0.035, 0.035, 0.037) * hl;
+                if (fcF) fc *= 0.86 + 0.28 * vnoise(vec2(wcl.x * 3.0 + wcl.y * 55.0, wcl.y * 3.0 + wcl.x * 55.0) * 0.5 + id);      // brush marks and chalking: never one even tone
+                if (false && ySp && fPx < 0.012) {      // glass53: off (a critic read them as identical repeated marks)
+                     // hardware: the sash lock on the meeting rail, two lifts on the bottom rail
+                  float xc = wk > 0.5 ? sign(pF.x) * half_.x * 0.5 : 0.0; float nearH = smoothstep(0.012, 0.006, fPx);
+                  float lk = mU * AAL(abs(pF.x - xc), 0.034, ap) * AAL(abs(pF.y - 0.022), 0.013, ap);
+                  vec2 pL = wc + parW * zL; float lf = mL * (1.0 - mU) * AAL(abs(abs(pL.x - xc) - half_.x * (wk > 0.5 ? 0.2 : 0.4)), 0.03, ap) * AAL(abs(pL.y + half_.y - fb - 0.01), 0.011, ap);
+                  fc = mix(fc, vec3(0.30, 0.25, 0.15) * (0.7 + 0.6 * hsh), max(lk, lf) * nearH * 0.85); }      // returns in their own shade, the lower sash darker behind the upper
+                if (fcG && fPx < 0.05) { float lw_; float gk = winFr(wc + vec2(sdx * 0.022, 0.032), half_, fb, wk, ap + 0.022, lw_); gk = smoothstep(0.0, 0.6, max(gk, (ySp && !upH) ? lw_ : 0.0)) * smoothstep(0.05, 0.02, fPx); alb *= 1.0 - 0.6 * gk; fPane *= 1.0 - 0.6 * gk; fRefl *= 1.0 - 0.5 * gk; }      // the members stand in front of the glass: their shade lies on it under the head and rails and on the side away from the sun
+                if (fcG && fPx < 0.02) { float lq; float mq = winFr(wc, half_, fb, wk, 0.011, lq); float put = smoothstep(0.10, 0.45, max(mq, (ySp && !upH) ? lq : 0.0)) * (1.0 - fr) * smoothstep(0.02, 0.01, fPx) * 0.8;
+                  vec3 ptc = vec3(0.27, 0.26, 0.235) * (0.75 + 0.5 * hsh) * (0.8 + 0.4 * vnoise(wc * 23.0 + id)); alb = mix(alb, ptc, put); fPane = mix(fPane, ptc, put); fGlass *= 1.0 - put; if (put > 0.3) rough = 0.7; }      // the putty line round every light, paler than the sash
+                alb = mix(alb, fc, fr); rough = fr > 0.02 ? 0.7 : rough; fGlass *= 1.0 - fr; fFrm = fr * fFlat;
+                if (fr > 0.5) fNrmT = normalize(mix(sideN, vec3(0.0, 0.0, 1.0), max(mU, mL)));      // never blended with the glass's own tilt: a half-covered pixel would mirror somewhere else entirely
+                fShade *= mix(fsh, 1.0, mU);
+                if (ribbon < 0.5) {      // the sill nose stands out in front of everything: its face from below, its top from above
+                  float fNz = fFlat * (1.0 - fStn); float snz = 0.05 + 0.045 * fNz; vec2 pS = wcl + parW * 0.15; float sF = 1.0 - smoothstep(-ap, ap, pS.y + half_.y - snz), sT = 1.0 - smoothstep(-ap, ap, wcl.y + half_.y - snz); float sl = max(sF, sT);
+                  if (sl > 0.0) alb = mix(alb, mix(frc * mix(1.45, 1.15, sF), vec3(0.27, 0.26, 0.24) * (0.85 + 0.3 * vnoise(wcl * vec2(9.0, 40.0) + id)), fNz), sl); fFrm *= 1.0 - sl; fGlass *= 1.0 - sl; if (sl > 0.5) fNrmT = normalize(sF > 0.5 ? vec3(0.0, 0.25, 1.0) : vec3(0.0, 1.0, 0.2)); fShade = mix(fShade, 1.0, sl * step(st3.z, 0.02)); if (sl > 0.02) rough = 0.7;
+                  // and under the nose, and under the meeting rail and the head, what lies behind sits in their shade (sky light is cut off as well as sun)
+                  float us = (1.0 - sl) * smoothstep(0.10, 0.0, pS.y + half_.y - snz) * 0.5; alb *= 1.0 - us; fPane *= 1.0 - us; }
+              }
+`;
+
+export function makeFacadeMaterial(shared, defs) {
   const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9, metalness: 0, side: THREE.DoubleSide });
   m.shadowSide = THREE.DoubleSide;
+  // facades/cost (Nov 12): cheaper paths through this shader, each under its own #ifdef FC_.. (the lead's lines stand in the #else). They are switched on by #define lines
+  // written into the shader text here (not material.defines, which a clone() drops: the far city's material is a clone). ?fcut=0 = none of them, ?fcut=X1,X6 = only those.
+  if (!defs) { let v = null; try { v = new URLSearchParams(location.search).get('fcut'); } catch (e) {} defs = {}; for (const k of (v === null ? ['X1', 'X2', 'X3', 'X5', 'X6', 'X10'] : v.split(','))) if (k && k !== '0') defs[/^FC_/.test(k) ? k : 'FC_' + k] = 1; }
+  const fcKeys = Object.keys(defs).sort(), fcDefs = fcKeys.map((k) => '#define ' + k + ' 1').join('\n');
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, shared, { tWallA: { value: shared.tWallA.value }, tWallN: { value: shared.tWallN.value }, tSign: { value: shared.tSign.value } });
     sh.vertexShader = sh.vertexShader
@@ -153,9 +247,13 @@ export function makeFacadeMaterial(shared) {
       .replace('#include <common>', `#include <common>
         precision highp sampler2DArray;
         #define REALREFL ${REALREFL.toFixed(2)}
+${fcDefs}
         varying vec2 vFuv; varying vec2 vFst; varying vec2 vLay; varying vec2 vLay2; varying vec3 vWPos; varying vec3 vWNrm; varying vec3 vBake;
         uniform sampler2DArray tWallA; uniform sampler2DArray tWallN; uniform sampler2D tSign; uniform samplerCube tStreet; uniform sampler2DArray tPanel; uniform sampler2DArray tPanelR; uniform sampler2DArray tPanelH; uniform float uPanelH[32]; uniform vec4 uPanel[32]; uniform vec2 uStyleP[5];
         uniform vec3 uSunColor; uniform vec3 uSunDir; uniform float uShadowFar; uniform vec3 uShadowCenter; uniform float uTime;
+#ifdef FC_X9
+ uniform float uFcLod;
+#endif
         ${NOISE_GLSL}
         #define AAL(d, w, a) (1.0 - smoothstep((w) - (a), (w) + (a), (d)))
         // glass52: the few panels seen close have a sharp copy (2048 px) in tPanelH; uPanelH gives its layer, -1 where there is none
@@ -308,12 +406,44 @@ export function makeFacadeMaterial(shared) {
 
           // ---------------- masonry
           float lsc = layer == 4 ? 0.36 : (layer == 3 ? 0.6 : (layer == 0 ? 0.8 : 1.0)); vec2 tuv = uv / (texScale * lsc) + seed * 7.0;
-          vec3 alb = texture(tWallA, vec3(tuv, float(layer))).rgb * tint;
-          vec3 nt = texture(tWallN, vec3(tuv, float(layer))).xyz * 2.0 - 1.0;
+          
+#ifdef FC_X1
+bool fcPan = uStyleP[int(style)].y > 0.5 && !store && kind < 1.5 && fi >= 0.0 && fi < nFloors; bool fcGT = glassTower && !store && kind < 4.5; bool fcNoW = fcPan || fcGT;
+          vec3 alb = vec3(0.5); vec3 nt = vec3(0.0, 0.0, 1.0);
+          if (!fcNoW) { alb = texture(tWallA, vec3(tuv, float(layer))).rgb * tint; nt = texture(tWallN, vec3(tuv, float(layer))).xyz * 2.0 - 1.0; }
+#else
+vec3 alb = texture(tWallA, vec3(tuv, float(layer))).rgb * tint;
+#endif
+
+          
+#ifdef FC_X1
+
+#else
+vec3 nt = texture(tWallN, vec3(tuv, float(layer))).xyz * 2.0 - 1.0;
+#endif
+
           if (layer == 1) { float m_ = dot(alb, vec3(0.333)); alb = mix(vec3(m_), alb, 0.45); alb = mix(vec3(dot(tint, vec3(0.333)) * 0.55), alb, 0.5); nt.xy *= 0.5; }      // ashlar: pale, even, fine-jointed
-          float streak = fbm(vec2(u * 0.9 + seed * 20.0, v * 0.07)); float grime = fbm(uv * 0.11 + seed * 9.0);
-          float big = fbm(uv * 0.035 + seed * 31.0), soot = fbm(vec2(u * 0.5 + seed * 3.0, v * 0.03 + 5.0));
-          alb *= mix(vec3(1.0), vec3(1.1, 0.96, 0.9), fbm(uv * 0.05 + seed * 3.0)) ;
+          
+#ifdef FC_X1
+float streak = 0.5, grime = 0.5; if (!fcGT || (fcPan && fcGT)) { streak = fbm(vec2(u * 0.9 + seed * 20.0, v * 0.07)); grime = fbm(uv * 0.11 + seed * 9.0); }
+#else
+float streak = fbm(vec2(u * 0.9 + seed * 20.0, v * 0.07)); float grime = fbm(uv * 0.11 + seed * 9.0);
+#endif
+
+          
+#ifdef FC_X1
+float big = 0.5, soot = 0.5; if (!fcGT && !(fcPan && glassTower)) { big = fbm(uv * 0.035 + seed * 31.0); soot = fbm(vec2(u * 0.5 + seed * 3.0, v * 0.03 + 5.0)); }
+#else
+float big = fbm(uv * 0.035 + seed * 31.0), soot = fbm(vec2(u * 0.5 + seed * 3.0, v * 0.03 + 5.0));
+#endif
+
+          
+#ifdef FC_X1
+if (!fcNoW) alb *= mix(vec3(1.0), vec3(1.1, 0.96, 0.9), fbm(uv * 0.05 + seed * 3.0));
+#else
+alb *= mix(vec3(1.0), vec3(1.1, 0.96, 0.9), fbm(uv * 0.05 + seed * 3.0)) ;
+#endif
+
           alb *= 0.74 + 0.36 * grime; alb *= mix(1.0, kind > 2.5 ? 0.9 : 0.74, smoothstep(0.5, 0.9, streak));
           alb = mix(alb, alb * vec3(0.62, 0.60, 0.60), smoothstep(0.45, 0.8, soot) * 0.8);            // soot washes down the wall
           alb = mix(alb, vec3(dot(alb, vec3(0.34))) * 1.12, smoothstep(0.62, 0.8, big) * 0.14);       // paler, repointed or sun-bleached patches
@@ -339,7 +469,13 @@ export function makeFacadeMaterial(shared) {
             if (kind > 6.5 && kind < 7.5) {          // ironwork: fire escapes, tank stands. Black or dark paint, rust at the joints
               c = (h4.y < 0.6 ? vec3(0.035, 0.035, 0.038) : (h4.y < 0.8 ? vec3(0.10, 0.045, 0.03) : vec3(0.05, 0.07, 0.06))) * (0.8 + 0.5 * grime);
               c = mix(c, vec3(0.20, 0.10, 0.05), 0.45 * smoothstep(0.55, 0.8, fbm(vWPos.xy * 2.3 + vWPos.z)));
-              if (abs(N.y) > 0.9) { float gx = (vWPos.x + vWPos.z) * 11.0; if (fwidth(gx) < 0.6 && fract(gx) > 0.42) discard; }
+              
+#ifdef FC_X8
+
+#else
+if (abs(N.y) > 0.9) { float gx = (vWPos.x + vWPos.z) * 11.0; if (fwidth(gx) < 0.6 && fract(gx) > 0.42) discard; }
+#endif
+
               fAlb = c; fRough = 0.65; fNrmT = vec3(0.0, 0.0, 1.0); return;
             }
             if (kind > 7.5 && kind < 8.5) {          // a window air conditioner: a beige or grey case, a louvred back, drip stains
@@ -366,15 +502,17 @@ export function makeFacadeMaterial(shared) {
               float pl = sp.x + floor(hash21(vec2(sq, 7.0)) * sp.y * 0.999); vec4 pm = uPanel[int(pl)];
               float pr = bw / pm.z; float pk = pr >= 0.75 ? clamp(floor(pr + 0.5), 1.0, 3.0) : 1.0 / clamp(floor(pm.z / bw + 0.5), 1.0, 4.0); float cx = bayx * pk; float ci = floor(cx);   // a photo bay may be a group of windows: then it spans several layout bays
               vec3 ch = hash32(vec2(ci + sq * 3.0, fi + sq));
-              float pcol = mod(ci + floor(hash21(vec2(sq, 11.0)) * pm.x * 0.999), pm.x), prow = mod(floor(hash21(vec2(sq, 13.0)) * pm.y * 0.999) - fi + ((style < 1.5 && uPanelH[int(pl)] > -0.5) ? pcol : 0.0) + 64.0 * pm.y, pm.y);      // glass47: bays and storeys in the photo's own order (a bay keeps its photographed neighbours: no seam, sills and courses run through)
+              float pcol = mod(ci + floor(hash21(vec2(sq, 11.0)) * pm.x * 0.999), pm.x), prow = mod(floor(hash21(vec2(sq, 13.0)) * pm.y * 0.999) - fi + 64.0 * pm.y, pm.y);      // glass47: bays and storeys in the photo's own order (a bay keeps its photographed neighbours: no seam, sills and courses run through)
               vec2 puv = vec2((pcol + fract(cx)) / pm.x, (prow + 1.0 - fract(fl)) / pm.y);
               vec2 pc0 = vec2(cx / pm.x, -fl / pm.y); vec2 pdx = dFdx(pc0), pdy = dFdy(pc0);
               vec4 pc = panelTex(puv, pl, pdx, pdy);
+              if (style < 1.5 && uPanelH[int(pl)] > -0.5) { vec3 plo = textureGrad(tPanelH, vec3(puv, uPanelH[int(pl)]), pdx * 3.0, pdy * 3.0).rgb; pc.rgb = clamp(pc.rgb + 0.75 * (pc.rgb - plo) * (1.0 - smoothstep(0.03, 0.10, fPx)), 0.0, 1.0); }      // glass78
               vec3 t0 = mix(vec3(0.86), vec3(1.1), h3.x) * (1.0 + (h3.yzx - 0.5) * 0.07);
               float t1 = (0.9 + 0.16 * grime) * mix(1.0, 0.86, smoothstep(0.5, 0.9, streak)) * (1.0 - 0.3 * smoothstep(2.5, 0.0, top) * (0.4 + 0.6 * streak)) * (1.0 - 0.3 * smoothstep(capZone + 1.6, capZone, top) * step(capZone, top));
               float lodD = smoothstep(0.03, 0.10, fPx);      // glass56 (coordinator, wide spots): photographed masonry gets the soot washes, paler patches and storey-to-storey tone the drawn walls have, and at 150-300 m it greys and darkens (a clean red panel read as toy brick there)
               if (style < 1.5 || style > 2.5) t1 *= (1.0 - 0.34 * smoothstep(0.45, 0.8, soot) * ((style < 1.5 ? 0.15 : 0.35) + 0.45 * lodD)) * (0.93 + 0.14 * hash11(fi + seed * 91.0)) * (1.0 - 0.14 * lodD) * (1.0 + 0.10 * (smoothstep(0.62, 0.8, big) - 0.3) * (0.4 + 0.6 * lodD));
-              vec3 pa = pc.rgb * t0; pa = mix(vec3(dot(pa, vec3(0.333))), pa, (style < 1.5 || style > 2.5) ? 0.85 - 0.32 * lodD : 0.85) * t1;
+              bool g75 = style < 1.5 && uPanelH[int(pl)] > -0.5; if (g75) t1 = mix(mix(1.0, t1, 0.35), t1, lodD);
+              vec3 pa = pc.rgb * t0; pa = mix(vec3(dot(pa, vec3(0.333))), pa, (style < 1.5 || style > 2.5) ? (g75 ? 1.0 : 0.85) - (g75 ? 0.47 : 0.32) * lodD : 0.85) * t1; if (g75) pa *= mix(0.88, 1.0, lodD);
               float pg = pc.a; vec3 pgs = pa; fAvg = vec3(-1.0); fNrmT = vec3(0.0, 0.0, 1.0);
               vec2 pnb = vec2(0.0); vec3 pbr = vec3(1.0); float pbk = 0.0; float trns = 0.0;
               // glass item: every photographed opening is rebuilt as a real window. tPanelR gives the opening's rectangle (the nearest one) in the panel; inside it the pane is set back
@@ -382,9 +520,15 @@ export function makeFacadeMaterial(shared) {
               { vec4 R = texture(tPanelR, vec3(puv, pl)); vec2 cm = vec2(bw / pk, fh);
                 vec2 pM = vec2(pcol + fract(cx), prow + 1.0 - fract(fl)) * cm; vec2 r0 = R.xy * pm.xy * cm - vec2(0.09, 0.06), r1 = R.zw * pm.xy * cm + vec2(0.09, 0.09);      // the opening takes in the photographed window's own frame (the panel's rectangle is its glass only): none of it may show beside the rebuilt window
                 vec2 half_ = (r1 - r0) * 0.5; vec2 wp = vec2(pM.x - (r0.x + r1.x) * 0.5, (r0.y + r1.y) * 0.5 - pM.y);
-                float lodP = smoothstep(0.10, 0.26, fPx); float st0 = style; if (st0 < 1.5) frameCol = h3.y < 0.5 ? vec3(0.032, 0.031, 0.030) : (h3.y < 0.8 ? vec3(0.06, 0.04, 0.03) : vec3(0.028, 0.045, 0.036));
+                
+#ifdef FC_X9
+float lodP = smoothstep(0.10, 0.26, fPx * uFcLod);
+#else
+float lodP = smoothstep(0.10, 0.26, fPx);
+#endif
+ float st0 = style; if (st0 < 1.5) frameCol = h3.y < 0.5 ? vec3(0.032, 0.031, 0.030) : (h3.y < 0.8 ? vec3(0.06, 0.04, 0.03) : vec3(0.028, 0.045, 0.036));
                 if ((st0 < 1.5 || st0 > 2.5) && half_.x > 0.17 && half_.y > 0.3 && lodP < 0.999) {
-                  float pdep = st0 > 3.5 ? 0.26 : 0.22;      // glass56: 13 cm on brick flats (at 23 the jamb seen at a raking angle was a dark band 60 cm wide: critics read its edge as a seam down the wall)
+                  float pdep = st0 > 3.5 ? 0.26 : (g75 ? 0.32 : 0.22);      // glass56: 13 cm on brick flats (at 23 the jamb seen at a raking angle was a dark band 60 cm wide: critics read its edge as a seam down the wall)
                   float d2 = max(abs(wp.x) - half_.x, abs(wp.y) - half_.y);      // glass53: a brick flat's frame sits 16 cm back, a loft's 26 (30 everywhere drew a jamb a third of the window wide in raking views)
                   float nearS = 1.0 - lodP; float apS = fPx * 0.7; float tUp = clamp(-par.y, 0.0, 2.5); float nL3 = float(textureSize(tPanelR, 0).z / 3);
                   vec4 R2 = texture(tPanelR, vec3(puv, pl + nL3)); vec4 R3 = texture(tPanelR, vec3(puv, pl + 2.0 * nL3)); vec2 pmc = pm.xy * cm; bool crs = R2.y < -5.0;
@@ -393,16 +537,22 @@ export function makeFacadeMaterial(shared) {
                   // so the stone hides the wall beyond it and the foot of the window, and shows its own underside from below. The face is the photographed stone (panels.json "sill" / "lintel").
                   if (lodP < 0.9) { vec2 dV = vec2(clamp(par.x, -2.5, 2.5), clamp(-par.y, -2.5, 2.5));
                     for (int k = 0; k < 3; k++) { vec4 bx; float P;      // glass63: 0 = the window's own sill stone (10 cm proud where the front has a sill course, which is then box 2 at 4 cm), 1 = the lintel
-                      if (k == 0) { if (R2.x <= 0.0) continue; bx = vec4(x0s, r1.y - (crs ? 0.03 : 0.0), x1s, crs ? r1.y + 0.55 * (R2.x * pmc.y - r1.y) : R2.x * pmc.y); P = crs ? 0.14 : 0.075; }
-                      else if (k == 2) { if (R2.x <= 0.0 || !crs) continue; bx = vec4(-1e3, r1.y + 0.02, 1e3, R2.x * pmc.y); P = 0.06; }
-                      else { if (R3.w <= 0.0) continue; bx = vec4(R3.y * pmc.x, R3.x * pmc.y, R3.z * pmc.x, R3.w * pmc.y); P = 0.10; }
-                      if (bx.w - bx.y < 0.02) continue; if (k != 2) { float wr = vnoise(vec2(pM.x * 9.0 + sq, float(k) * 7.0 + fi)) - 0.5; bx.y += 0.010 * wr; bx.w += 0.014 * (vnoise(vec2(pM.x * 13.0 + sq * 3.0, float(k) * 5.0 + fi)) - 0.5); }
+                      if (k == 0) { if (R2.x <= 0.0 || (crs && g75)) continue; bx = vec4(x0s, r1.y - (crs ? 0.03 : 0.0), x1s, crs ? r1.y + 0.55 * (R2.x * pmc.y - r1.y) : R2.x * pmc.y); P = crs ? 0.08 : 0.07; }
+                      else if (k == 2) { if (R2.x <= 0.0 || !crs) continue; bx = vec4(-1e3, r1.y + 0.02, 1e3, R2.x * pmc.y); P = g75 ? 0.08 : 0.04; }
+                      else { if (R3.w <= 0.0 || g75) continue; bx = vec4(R3.y * pmc.x, R3.x * pmc.y, R3.z * pmc.x, R3.w * pmc.y); P = 0.05; }
+                      
+#ifdef FC_X2
+if (bx.w - bx.y < 0.02) continue; { vec2 fcF = pM + dV * P; vec2 fcLo = min(pM, fcF) - (apS + 0.012), fcHi = max(pM, fcF) + (apS + 0.012); if (fcHi.x < bx.x || fcLo.x > bx.z || fcHi.y < bx.y || fcLo.y > bx.w) continue; }
+#else
+if (bx.w - bx.y < 0.02) continue;
+#endif
+ if (false) { float wr = vnoise(vec2(pM.x * 9.0 + sq, float(k) * 7.0 + fi)) - 0.5; bx.y += 0.010 * wr; bx.w += 0.014 * (vnoise(vec2(pM.x * 13.0 + sq * 3.0, float(k) * 5.0 + fi)) - 0.5); }
                       vec3 hb = proudBox(pM, dV, bx, P); vec2 F = pM + dV * P; vec2 bc2 = (bx.xy + bx.zw) * 0.5, bh = (bx.zw - bx.xy) * 0.5;
                       float sdb = min(sdBox2(pM - bc2, bh), sdBox2(F - bc2, bh));
                       if (hb.x > 0.5 || sdb < apS) {
                         vec2 sp2 = clamp(hb.x > 0.5 ? hb.yz : F, bx.xy + 0.012, bx.zw - 0.012); if (k == 0) sp2.y = max(sp2.y, r1.y + 0.012);
-                        vec3 sc = panelTex(sp2 / pmc, pl, pdx, pdy).rgb * t0; sc = mix(vec3(dot(sc, vec3(0.333))), sc, 0.85) * t1;
-                        sc *= (k == 2 ? 1.0 : 0.82 + 0.3 * hash21(vec2(floor(R.x * 29.0) + ci * 3.0, fi * 7.0 + sq + float(k)))) * (k == 0 ? 1.2 : 1.0) * ((k == 2 && sp2.x > x0s - 0.02 && sp2.x < x1s + 0.02) ? 1.0 - 0.55 * (1.0 - smoothstep(0.0, 0.06, sp2.y - (r1.y + 0.55 * (R2.x * pmc.y - r1.y)))) : 1.0) * (0.93 + 0.14 * vnoise(vec2(sp2.x * 90.0, sp2.y * 5.0 + sq))) * (0.88 + 0.2 * vnoise(vec2(sp2.x * 14.0 + sq, sp2.y * 1.5))) * (0.92 + 0.14 * vnoise(vec2(sp2.x * 3.1 + sq * 1.7, sp2.y * 9.0)));
+                        vec3 sc = panelTex(sp2 / pmc, pl, pdx, pdy).rgb * t0; sc = mix(vec3(dot(sc, vec3(0.333))), sc, g75 ? 1.0 : 0.85) * t1;
+                        sc *= ((k == 2 && !g75 && sp2.x > x0s - 0.02 && sp2.x < x1s + 0.02) ? 1.0 - 0.55 * (1.0 - smoothstep(0.0, 0.06, sp2.y - (r1.y + 0.55 * (R2.x * pmc.y - r1.y)))) : 1.0);
                         sc *= hb.x > 2.5 ? 0.6 * (1.0 + 0.3 * sign(dV.x) * sign(st3.x)) : (hb.x > 1.5 ? (dV.y > 0.0 ? 0.26 + 0.1 * smoothstep(0.0, P, length(hb.yz - F)) : 1.15) : 1.0);
                         if (k == 1 && hb.x > 0.5 && hb.x < 1.5) sc *= 1.0 - 0.32 * smoothstep(0.04, 0.0, bx.w - hb.z);      // the lintel's chamfered lower arris turns from the sky
                         if (k == 0 && hb.x > 0.5 && hb.x < 1.5) sc *= 1.0 - 0.18 * smoothstep(0.03, 0.0, hb.z - bx.y) * step(0.0, dV.y);      // the top arris of the sill under the window's own wooden sill: a shade line
@@ -417,9 +567,15 @@ export function makeFacadeMaterial(shared) {
                       if (R2.x > 0.0 || sTop) { float e = sTop ? eT : pM.y - R2.x * pmc.y; float xa = (sTop || crs) ? -1e3 : x0s, xb = (sTop || crs) ? 1e3 : x1s;
                         float inx = smoothstep(xa - 0.05, xa + 0.02, pM.x) * (1.0 - smoothstep(xb - 0.02, xb + 0.05, pM.x));
                         float con = inx * smoothstep(-apS, apS, e) * (0.62 * (1.0 - smoothstep(0.0, 0.17, e)) + 0.3 * (1.0 - smoothstep(0.0, 0.035, e)));      // the wall under the stone sees less sky: darkest in the corner
-                        float drp = inx * smoothstep(0.0, 0.05, e) * exp(-e / (0.12 + 0.5 * vnoise(vec2(pM.x * 2.3 + sq, 3.0)))) * smoothstep(0.3, 0.9, 0.6 * vnoise(vec2(pM.x * 5.0 + sq, e * 0.5)) + 0.4 * vnoise(vec2(pM.x * 23.0 + sq, e * 1.5)));      // dirt washed off the sill runs down the wall under it
-                        pa *= (1.0 - con * nearS) * (1.0 - 0.26 * drp);
-                        yb = e; sxo = 1.0; float Ls = 0.14 * clamp(spar.y, 0.0, 4.0); float xs = pM.x + 0.14 * clamp(spar.x, -3.0, 3.0); float inxs = step(xa, xs) * step(xs, xb);
+                        
+#ifdef FC_X3
+float drp = 0.0; if (inx > 0.0 && e > 0.0) drp = inx * smoothstep(0.0, 0.05, e) * exp(-e / (0.12 + 0.5 * vnoise(vec2(pM.x * 2.3 + sq, 3.0)))) * smoothstep(0.3, 0.9, 0.6 * vnoise(vec2(pM.x * 5.0 + sq, e * 0.5)) + 0.4 * vnoise(vec2(pM.x * 23.0 + sq, e * 1.5)));
+#else
+float drp = inx * smoothstep(0.0, 0.05, e) * exp(-e / (0.12 + 0.5 * vnoise(vec2(pM.x * 2.3 + sq, 3.0)))) * smoothstep(0.3, 0.9, 0.6 * vnoise(vec2(pM.x * 5.0 + sq, e * 0.5)) + 0.4 * vnoise(vec2(pM.x * 23.0 + sq, e * 1.5)));
+#endif
+      // dirt washed off the sill runs down the wall under it
+                        pa *= (1.0 - 0.5 * con * nearS); if (g75 && crs) pa *= 1.0 - 0.30 * drp * nearS;
+                        yb = e; sxo = 1.0; float p9 = (crs && g75) ? 0.13 : 0.07; float Ls = p9 * clamp(spar.y, 0.0, 4.0); float xs = pM.x + p9 * clamp(spar.x, -3.0, 3.0); float inxs = step(xa, xs) * step(xs, xb);
                         float ss2 = step(0.02, st3.z) * inxs * smoothstep(-0.01, 0.01, e) * (1.0 - smoothstep(Ls - 0.012, Ls + 0.012, e));
                         fShade = 1.0 - 0.8 * ss2 * nearS; } }
                     if (sxo < 0.5) { float ss = step(0.02, st3.z) * step(abs(wp.x + 0.07 * clamp(spar.x, -3.0, 3.0)), half_.x + 0.06) * smoothstep(-0.01, 0.01, yb) * (1.0 - smoothstep(0.02 + sl, 0.05 + sl, yb));
@@ -428,16 +584,22 @@ export function makeFacadeMaterial(shared) {
                         float inl = smoothstep(x0l - apS, x0l + apS, pM.x) * (1.0 - smoothstep(x1l - apS, x1l + apS, pM.x)) * step(half_.x, abs(wp.x));      // its ends beside the opening (over the opening its underside is the head of the reveal)
                         float conl = inl * smoothstep(-apS, apS, e2) * (1.0 - smoothstep(0.0, 0.16, e2));
                         float eTop = pM.y - R3.x * pmc.y; float ledge = step(x0l, pM.x) * step(pM.x, x1l) * smoothstep(-0.05, 0.0, eTop) * (1.0 - smoothstep(0.0, apS + 0.004, eTop));      // dirt lying on the top of the stone
-                        float runl = step(x0l - 0.03, pM.x) * step(pM.x, x1l + 0.03) * step(half_.x + 0.02, abs(wp.x)) * smoothstep(0.0, 0.06, e2) * exp(-e2 / (0.25 + 0.6 * hash21(vec2(floor(R.x * 29.0) + ci, fi + sq)))) * smoothstep(0.35, 0.8, vnoise(vec2(pM.x * 16.0 + sq, e2 * 0.7)));
-                        pa *= (1.0 - 0.55 * conl * nearS) * (1.0 - 0.2 * ledge * nearS) * (1.0 - 0.3 * runl * nearS);
-                        float Ll = 0.10 * clamp(spar.y, 0.0, 4.0); float xl = pM.x + 0.10 * clamp(spar.x, -3.0, 3.0);
+                        
+#ifdef FC_X3
+float fcRl = step(x0l - 0.03, pM.x) * step(pM.x, x1l + 0.03) * step(half_.x + 0.02, abs(wp.x)) * smoothstep(0.0, 0.06, e2); float runl = 0.0; if (fcRl > 0.0) runl = fcRl * exp(-e2 / (0.25 + 0.6 * hash21(vec2(floor(R.x * 29.0) + ci, fi + sq)))) * smoothstep(0.35, 0.8, vnoise(vec2(pM.x * 16.0 + sq, e2 * 0.7)));
+#else
+float runl = step(x0l - 0.03, pM.x) * step(pM.x, x1l + 0.03) * step(half_.x + 0.02, abs(wp.x)) * smoothstep(0.0, 0.06, e2) * exp(-e2 / (0.25 + 0.6 * hash21(vec2(floor(R.x * 29.0) + ci, fi + sq)))) * smoothstep(0.35, 0.8, vnoise(vec2(pM.x * 16.0 + sq, e2 * 0.7)));
+#endif
+
+                        if (!g75) pa *= (1.0 - 0.3 * conl * nearS);
+                        float Ll = 0.05 * clamp(spar.y, 0.0, 4.0); float xl = pM.x + 0.05 * clamp(spar.x, -3.0, 3.0);
                         float ssl = step(0.02, st3.z) * step(x0l, xl) * step(xl, x1l) * step(half_.x, abs(wp.x)) * smoothstep(-0.01, 0.01, e2) * (1.0 - smoothstep(Ll - 0.012, Ll + 0.012, e2));
-                        fShade = min(fShade, 1.0 - 0.7 * ssl * nearS); }
-                    if (st0 < 1.5 && nearS > 0.01) {      // glass64: the photographed brick is one even field: drift from course to course and brick to brick, a few burnt bricks, lime bloom, a repointed patch
+                        if (!g75) fShade = min(fShade, 1.0 - 0.7 * ssl * nearS); }
+                    if (false && st0 < 1.5 && nearS > 0.01) {      // glass75: OFF. glass64: the photographed brick is one even field: drift from course to course and brick to brick, a few burnt bricks, lime bloom, a repointed patch
                       float crv = vnoise(vec2(pM.x * 0.7 + sq, pM.y * 14.7)), brv = vnoise(vec2(pM.x * 4.65 + sq, pM.y * 14.7 + 3.0));
                       vec3 pv = pa * (0.97 + 0.06 * crv) * (0.96 + 0.08 * brv) * mix(vec3(1.0), vec3(0.72, 0.70, 0.80), smoothstep(0.78, 0.9, brv)) * mix(vec3(1.0), vec3(1.12, 0.98, 0.9), smoothstep(0.25, 0.1, brv));
                       pa = mix(pa, pv, nearS); }
-                    if (st0 < 1.5 && nearS > 0.01) {      // glass61: iron anchor plates of the floor ties, between the window heads: a five-pointed cast star 3 cm proud of the brick with a hard shadow, rust washed down under it
+                    if (false && st0 < 1.5 && nearS > 0.01) {      // glass75: OFF. glass61: iron anchor plates of the floor ties, between the window heads: a five-pointed cast star 3 cm proud of the brick with a hard shadow, rust washed down under it
                       vec2 dA2 = vec2(clamp(par.x, -2.5, 2.5), clamp(-par.y, -2.5, 2.5)) * 0.03; float bxA = (fract(cx + 0.5) - 0.5) * cm.x + dA2.x, yyA = (1.0 - fract(fl)) * cm.y - 0.32 + dA2.y; vec3 hA = hash32(vec2(floor(cx + 0.5) + sq * 5.0, fi * 3.0 + 1.0));
                       if (hA.x < 0.85 && abs(bxA) < 0.5 && abs(yyA) < 1.1) { float aA = (hA.z - 0.5) * 0.7, rS = 0.135 + 0.05 * hA.y; mat2 mA = mat2(cos(aA), -sin(aA), sin(aA), cos(aA)); float sdA = sdStar5(mA * vec2(bxA, -yyA), rS, 0.46); float plA = 1.0 - smoothstep(-apS, apS, sdA);
                         vec2 soA = st3.z > 0.02 ? vec2(0.03 * clamp(spar.x, -3.0, 3.0), -0.03 * clamp(spar.y, 0.0, 4.0)) : vec2(0.0, -0.022); vec2 pSh = vec2(bxA, yyA) - dA2 + vec2(soA.x, soA.y);
@@ -447,7 +609,7 @@ export function makeFacadeMaterial(shared) {
                         float rA = length(vec2(bxA, yyA)); irA *= 1.0 + 1.2 * smoothstep(0.03, 0.0, abs(sdA + 0.012)) * step(yyA, 0.02) + 0.9 * smoothstep(0.035 + apS, 0.035 - apS, rA) - 0.5 * smoothstep(0.012, 0.0, abs(rA - 0.05));      // lit upper arrises, the nut, the ring round it
                         if (st3.z > 0.02) fShade = min(fShade, 1.0 - 0.8 * shA * nearS); else pa *= 1.0 - 0.6 * shA * nearS;
                         pa = mix(pa * (1.0 - rnA * nearS), irA, plA * nearS); } }
-                    if (st0 < 1.5 && R3.w > 0.0 && nearS > 0.01) {      // glass63: stone quoin blocks down both jambs, long and short in turn, cut from the panel's own lintel stone; a joint between blocks, the brick beside them in their contact shade
+                    if (false && st0 < 1.5 && R3.w > 0.0 && nearS > 0.01) {      // glass75: OFF. glass63: stone quoin blocks down both jambs, long and short in turn, cut from the panel's own lintel stone; a joint between blocks, the brick beside them in their contact shade
                       vec2 dQ = vec2(clamp(par.x, -2.5, 2.5), clamp(par.y, -2.5, 2.5)) * 0.06; float jxw = abs(wp.x) - half_.x; float jx = abs(wp.x + dQ.x) - half_.x, jy = wp.y + dQ.y + half_.y;
                       if (min(jx, jxw) > -apS && jx < 0.36 && jy > 0.0 && jy < 2.0 * half_.y) { float jo = jy + 0.2 * hash21(vec2(sq + fi, floor(R.x * 29.0) + sign(wp.x))); float bq = floor(jo / 0.31), fy = fract(jo / 0.31); float hq0 = hash21(vec2(bq * 3.0 + sign(wp.x), sq + fi * 5.0)); float wq = (mod(bq, 2.0) < 0.5 ? 0.25 : 0.14) + 0.03 * (hq0 - 0.5) + 0.01 * (vnoise(vec2(jy * 30.0, sq)) - 0.5);
                         float inq = 1.0 - smoothstep(wq - apS, wq + apS, jx); float sdq = (1.0 - smoothstep(wq - apS, wq + apS, jxw)) * (1.0 - inq); float jt = 1.0 - smoothstep(0.004, 0.012 + apS, min(fy, 1.0 - fy) * 0.31);
@@ -471,6 +633,9 @@ export function makeFacadeMaterial(shared) {
                     { float dn = clamp(din / pdep, 0.0, 1.0); float hwv = hash21(vec2(ci * 3.0 + floor(R.x * 29.0), fi) + sq);
                       er *= (hv ? (q.y > 0.0 ? mix(st0 < 1.5 ? 0.50 : 0.26, st0 < 1.5 ? 0.82 : 0.5, dn) * (0.9 + 0.2 * hwv) : mix(0.85, 1.06, dn)) : mix(st0 < 1.5 ? 0.52 : 0.36, st0 < 1.5 ? 0.86 : 0.66, dn) * (0.9 + 0.2 * hwv) * (1.0 + 0.1 * sign(q.x) * sign(st3.x))) * (1.0 - 0.5 * smoothstep(0.035, 0.0, din))
                         * (0.9 + 0.2 * vnoise(vec2(wp.x + wp.y, din * 9.0) * 3.0 + sq)); }
+                    if (g75 && st3.z > 0.02) { float z9 = pdep - dr; vec2 h9 = wp - clamp(par, -2.5, 2.5) * z9; vec2 s9 = h9 + clamp(spar, -3.0, 3.0) * z9; float e9 = 0.006 + fPx;      // glass79: the sun's ray from the point met on head, jamb or sill must leave through the opening
+                      float l9 = hv ? (q.y > 0.0 ? 0.0 : smoothstep(e9, -e9, abs(s9.x) - half_.x) * smoothstep(e9, -e9, s9.y - half_.y)) : step(0.0, -sign(q.x) * spar.x) * smoothstep(e9, -e9, s9.y - half_.y);
+                      fShade = mix(1.0, mix(0.08, 1.0, l9), nearS); if (!hv) er *= mix(1.0, 1.15, nearS); }
                     vec3 rn = hv ? (q.y > 0.0 ? vec3(0.0, -0.5, 0.85) : vec3(0.0, 1.0, 0.15)) : vec3(-sign(q.x) * 0.6, 0.0, 0.8);      // head and jambs take most of their light as the wall does (a soffit normal goes black under the sky probe); their shade is in the colour
                     float cwr = clamp(0.5 + d2 / fPx, 0.0, 0.5);
                     fAlb = mix(mix(er, pa * 0.6, lodP), pa, cwr); fRough = 0.9; fFrm = st0 < 1.5 ? (1.0 - cwr * 2.0) * (1.0 - lodP) * smoothstep(0.58, 0.46, clamp(din / pdep, 0.0, 1.0)) : 0.0; fNrmT = normalize(mix(rn, vec3(0.0, 0.0, 1.0), max(lodP, cwr * 2.0) * 0.999)); return;
@@ -478,10 +643,17 @@ export function makeFacadeMaterial(shared) {
                   { vec2 wc = q; float half_id = 0.0; float ribbon = 0.0; float bi = ci * 3.0 + floor(R.x * 29.0); float pairS = (half_.x > (st0 < 1.5 ? 0.78 : 0.6) && half_.x <= 1.05) ? 1.0 : 0.0; fFlat = st0 < 1.5 ? 1.0 : 0.0;
                     if (st0 < 1.5) frameCol = h3.y < 0.5 ? vec3(0.032, 0.031, 0.030) : (h3.y < 0.8 ? vec3(0.06, 0.04, 0.03) : vec3(0.028, 0.045, 0.036));      // glass56: brick flats: one double-hung sash (pairs only over 1.55 m), sashes dark (the pale grey ones read as the sill course's own strip)
                     float style = half_.x > 1.05 ? 4.0 : (pairS > 0.5 ? 3.0 : min(st0, 1.0));
-                    vec2 sq2 = q + clamp(spar, -3.0, 3.0) * pdep; float inSun = smoothstep(0.07, -0.07, abs(sq2.x) - half_.x) * smoothstep(0.07, -0.07, abs(sq2.y) - half_.y);
+                    vec2 sq2 = q + clamp(spar, -3.0, 3.0) * pdep; float eI = g75 ? 0.006 + fPx : 0.07; float inSun = smoothstep(eI, -eI, abs(sq2.x) - half_.x) * smoothstep(eI, -eI, abs(sq2.y) - half_.y);
                     fShade = st3.z > 0.02 ? mix(0.12, 1.0, inSun) : 1.0;
                     if (style < 2.5 && wc.y < 0.02) fShade *= mix(1.0, 0.25, step(0.02 - 0.05 * max(spar.y, 0.0), wc.y) * step(0.02, st3.z));
+
+#ifdef FC_X6
+ bool fcGl0 = lodP <= 0.0;
+${WIN_BODY_X6}
+#else
 ${WIN_BODY}
+#endif
+
                     { float hwv = hash21(vec2(bi, fi) + sq); float aoF = st0 > 3.5 ? 0.0 : 1.0; float ao = mix(0.55 + 0.12 * hwv - 0.22 * aoF, 1.0, smoothstep(0.0, pdep * (1.0 + 0.8 * aoF), half_.y - wc.y)) * mix(0.7 - 0.2 * aoF, 1.0, smoothstep(0.0, pdep * (0.6 + 0.6 * aoF), half_.x - abs(wc.x))) * mix(0.8, 1.0, smoothstep(0.0, 0.12, wc.y + half_.y)); alb *= ao; fPane *= ao; fRefl *= 0.6 + 0.4 * ao; }
                     vec3 pfar = min(vec3(dot(pa, vec3(0.333))) * 0.5, vec3(0.25));
                     alb = mix(alb, pfar, lodP); fPane = mix(fPane, pfar * 0.45, lodP); fGlass = mix(fGlass, 0.8, lodP); fNrmT = normalize(mix(fNrmT, vec3(0.0, 0.0, 1.0), lodP)); fShade = mix(fShade, 1.0, lodP);
@@ -630,7 +802,14 @@ ${WIN_BODY}
               fShade = mix(0.12, 1.0, inSun) * step(0.02, st3.z) + (1.0 - step(0.02, st3.z));
               if (style < 2.5 && wc.y < 0.02) fShade *= mix(1.0, 0.25, step(0.02 - 0.05 * max(spar.y, 0.0), wc.y) * step(0.02, st3.z));   // the lower sash sits behind the upper: the meeting rail shades a band of it
               float pairS = 0.0;
+
+#ifdef FC_X6
+ bool fcGl0 = true;
+${WIN_BODY_X6}
+#else
 ${WIN_BODY}
+#endif
+
               if (ribbon < 0.5 && !archTop) { float cw = clamp(0.5 - min(hw - abs(fuw), min(fv - y0, y1 - fv)) / fPx, 0.0, 0.5); alb = mix(alb, wallAlb, cw); fPane = mix(fPane, wallAlb, cw); fGlass *= 1.0 - cw; }
               { float ao = mix(0.55, 1.0, smoothstep(0.0, depth * 1.2, half_.y - wc.y)) * mix(0.75, 1.0, smoothstep(0.0, depth * 0.8, half_.x - abs(wc.x))); alb *= ao; fPane *= ao; }
               fAlb = alb; fRough = rough; return;
@@ -685,20 +864,20 @@ ${WIN_BODY}
         diffuseColor.rgb = mix(fAlb, fPane, fGlass); bakeV = vBake;`)
       .replace('#include <emissivemap_fragment>', `float gThru = 1.0;
         if (fGlass > 0.01) { vec3 mV = normalize(cameraPosition - vWPos); vec3 mN = normalize(fT * fNrmT.x + fB * fNrmT.y + fN * fNrmT.z); vec3 mR = reflect(-mV, mN);
-          float fres = min(fF0 + (1.0 - fF0) * pow(1.0 - max(dot(mV, fN), 0.0), 3.0), 0.72);      // several glass surfaces: rises sooner than one
+          float fres = min(fF0 + (1.0 - fF0) * pow(1.0 - max(dot(mV, fN), 0.0), 3.0), 0.72); if (fFlat > 0.5) fres = min(fres * 1.8 + 0.05, 0.72);      // several glass surfaces: rises sooner than one
           // What the pane mirrors is built, not looked up: the cube is drawn at the eye and is far too coarse to hold a skyline in one pane. The mirrored ray is followed
           // across the street to the wall opposite: above that wall's roof line the sky (its colour from the cube's zenith, paler to the horizon, with clouds), below it the wall
           // itself in the sun or in this building's shadow, with its window grid. Each light's tilt and bow move that picture by metres, so no two panes show the same.
           float mOpen = smoothstep(0.5, 0.9, clamp(vBake.r * 2.0, 0.0, 1.0));      // a wall that sees much sky faces a square, not a street wall
           float mW = mix(24.0, 34.0, mOpen); float tR = mW / max(dot(mR, fN), 0.25);
           vec3 mQ = vWPos + mR * tR; float sS = dot(mQ, fT);
-          vec2 wv = vec2(vnoise(vFuv * vec2(0.9, 0.5) + 3.0), vnoise(vFuv * vec2(0.6, 1.1) + 11.0)) - 0.5; wv += (vec2(vnoise(vFuv * vec2(7.0, 4.0)), vnoise(vFuv * vec2(5.0, 8.0) + 5.0)) - 0.5) * 0.12; float wvA = 0.08; mQ.y += wv.y * wvA; sS += wv.x * wvA;      // glass56: old drawn glass on the brick flats: the picture wavers      // glass is never flat: across the street that is metres
+          vec2 wv = vec2(vnoise(vFuv * vec2(0.9, 0.5) + 3.0), vnoise(vFuv * vec2(0.6, 1.1) + 11.0)) - 0.5; wv += (vec2(vnoise(vFuv * vec2(7.0, 4.0)), vnoise(vFuv * vec2(5.0, 8.0) + 5.0)) - 0.5) * 0.12; wv += (vec2(vnoise(vFuv * vec2(2.6, 1.9) + 17.0), vnoise(vFuv * vec2(2.1, 3.0) + 29.0)) - 0.5) * 0.6 * fFlat; float wvA = 0.08 + 0.75 * fFlat; mQ.y += wv.y * wvA; sS += wv.x * wvA;      // glass56: old drawn glass on the brick flats: the picture wavers      // glass is never flat: across the street that is metres
           float aw = clamp(fwidth(mQ.y), 0.03, 30.0), awx = clamp(fwidth(sS), 0.03, 30.0);
           vec3 zen = min(texture(tStreet, vec3(0.03, 1.0, 0.02)).rgb, vec3(2.5)); float zl = dot(zen, vec3(0.3333)); zen = mix(zen, zl * vec3(0.45, 0.80, 1.45), 0.65);
           float el = clamp(mR.y + fNrmT.y * 4.0 + wv.y * 0.12, 0.0, 1.0);
           vec3 skyc = mix(zen * 1.25 + vec3(zl * (0.55 - 0.3 * fFlat)), zen * 0.9, smoothstep(0.0, 0.55 - 0.25 * fFlat, el));
           vec2 cd = mR.xz / (el + 0.22) * 1.1 + vec2(3.0, 7.0) + wv * 1.5; float cl = smoothstep(0.58, 0.80, 0.62 * vnoise(cd) + 0.38 * vnoise(cd * 2.7 + 5.0)) * smoothstep(1.5, 0.3, el);
-          skyc = mix(skyc, vec3(zl) * vec3(2.3, 2.3, 2.35), cl * 0.75); if (fFlat > 0.5) skyc = mix(skyc, skyc * vec3(0.80, 0.95, 1.18), 0.6) * mix(0.44, 0.28, smoothstep(0.0, 0.5, el));      // glass59: a pane of sky was blank white
+          skyc = mix(skyc, vec3(zl) * vec3(2.3, 2.3, 2.35), cl * 0.75); if (fFlat > 0.5) skyc = mix(skyc, skyc * vec3(0.80, 0.95, 1.18), 0.6) * mix(0.95, 0.70, smoothstep(0.0, 0.5, el));      // glass59: a pane of sky was blank white
           vec3 lh = hash32(vec2(floor(sS / 16.0 + 0.37), floor(dot(vWPos, fN) / 30.0)));
           float oh = mix(19.0 + 12.0 * fFlat, 62.0, lh.x);
           float sunO = dot(uSunDir, -fN); float shTop = vWPos.y + vFst.y - vFuv.y - mW * uSunDir.y / max(sunO, 0.05);
@@ -730,6 +909,11 @@ ${WIN_BODY}
             vec3 shopc = mix(vec3(0.05, 0.055, 0.06) * wlit, wl * 0.75, max(smoothstep(0.43 - gsx, 0.43 + gsx, abs(fract(sx2) - 0.5)), fas * 0.6));
             wl = mix(wl, shopc, smoothstep(4.6 + aw + 0.5, 3.8 - aw, mQ.y)); }      // in a shaded wall its windows are the bright thing: they hold the sky
           float awR = aw * (1.0 + 2.0 * fFlat) + 0.5 * fFlat; vec3 rc = mix(skyc, wl, 1.0 - smoothstep(oh - awR, oh + awR, mQ.y));
+          if (fFlat > 0.5) {      // glass76: when this wall is in sun the block opposite is in shade, but taller buildings beyond it stand in the sun: a pale or brick wall with its window grid above the shaded roof line
+            float oh2 = oh + 6.0 + 26.0 * lh.z; float tw = step(lh.y, 0.7) * (1.0 - litO) * smoothstep(oh, oh + 2.0 * awR + 0.3, mQ.y) * (1.0 - smoothstep(oh2 - awR, oh2 + awR, mQ.y));
+            vec2 tc = vec2(sS / 2.9 + lh.x * 3.0, mQ.y / 3.4); vec2 tf = abs(fract(tc) - 0.5); float twn = smoothstep(0.27 + gsx, 0.27 - gsx, tf.x) * smoothstep(0.31 + gsy, 0.31 - gsy, tf.y) * gfar;
+            vec3 tcol = (lh.y < 0.45 ? vec3(0.60, 0.56, 0.49) : vec3(0.50, 0.34, 0.26)) * (uSunColor * 0.5 + zen * 0.8) * (0.88 + 0.24 * vnoise(vec2(sS, mQ.y) * 0.3)); float tpg = 0.0; if (nM > 0.5) { float opl2 = floor(fract(lh.z * 5.77 + 0.31) * nM * 0.999); vec4 om2 = uPanel[int(opl2)]; vec2 ow2 = vec2(om2.x * om2.z, om2.y * om2.w); vec4 t4 = textureGrad(tPanel, vec3(fract(sS / ow2.x + lh.z), 1.0 - fract(mQ.y / ow2.y), opl2), vec2(min(awx * 1.4 / ow2.x, 0.2), 0.0), vec2(0.0, min(aw * 1.4 / ow2.y, 0.2))); vec3 tc3 = mix(t4.rgb * t4.rgb * 2.1, t4.rgb, 0.2); tcol = tc3 * (uSunColor * 0.5 + zen * 0.8) * mix(0.75, 1.15, lh.x); tcol = mix(tcol, skyc * 0.40, smoothstep(0.35, 0.65, t4.a)); tpg = 1.0; }
+            tcol = mix(tcol, skyc * 0.45 + tcol * 0.10, twn * (1.0 - tpg)); rc = mix(rc, tcol, tw); }
           if (fRefl > 1.5) { if (mQ.y < 5.0) {      // shop glass: the street itself from the cube, aimed at the point the ray reaches
             float tG = mR.y < -0.01 ? min(tR, max(vWPos.y, 0.5) / -mR.y) : tR;
             rc = mix(min(texture(tStreet, vWPos + mR * tG - cameraPosition).rgb, vec3(2.5)), rc, smoothstep(2.5, 5.0, mQ.y)); } }
@@ -737,7 +921,13 @@ ${WIN_BODY}
           // lead, item 16 v2 (Nov 10 23:20): upper windows mirrored a drawn stand-in wall; within reach of the live street cube they now mirror the
           // REAL buildings across the street: the cube is looked up toward the point the mirrored ray reaches (as shop glass already did), and
           // the stand-in takes over again with distance from the eye, where one eye-centred cube points at the wrong stretch of street. ?realrefl=0 = off.
-          if (fRefl <= 1.5) { vec3 rr = min(texture(tStreet, vWPos + mR * tR - cameraPosition).rgb, vec3(2.5)); float rk = float(REALREFL) * (1.0 - smoothstep(70.0, 150.0, distance(vWPos, cameraPosition))) * smoothstep(-0.25, 0.05, mR.y + 0.2); rc = mix(rc, rr, rk); }
+          
+#ifdef FC_X5
+if (fRefl <= 1.5 && REALREFL > 0.0) { vec3 rr = min(texture(tStreet, vWPos + mR * tR - cameraPosition).rgb, vec3(2.5));
+#else
+if (fRefl <= 1.5) { vec3 rr = min(texture(tStreet, vWPos + mR * tR - cameraPosition).rgb, vec3(2.5));
+#endif
+ float rk = float(REALREFL) * (1.0 - smoothstep(70.0, 150.0, distance(vWPos, cameraPosition))) * smoothstep(-0.25, 0.05, mR.y + 0.2); rc = mix(rc, rr, rk); }
           float mAmt = fRefl > 1.5 ? 1.0 : 0.55 + 0.75 * fRefl; rc = mix(rc, skyc * 0.9, fVeil);      // no two lights are equally clean or equally coated
           fEmis += rc * 0.85 * mix(vec3(1.0), fGT, 0.4) * fres * fGlass * mAmt * (1.0 - 2.5 * fDirt); gThru = 1.0 - fres * fGlass; diffuseColor.rgb *= gThru; }
         totalEmissiveRadiance = fAlb * fGlass * 0.55 * (0.35 + 0.65 * clamp(vBake.r * 1.5, 0.0, 1.0)) * gThru + fEmis;`)
@@ -748,6 +938,20 @@ ${WIN_BODY}
         material.specularColor = mix(material.specularColor, vec3(0.05), fGlass); material.specularF90 = 1.0 - 0.92 * fFrm * (1.0 - fGlass); material.specularColor *= 1.0 - 0.7 * fFrm * (1.0 - fGlass);`)
       .replace('#include <aomap_fragment>', BAKE_LIGHT_GLSL + ' { vec3 gR = reflect(-normalize(cameraPosition - vWPos), bakeN); reflectedLight.indirectSpecular *= mix(1.0, mix(0.0, 0.15, smoothstep(0.12, 0.6, gR.y)), max(fGlass, fRough < 0.2 ? 1.0 : 0.0)); } { float sT = 1.0 - min(0.08 + 0.92 * pow(1.0 - clamp(dot(uSunDir, fN), 0.0, 1.0), 3.0), 1.0); reflectedLight.directDiffuse *= fShade * mix(1.0, sT * sqrt(sT), fGlass); } reflectedLight.directSpecular *= fShade;      // at a grazing sun the glass throws most of it back: what stands behind is barely lit');
   };
-  m.customProgramCacheKey = () => 'facade-l27-glass73';
+  m.customProgramCacheKey = () => 'facade-l27-glass82' + fcKeys.join('');
+  if (defs.FC_X8) { const d2 = Object.assign({}, defs); delete d2.FC_X8; const mg = makeFacadeMaterial(shared, d2); mg.name = 'facade-ironwork';
+    m.onBeforeRender = (r, sc, cam, geo, obj) => { if (obj.material !== m) return; if (geo.userData.fcSplit) { if (geo.userData.fcSplit === 2) obj.material = [m, mg]; else if (geo.userData.fcSplit === 3) obj.material = mg; return; } geo.userData.fcSplit = 1;
+      const ix = geo.index, k3 = geo.attributes.uv3;
+      if (!ix || !k3 || !ix.array || !ix.array.length || !k3.array || k3.array.length < k3.count * k3.itemSize || geo.groups.length) { geo.userData.fcSplit = 3; obj.material = mg; return; }     /* cannot tell the ironwork apart here: this tile keeps the old program */
+      const src = ix.array, n = src.length, iron = new Uint8Array(n / 3); let g = 0;
+      for (let i = 0, t = 0; i < n; i += 3, t++) { if (Math.floor(k3.getX(src[i]) / 64 + 0.01) === 7 || Math.floor(k3.getX(src[i + 1]) / 64 + 0.01) === 7 || Math.floor(k3.getX(src[i + 2]) / 64 + 0.01) === 7) { iron[t] = 1; g++; } }
+      if (!g) return;
+      const out = new src.constructor(n); let a = 0, b = n - g * 3;
+      for (let i = 0, t = 0; i < n; i += 3, t++) { if (iron[t]) { out[b++] = src[i]; out[b++] = src[i + 1]; out[b++] = src[i + 2]; } else { out[a++] = src[i]; out[a++] = src[i + 1]; out[a++] = src[i + 2]; } }
+      src.set(out); ix.needsUpdate = true; geo.addGroup(0, n - g * 3, 0); geo.addGroup(n - g * 3, g * 3, 1); geo.userData.fcSplit = 2; obj.material = [m, mg]; }; }
+  if (defs.FC_X9) { if (!shared.uFcLod) shared.uFcLod = { value: 1 }; let fcFrame = -1;
+    const fcOld = m.onBeforeRender; m.onBeforeRender = function (r, sc, cam, geo, obj, grp) { const f = r.info.render.frame; if (f !== fcFrame) { fcFrame = f; const w = self.world, d = (w && w.detail) || 1; shared.uFcLod.value = (w && w.fcLod) || (d >= 0.99 ? 1 : d > 0.7 ? 1.5 : d > 0.6 ? 2 : d > 0.4 ? 2.6 : 3.2); } if (fcOld) fcOld.call(this, r, sc, cam, geo, obj, grp); }; }
+  if (defs.FC_X10) { const fcPrev = m.onBeforeRender; m.onBeforeRender = function (r, sc, cam, geo, obj, grp) { if (obj.renderOrder === 0) obj.renderOrder = 0.5; fcPrev.call(this, r, sc, cam, geo, obj, grp); };
+    m.clone = function () { const c = THREE.MeshStandardMaterial.prototype.clone.call(this); c.onBeforeRender = this.onBeforeRender; c.clone = this.clone; return c; }; }
   return m;
 }

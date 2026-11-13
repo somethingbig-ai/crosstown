@@ -75,7 +75,7 @@ class Combat {
     /* perf, Nov 12: only the gun in the hand at spawn is built at load (each gun is 40-60 ms of geometry on an M2 Max, six times that on a weak machine); the player's other guns are built in the background right after (lazyGuns), a gun he does not have is never built */
     const g0 = g.P.has('gun') ? g.P.get('gun') : !g.demo && !g.P.get('script') ? 'pistol' : null, first = WEAPONS[g0] ? g0 : 'pistol';
     try { const M = await import('./models.js'); if (M.loadWeapons) await M.loadWeapons([first]); const t = M.buildWeapon(first); if (t && t.userData && t.userData.muzzle) { this.build = M.buildWeapon; this.casing = M.buildCasing || this.casing; } } catch (e) { console.log('[guns] weapon models not loaded, plain stand-ins used: ' + (e && e.message)); }
-    try { const A = await import('./audio.js'); this.audio = new A.GunAudio(g); if (g.P.get('heat') !== '1') this.audio.kinds = ORDER.filter((k) => WEAPONS[k]); if (this.audio.preload) this.audio.preload().catch(() => {}); } catch (e) { console.log('[guns] gun audio not loaded: ' + (e && e.message)); this.audio = null; }
+    try { const A = await import('./audio.js'); this.audio = new A.GunAudio(g); if (g.P.get('heat') === '0') this.audio.kinds = ORDER.filter((k) => WEAPONS[k]); if (this.audio.preload) this.audio.preload().catch(() => {}); } catch (e) { console.log('[guns] gun audio not loaded: ' + (e && e.message)); this.audio = null; }
     const ground = (x, z) => (g.statics.onSidewalk(x, -z) ? 0.15 : 0);
     this.fx = new Fx(w.scene, { ground, casing: (k) => { try { return this.casing(k); } catch (e) { return null; } }, day: 1.0, light: g.P.get('glight') !== '0' }); this.SW = g.P.get('gsw') !== '0'; this.fx.msm = this.SW;      /* ?gsw=0: the shotgun's longer pump stroke, smoke cone, ragged glass rim, varied holes, paint dust and the alarm lamps all off */
     this.fx.onCasing = (k, c) => this.snd('casing', k, g.statics.onSidewalk(c.x, -c.z) ? 'concrete' : 'asphalt');
@@ -88,7 +88,7 @@ class Combat {
     // the effects are not part of the ambient-occlusion depth pass
     const gt = w.gtao; if (gt && gt.renderOverride && !gt._combat) { gt._combat = true; const ro = gt.renderOverride.bind(gt), grp = this.fx.group; gt.renderOverride = function (...a) { const v = grp.visible; grp.visible = false; try { ro(...a); } finally { grp.visible = v; } }; }
     this.bodies = null; if (!['0', 'off', 'none'].includes(g.P.get('gpeople'))) {      /* merge Nov 11: shot reactions with blood ON by default (Matt); ?gpeople=0 = the pedhit ragdolls as before, ?gblood=0 = no blood */ try { this.bodies = new (await import('./people.js')).Bodies(g, this); } catch (e) { console.log('[guns] people.js not loaded: ' + (e && (e.stack || e.message))); this.bodies = null; } }      /* v1: people who are shot are the lead's pedhit ragdolls (kill()); the lane's own people.js only with ?gpeople=1, and only if the file is there */
-    if (g.P.get('scare') !== '0' && !this.bodies) { try { (await import('./scare.js')).install(g, this); } catch (e) { console.log('[guns] scare.js not loaded: ' + (e && e.message)); } }      /* the people helper's bystander reactions (wraps scare, frighten, stepPeople, kill on this instance); ?scare=0 = the plain jog */
+    if (g.P.get('scare') !== '0') import('./scare.js').then((m) => m.install(g, this)).catch((e) => console.log('[guns] scare.js not loaded: ' + (e && e.message)));      /* the people helper's bystander reactions (wraps scare, frighten, stepPeople, kill on this instance); ?scare=0 = the plain jog */
     this.hook(); this.bind();
     const sc = g.P.get('script'); if (sc) this.script = new Script(g, this, sc);
     this._cmLazy = !g.capture && !sc && g.P.get('gcmlazy') !== '0';
@@ -96,7 +96,7 @@ class Combat {
     if (g.P.has('at')) this.stage(...g.P.get('at').split(',').map(Number));
     console.log('[guns] ready: rig ' + (this.rig ? 'ik' : 'none') + ', models ' + (this.build === plainWeapon ? 'plain' : 'kit') + ', audio ' + (this.audio ? 'yes' : 'no') + (sc ? ', script ' + sc : ''));
     this.lazyGuns();
-    if (g.P.get('heat') === '1') { try { this.heat = await (await import('./heat.js')).addHeat(g, this); } catch (e) { console.log('[heat] not loaded: ' + e.message); } }      /* police and health are not part of guns v1: off unless ?heat=1 (and the files are there) */
+    if (g.P.get('heat') !== '0') { try { this.heat = await (await import('./heat.js')).addHeat(g, this); } catch (e) { console.log('[heat] not loaded: ' + e.message); } }      /* police and wanted level (gameplay heat w2), on by default since Nov 13; ?heat=0 off */
   }
   /* perf, Nov 12: the player's other guns, one at a time in tasks of their own after load (while the shaders compile and the start screen is up); a gun asked for before its turn is built on the spot (setSlot) */
   lazyGuns() { const todo = ORDER.filter((k) => WEAPONS[k] && !this.guns[k]); const next = async () => { const k = todo.shift(); if (!k) return; try { if (!this.guns[k]) { const M = await import('./models.js'); if (M.loadWeapons && this.build === M.buildWeapon) await M.loadWeapons([k]); this.mkGun(k); } } catch (e) {} setTimeout(next, 30); }; setTimeout(next, 0); }

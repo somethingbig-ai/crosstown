@@ -137,7 +137,7 @@ export class Game {
     try { (await import('./props.js')).install(this); } catch (e) { console.log('[game] props not loaded: ' + (e && e.message)); }     // loose street props from nyc-breakable; ?props=0 off
     if (this.P.get('unstick') !== '0') try { (await import('./motion/unstick.js')).install(this); } catch (e) { console.warn('[motion] unstick not loaded', e); }     /* motion lane, Nov 12: a parked car the player's car touches comes loose and can be pushed (public report: stuck across a one-lane street) */
     try { (await import('./crash.js')).install(this); } catch (e) { console.log('[game] crash not loaded: ' + (e && e.message)); }     // car crash deformation v2 from nyc-breakable (crash.js 4d945bfd); ?crash=0 off
-    try { await (await import('./entry/entry.js')).addEntry(this); } catch (e) { console.log('[entry] not loaded: ' + (e && (e.stack || e.message))); }     // gameplay lane: real car entry and exit (door, seat, camera); ?entry=0 off
+    if (this.P.get('entry') !== '0') try { await (await import('./entry/entry.js')).addEntry(this); } catch (e) { console.log('[entry] not loaded: ' + (e && (e.stack || e.message))); }     // gameplay lane: real car entry and exit (door, seat, camera); ?entry=0 off
     try { (await import('./feedback.js')).install(this); } catch (e) { console.log('[game] feedback not loaded: ' + (e && e.message)); }     // lead: Feedback link + session trace (src/feedback.js)
     if (!/^(0|none|off)$/.test(this.P.get('guns') || '')) try { this.combat = await (await import('./combat/combat.js')).addCombat(this); } catch (e) { console.log('[guns] not loaded: ' + (e && (e.stack || e.message))); }     // gameplay lane: guns v1 (src/combat/, pistol and rifle); ?guns=0 off (nothing fetched)
   }

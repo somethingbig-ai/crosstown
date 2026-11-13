@@ -30,6 +30,8 @@ export const PLANS = {
   heatfilm3: { gun: 'pistol', plan: [P('watch', { until: (H) => H.cops.some((k) => k.see && !k.get), d: 40 }), P('fight', { d: 600 })] },
   /* round 9 on: heatfilm3 with a player's hand (see 'loose' in fight) */
   heatfilm4: { gun: 'pistol', plan: [P('watch', { until: (H) => H.cops.some((k) => k.see && !k.get), d: 40 }), P('fight', { d: 600, loose: true })] },
+  /* as heatfilm4, and at a man behind a car he shoots at what shows over it (shoulders, when he is up to fire), as a player would: with the whole crew behind their car from the first frame nothing aimed at the chest gets through */
+  heatfilm5: { gun: 'pistol', plan: [P('watch', { until: (H) => H.cops.some((k) => k.see && !k.get), d: 40 }), P('fight', { d: 600, loose: true, over: true })] },
   heatfilm: { gun: 'pistol', plan: [P('provoke', { n: 2, d: 2.2 }), P('wait', { until: (H) => H.cops.some((k) => k.see), d: 30 }), P('fight', { until: (H) => H.cars.some((v) => v.out), d: 60 }), P('fight', { d: 600, strafe: true })] },
 };
 
@@ -53,15 +55,19 @@ class Bot {
     if (s.do === 'watch') { K.aim = c.slot !== 'unarmed'; const v = H.cars.find((q) => !q.wreck), k = this.nearest(false); if (k) this.lookAt(dt, k.x, k.y, 1.2, 3); else if (v) this.lookAt(dt, v.x, v.y, 1.0, 3); return; }
     if (s.do === 'wait') { if (c.slot !== 'unarmed') { const k = this.nearest(false); if (k) this.lookAt(dt, k.x, k.y, 1.3, 3); } return; }
     if (s.do === 'fight') {
-      let k = this.nearest(true); /* film hand (s.loose): stays on the man he is shooting at unless another is clearly nearer */ if (s.loose && this.tgt && this.tgt.hp > 0 && this.tgt.see && k && k !== this.tgt && Math.hypot(this.tgt.x - pl.x, this.tgt.y - pl.y) < Math.hypot(k.x - pl.x, k.y - pl.y) + 3.5) k = this.tgt; if (k !== this.tgt) { this.tgt = k; this.newT = 0.55; this.offT = 0; }
+      let k = this.nearest(true); /* film hand (s.loose): stays on the man he is shooting at unless another is clearly nearer */ if (s.loose && this.tgt && this.tgt.hp > 0 && this.tgt.see && k && k !== this.tgt && !(s.over && this.behind(this.tgt) && !k._bh) /* not on a man who has gone behind a car while another stands in the open */ && Math.hypot(this.tgt.x - pl.x, this.tgt.y - pl.y) < Math.hypot(k.x - pl.x, k.y - pl.y) + 3.5) k = this.tgt; if (k !== this.tgt) { this.tgt = k; this.newT = 0.55; this.offT = 0; }
       /* a human hand: late onto a new target, never quite on it */
       this.offT = (this.offT || 0) - dt; if (this.offT <= 0) { this.offT = 0.45; const sk = +(g.P.get('skill') || 1); this.off = [Math.sin(++this.n * 12.9) * 0.3 / sk, Math.sin(this.n * 7.3) * 0.28 / sk]; }
       K.aim = true; const W = c.slot !== 'unarmed'; if (s.strafe) { this.strafeT -= dt; if (this.strafeT <= 0) { this.strafeT = 0.9 + (Math.sin(this.T * 3.7) + 1) * 0.6; this.sdir = -this.sdir; } this.mx = this.sdir * 0.8; }
       if (!k) { const q = this.nearest(false); if (q) this.lookAt(dt, q.x, q.y, 1.3, 4); else this.lookAt(dt, H.lkp.x + Math.cos(C.yaw) * 20, H.lkp.y + Math.sin(C.yaw) * 20, 1.3, 2); return; }
-      this.newT -= dt; const kt = c.kickT ?? 9, lead = (k.speed || 0) * 0.14 * (this.n % 2 ? 1 : -1) / +(g.P.get('skill') || 1); let on = kt < 0.11 ? false : this.lookAt(dt, k.x + this.off[0] + lead /* a hand is behind a running man */, k.y, k.z + 0.72 + 0.5 * k.up + this.off[1], s.loose ? 11 : 7);
+      /* ?heatscar=<s>: for a capture, the hand's first rounds go into the patrol car (two panels and a side window) so that what bullets do to it is in the picture */
+      if (g.P.has('heatscar') && k.car && !k.car.wreck && (this.scarT = this.scarT ?? +g.P.get('heatscar')) > 0) { this.scarT -= dt; const v = k.car, j = (this.n % 3) - 1, cs = Math.cos(v.h), sn = Math.sin(v.h), on2 = this.lookAt(dt, v.x + cs * (0.95 * j - 0.35), v.y + sn * (0.95 * j - 0.35), (v.z || 0) + (j === 0 ? 1.2 : 0.78), 11); if (W) { this.tapT -= dt; if (this.tapT <= 0 && on2) { K.fire = true; this.tapT = 0.22; } } return; }
+      this.newT -= dt; const kt = c.kickT ?? 9, lead = (k.speed || 0) * 0.14 * (this.n % 2 ? 1 : -1) / +(g.P.get('skill') || 1); let on = kt < 0.11 ? false : this.lookAt(dt, k.x + this.off[0] + lead /* a hand is behind a running man */, k.y, k.z + (s.over && k._bh && k.up > 0.55 ? 1.0 + (k.cover && k.cover.any ? 0.36 /* over a bonnet or boot the chest shows */ : 0.62) * k.up + this.off[1] * 0.3 : (g.P.has('heatchest') ? 0.6 + 0.4 * k.up + this.off[1] * 0.25 /* for a capture of the stagger: into the body, not the head */ : 0.72 + 0.5 * k.up + this.off[1])), s.loose ? 11 : 7);
       /* a player fires when the sights are on the body, not only when they have stopped dead on one point (the flinch under fire and a moving man kept the old test from ever passing: capture h9a, one round fired in five seconds) */
       if (s.loose && !on && kt >= 0.11 && this.aerr < 0.32 / Math.max(4, Math.hypot(k.x - pl.x, k.y - pl.y))) on = true;
-      if (W && this.newT <= 0) { const auto = c.slot === 'rifle' || c.slot === 'smg'; if (auto) K.fire = on || this.fireHold > 0; else { this.tapT -= dt; if (this.tapT <= 0 && on) { K.fire = true; if (this.tapT < -0.04) this.tapT = 0.3 + Math.sin(this.T * 5) * 0.04; } } this.fireHold = on ? 0.25 : (this.fireHold || 0) - dt; }
+      /* ?heatshots=<n>: for a capture that must end in the player's death, the film hand fires n aimed rounds and then holds the sights on his man without firing */
+      if (g.P.has('heatshots') && (this.nShot || 0) >= +g.P.get('heatshots')) return;
+      if (W && this.newT <= 0) { const auto = c.slot === 'rifle' || c.slot === 'smg'; if (auto) K.fire = on || this.fireHold > 0; else { this.tapT -= dt; if (this.tapT <= 0 && on) { K.fire = true; this.nShot = (this.nShot || 0) + 1; if (this.tapT < -0.04) this.tapT = 0.3 + Math.sin(this.T * 5) * 0.04; } } this.fireHold = on ? 0.25 : (this.fireHold || 0) - dt; }
       return; }
     if (s.do === 'flee') {
       /* away from the nearest officer; a wall ahead means turn down the street that has room */
@@ -70,7 +76,9 @@ class Bot {
       this.turn(dt, this.fleeH, 0.14, 8); this.my = 1; this.run = true; if (c.slot !== 'unarmed' && !c.swap && this.t > 0.5) K.want = 'unarmed';
       return; }
   }
-  nearest(visible) { const pl = this.g.player; let best = null, bd = 90; for (const k of this.H.cops) { if (k.hp <= 0 || (visible && !k.see)) continue; const d = Math.hypot(k.x - pl.x, k.y - pl.y) - (k.up > 0.8 ? 6 : 0); if (d < bd) { bd = d; best = k; } } return best; }
+  /* is a car between the gun and this man (then only his head shows) */
+  behind(k) { const pl = this.g.player, H = this.H; try { for (const v of this.g.vehicles) { if (v === pl.vehicle || Math.abs(v.x - k.x) > 12 || Math.abs(v.y - k.y) > 12) continue; if (H.segBox(v, pl.x, pl.y, k.x, k.y, 0.05)) return true; } } catch (e) {} return false; }
+  nearest(visible) { const pl = this.g.player, s = this.steps[this.i] || {}; let best = null, bd = 90; for (const k of this.H.cops) { if (k.hp <= 0 || (visible && !k.see)) continue; const d = Math.hypot(k.x - pl.x, k.y - pl.y) - (k.up > 0.8 ? 6 : 0) + (s.over && (k._bh = this.behind(k)) ? 14 : 0) + (s.over && k.get ? 30 : 0); if (d < bd) { bd = d; best = k; } } return best; }
 }
 
 export function register(game, combat, heat, SCRIPTS, Script) {

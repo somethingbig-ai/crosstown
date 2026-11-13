@@ -52,20 +52,20 @@ function seatFor(P, st, fig) {
 //   P car kind, S seat hips, R figure sizes (rig), gy(x, z) ground height at a point beside the car (car frame), o: { jack: 0..1 arms out to a driver }
 // The motion was first laid out on a slower clock (T_RAW seconds, entryPoseRaw); the player's runs on a tighter one in which he is already stepping in
 // while the door is still swinging (critic e1: 'holds with the door open and nothing moving'). warp() maps the tight clock onto the laid-out one.
-const T_RAW = 3.75, WARP = [[0, 0], [0.28, 0.30], [0.5, 0.85], [0.8, 1.15], [1.55, 2.05], [1.9, 2.45], [2.3, 2.92], [2.7, 3.34], [3.1, 3.75]];
+const T_RAW = 3.75, WARP = [[0, 0], [0.34, 0.30], [0.60, 0.85], [0.84, 1.19], [1.85, 2.05], [2.2, 2.5], [2.55, 2.92], [2.85, 3.34], [3.1, 3.75]];      /* board/car 2: the sit-down gets its time, the wait beside the swinging door is cut */
 function warp(u) { if (u <= 0) return 0; for (let i = 1; i < WARP.length; i++) if (u <= WARP[i][0]) { const a = WARP[i - 1], b = WARP[i]; return a[1] + (b[1] - a[1]) * (u - a[0]) / (b[0] - a[0]); } return T_RAW; }
-function entryPose(u, P, S, R, gy, out) { const x = clamp((u - 0.26) / 0.72, 0, 1); return entryPoseRaw(warp(u), P, S, R, gy, out, u < 1.6 ? 1 - Math.pow(1 - x, 2.4) - (u > 0.86 ? 0.05 * Math.exp(-7 * (u - 0.86)) * Math.sin(13 * (u - 0.86)) : 0) : -1); }
+function entryPose(u, P, S, R, gy, out) { const x = clamp((u - 0.30) / 0.62, 0, 1); return entryPoseRaw(warp(u), P, S, R, gy, out, u < 1.6 ? 1 - Math.pow(1 - x, 2.4) - (u > 0.92 ? 0.05 * Math.exp(-7 * (u - 0.92)) * Math.sin(13 * (u - 0.92)) : 0) : -1); }
 function entryPoseRaw(u, P, S, R, gy, out, doorOpen = -1) {
   const zs = P.zs, xr = P.xr, o = out || {};
   const P0 = _p0.set(xr + 0.0, 0, zs - 0.41), Pb = _pb.set(S.x - 0.02, 0, zs - 0.33), psi0 = -Math.PI / 2 + 0.4, psi1 = 0.32;
   const tall = S.y > 0.85;
   const hyH = Math.min(P.belt - 0.07, 1.10), bendK = clamp((1.3 - hyH) / 0.42, 0.15, 1); const a1 = ss(u, 0.85, 1.35), a2 = ss(u, 1.28, 2.12), fk = clamp((u - 1.19) / 0.70, 0, 1), sit = fk < 0.72 ? 0.80 * Math.pow(fk / 0.72, 1.9) : 0.80 + 0.20 * ss(fk, 0.72, 1), give = bump(u, 0.35, 0.75, 1.3);
   const hip = (o.hip ||= V3()); hip.lerpVectors(P0, Pb, a1).lerp(_v.set(S.x, 0, S.z), a2); hip.z -= 0.24 * give; hip.x -= 0.12 * give;       // gives way as the door comes past
-  const g0 = gy(hip.x, Math.min(hip.z, zs - 0.3));
-  hip.y = lerp(g0 + R.standH - 0.035 * bump(u, 0.8, 1.1, 1.4) - 0.02 - 0.06 * bendK * bump(u, 0.0, 0.3, 0.9), S.y, sit) - 0.045 * bump(u, 1.82, 1.97, 2.25) + 0.02 * bump(u, 2.1, 2.3, 2.6);
+  const g0 = gy(hip.x, Math.min(hip.z, zs - 0.3)); o.rootY = g0;
+  hip.y = lerp(g0 + R.standH - 0.11 * bump(u, 0.7, 1.15, 1.5) - 0.02 - 0.06 * bendK * bump(u, 0.0, 0.3, 0.9) - 0.055 * bump(u, 0.25, 0.7, 1.25), S.y, sit) - 0.045 * bump(u, 1.82, 1.97, 2.25) + 0.02 * bump(u, 2.1, 2.3, 2.6);
   const far = P.wheelC ? clamp(P.wheelC.x - S.x - 0.49, 0, 0.2) : 0, lean = (o.lean = tall ? 0 : (0.15 - FAR_K * far) * ss(u, 2.2, 2.8)); hip.x += (0.055 + 0.45 * far) * ss(u, 2.2, 2.8) * (tall ? 0 : 1);      // settles back into the seat: reclined, not bolt upright
   o.yaw = lerp(lerp(psi0, psi1, ss(u, 0.75, 1.4)), 0, ss(u, 1.55, 2.7));
-  o.pitch = 0.46 * bendK * bump(u, 0.0, 0.3, 0.85) + 0.72 * bump(u, 1.15, 1.7, 2.3) + 0.18 * bump(u, 2.5, 2.95, 3.4) + 0.03 * ss(u, 2.0, 2.6);                    // lean to the handle; duck under the roof
+  o.pitch = 0.46 * bendK * bump(u, 0.0, 0.3, 0.85) + 0.30 * bump(u, 0.3, 0.8, 1.3) + 0.72 * bump(u, 1.0, 1.7, 2.3) + 0.18 * bump(u, 2.5, 2.95, 3.4) + 0.03 * ss(u, 2.0, 2.6);                    // lean to the handle; duck under the roof
   o.roll = -0.26 * bendK * bump(u, 0.0, 0.3, 0.8) + 0.62 * bump(u, 1.2, 1.7, 2.3) - 0.40 * bump(u, 2.35, 2.8, 3.3) - 0.035 * ss(u, 3.2, 3.6);                  // toward the cabin going in; out toward the door to pull it shut
   o.sit = sit; o.settle = ss(u, 2.0, 2.6);
   // a van's cab: up onto the step, stand in the doorway, then onto the seat
@@ -85,8 +85,8 @@ function entryPoseRaw(u, P, S, R, gy, out, doorOpen = -1) {
   if (tall) {
     const up = ss(u, 1.45, 2.0), dn = ss(u, 2.0, 2.5), hy = S.y + 0.10; o.sit = dn; o.settle = ss(u, 2.3, 2.8);
     hip.lerpVectors(P0, Pb, a1); hip.z -= 0.15 * give; hip.x -= 0.05 * give; hip.lerp(_v.set(S.x - 0.04, 0, zs + 0.06), up).lerp(_v.set(S.x, 0, S.z), dn);
-    hip.y = lerp(lerp(g0 + R.standH - 0.02 - 0.17 * bendK * bump(u, 0.0, 0.3, 0.9) - 0.06 * bump(u, 1.1, 1.45, 1.8), hy, ss(u, 1.5, 2.0)), S.y, ss(u, 2.05, 2.5));
-    o.yaw = lerp(lerp(psi0, psi1, ss(u, 0.75, 1.4)), 0, ss(u, 1.9, 2.7)); o.pitch = 0.27 * bendK * bump(u, 0.0, 0.3, 0.85) + 0.34 * bump(u, 1.3, 1.9, 2.5) + 0.18 * bump(u, 2.5, 2.95, 3.4) + 0.10 * ss(u, 2.3, 2.8); o.roll = 0.12 * bump(u, 1.5, 2.0, 2.5) - 0.30 * bump(u, 2.5, 2.95, 3.4);
+    hip.y = lerp(lerp(g0 + R.standH - 0.02 - 0.17 * bendK * bump(u, 0.0, 0.3, 0.9) - 0.05 * bump(u, 0.25, 0.7, 1.2) - 0.06 * bump(u, 1.1, 1.45, 1.8), hy, ss(u, 1.5, 2.0)), S.y, ss(u, 2.05, 2.5));
+    o.yaw = lerp(lerp(psi0, psi1, ss(u, 0.75, 1.4)), 0, ss(u, 1.9, 2.7)); o.pitch = 0.27 * bendK * bump(u, 0.0, 0.3, 0.85) + 0.15 * bump(u, 0.3, 0.75, 1.3) + 0.34 * bump(u, 1.3, 1.9, 2.5) + 0.18 * bump(u, 2.5, 2.95, 3.4) + 0.10 * ss(u, 2.3, 2.8); o.roll = 0.12 * bump(u, 1.5, 2.0, 2.5) - 0.30 * bump(u, 2.5, 2.95, 3.4);
     const stepY = clamp(S.y - 0.80, 0.33, 0.55) + R.ankleH, St = _v.set(S.x + 0.26, stepY, zs + 0.14), sA = ss(u, 1.12, 1.55), sB = ss(u, 2.25, 2.75), sC = ss(u, 1.55, 2.2);
     R2.x = S.x + 0.50; L3.x = S.x + 0.44;
     fR.lerpVectors(R0, St, sA); fR.y += 0.16 * Math.sin(Math.PI * sA) * (1 - 0.6 * sA); fR.lerp(R2, sB); fR.y += 0.06 * Math.sin(Math.PI * sB);
@@ -103,7 +103,7 @@ function entryPoseRaw(u, P, S, R, gy, out, doorOpen = -1) {
   const onDoor = (x, y, z, v) => { const dx = x - H.x, dz = z - H.z; return v.set(H.x + dx * cs + dz * sn, y, H.z - dx * sn + dz * cs); };
   const hy = Math.min(P.belt - 0.07, 1.10), hL = (o.hL ||= { p: V3(), f: V3(), n: V3(), w: 0, curl: 0 }), hR = (o.hR ||= { p: V3(), f: V3(), n: V3(), w: 0, curl: 0 });
   if (u < 1.7) {
-    onDoor(xr + 0.14, hy, zs - 0.045, hL.p); hL.w = ss(u, 0.0, 0.30) * (1 - ss(o.door, 0.42, 0.8)); hL.curl = 0.9 * ss(u, 0.2, 0.32) * (1 - ss(o.door, 0.4, 0.6));
+    onDoor(xr + 0.14, hy, zs - 0.045, hL.p); hL.w = ss(u, 0.0, 0.30) * (1 - ss(o.door, 0.78, 0.995)); hL.curl = 0.9 * ss(u, 0.2, 0.32) * (1 - ss(o.door, 0.5, 0.75));      /* board/car 2: the arm follows the door through its swing */
     hL.f.set(0.35 * cs + 0.3 * sn, 0.82, -0.35 * sn + 0.3 * cs); hL.n.set(sn, -0.2, cs);                 // fingers up behind the handle bar, palm to the door
     hL.p.addScaledVector(hL.f, -0.075);
   } else {
@@ -112,8 +112,8 @@ function entryPoseRaw(u, P, S, R, gy, out, doorOpen = -1) {
     if (k > 0 && k < 1) { hL.f.lerp(_v.set(0.95, -0.25, -0.1), 1 - k); hL.n.lerp(_v.set(0.4, 0.5, -0.3), 1 - k); }
     hL.w = ss(u, 2.38, 2.76); hL.curl = 0.8 * ss(u, 2.62, 2.8);
   }
-  wheelHand(P, S, 1, hR.p, hR.f, hR.n); hR.w = ss(u, 1.35, 1.85); hR.curl = 0.8 * ss(u, 1.75, 1.95);      // the right hand takes the rim early: he lowers himself on it
-  if (!tall && P.roofY && u > 1.25 && u < 2.34) { hL.p.set(S.x + 0.20, P.roofY + 0.035, P.roofZ - 0.05); hL.f.set(0.15, 0.05, 1); hL.n.set(0, -1, 0.1); hL.w = ss(u, 1.28, 1.6) * (1 - ss(u, 2.06, 2.32)); hL.curl = 0.45; }      // the left hand on the roof rail over the opening while he drops in
+  wheelHand(P, S, 1, hR.p, hR.f, hR.n); hR.w = ss(u, 1.05, 1.8); hR.curl = 0.8 * ss(u, 1.75, 1.95);      // the right hand takes the rim early: he lowers himself on it
+  if (!tall && P.roofY && u > 0.98 && u < 2.34) { hL.p.set(S.x + 0.20, P.roofY + 0.035, P.roofZ - 0.05); hL.f.set(0.15, 0.05, 1); hL.n.set(0, -1, 0.1); hL.w = ss(u, 0.98, 1.45) * (1 - ss(u, 2.06, 2.32)); hL.curl = 0.45; }      // the left hand on the roof rail over the opening while he drops in
   // eyes: the handle, then down into the cabin, then the road
   const lk = (o.look ||= V3()); const kA = ss(u, 1.0, 1.5), kB = ss(u, 2.2, 2.8);
   lk.set(P.xr + 0.3 - hip.x, hy + 0.1 - (hip.y + R.headUp), zs - hip.z).normalize().lerp(_v.set(S.x + 0.5 - hip.x, S.y + 0.1 - (hip.y + R.headUp * 0.8), S.z - hip.z).normalize(), kA).lerp(_v.set(1, -0.05, 0), kB).lerp(_v.set(0.55, -0.15, -0.85), 0.8 * bump(u, 2.3, 2.75, 3.3)).normalize();
@@ -138,7 +138,7 @@ class Puppet {
   apply(pose, CM, CQ, w = 1) {
     const rig = this.rig, o = this.vis.object; if (!rig) return;
     // the root: under the hips, turned with the body
-    _q.setFromAxisAngle(UP, pose.yaw); o.quaternion.copy(CQ).multiply(_q); o.position.set(pose.hip.x, 0, pose.hip.z).applyMatrix4(CM); o.updateMatrixWorld(true);
+    _q.setFromAxisAngle(UP, pose.yaw); o.quaternion.copy(CQ).multiply(_q); o.position.set(pose.hip.x, pose.rootY || 0, pose.hip.z).applyMatrix4(CM); o.updateMatrixWorld(true);      /* board/car: the clip under the pose stands on the ground the pose stands on (a door over the pavement) */
     const fwd = _fw.set(1, 0, 0).applyQuaternion(o.quaternion), left = _lf.set(0, 0, -1).applyQuaternion(o.quaternion);
     rig.hips(_v.copy(pose.hip).applyMatrix4(CM), w);
     if (pose.pitch || pose.roll) { const kp = 1 - 0.8 * (pose.settle || 0); _q.setFromAxisAngle(left, pose.pitch * 0.3 * w * kp); _q2.setFromAxisAngle(fwd, pose.roll * 0.3 * w); rig.tilt(_q.multiply(_q2)); rig.bend(left, pose.pitch * 0.7 * w); rig.bend(fwd, pose.roll * 0.7 * w); }
@@ -159,7 +159,7 @@ function npcOutPose(pose, u) { pose.pitch += 0.4 * bump(T_RAW - u, 0.2, 1.3, 2.4
 // and is back where the door-open pose had him. P car kind, S seat hips.
 function playerJackPose(pose, t, npcRig, cmInv, P, S) {
   const k1 = ss(t, 0, 0.22), k2 = ss(t, 0.36, 0.72), k3 = ss(t, 0.84, 1), grab = ss(t, 0.12, 0.24) * (1 - ss(t, 0.62, 0.74));
-  const bx = pose.hip.x, bz = pose.hip.z, ix = S.x - 0.16 - bx, iz = P.zs - 0.20 - bz, ox = P.xr - 0.30 - (bx + ix), oz = P.zs - 0.80 - (bz + iz);
+  const bx = pose.hip.x, bz = pose.hip.z, ix = S.x - 0.20 - bx, iz = P.zs - 0.40 - bz, ox = P.xr - 0.42 - (bx + ix), oz = P.zs - 0.86 - (bz + iz);
   pose.hip.x += (ix * k1 + ox * k2) * (1 - k3); pose.hip.z += (iz * k1 + oz * k2) * (1 - k3); pose.hip.y -= 0.06 * grab;
   const fl = (ss(t, 0.0, 0.16) * (1 - ss(t, 0.8, 0.93))), fl2 = ss(t, 0.5, 0.74) * (1 - ss(t, 0.8, 0.93)), fr = ss(t, 0.07, 0.24) * (1 - ss(t, 0.87, 1)), fr2 = ss(t, 0.36, 0.6) * (1 - ss(t, 0.87, 1));
   pose.fL.x += ix * fl + ox * fl2; pose.fL.z += iz * fl + oz * fl2; pose.fR.x += ix * fr + ox * fr2; pose.fR.z += iz * fr + oz * fr2;
@@ -170,6 +170,22 @@ function playerJackPose(pose, t, npcRig, cmInv, P, S) {
     npcRig.pos('upper_arm_L', _v).applyMatrix4(cmInv); _v.y -= 0.12; pose.hL.p.copy(_v); pose.hL.w = grab; pose.hL.curl = 0.8 * grab; pose.hL.f.set(0.3, -0.2, 0.9); pose.hL.n.set(0.9, 0, -0.3);
     npcRig.pos('chest2', _v).applyMatrix4(cmInv); _v.z -= 0.14; _v.x -= 0.05; pose.hR.p.copy(_v); pose.hR.w = grab; pose.hR.curl = 0.8 * grab; pose.hR.f.set(0.2, 0.1, 0.95); pose.hR.n.set(-0.9, 0, 0.2); }
   return pose;
+}
+
+// board/car 2: the inside face of a door cut from the game's own body (doors.json 'gen' kinds): a trim card 6 cm inside the skin, following its lean,
+// an edge band that gives the door its thickness, an armrest and a pull. Car frame, moved with the door's matrix. Own work, no outside source.
+function doorCard(d) {
+  const side = d.side, O = d.outline, pos = [], col = [], nor = [], C = new THREE.Color(), A = V3(), B = V3(), N = V3();
+  const zin = (y) => { if (y <= side[0][0]) return side[0][1]; for (let i = 1; i < side.length; i++) if (y <= side[i][0]) { const a = side[i - 1], b = side[i]; return a[1] + (b[1] - a[1]) * (y - a[0]) / (b[0] - a[0] || 1); } return side[side.length - 1][1]; };
+  const tri = (a, b, c, hex) => { C.set(hex); N.crossVectors(A.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]), B.set(c[0] - a[0], c[1] - a[1], c[2] - a[2])).normalize(); for (const p of [a, b, c]) { pos.push(p[0], p[1], p[2]); nor.push(N.x, N.y, N.z); col.push(C.r, C.g, C.b); } };
+  const quad = (a, b, c, e, hex) => { tri(a, b, c, hex); tri(a, c, e, hex); };
+  const box = (xa, xb, ya, yb, za, zb, hex) => { const p = (i) => [i & 1 ? xb : xa, i & 2 ? yb : ya, i & 4 ? zb : za]; for (const f of [[4, 5, 7, 6], [0, 1, 5, 4], [2, 6, 7, 3], [0, 4, 6, 2], [1, 3, 7, 5]]) quad(p(f[0]), p(f[1]), p(f[2]), p(f[3]), hex); };
+  const zc = (y) => zin(y) + 0.03, zo = (y) => zin(y) - 0.03; let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9; for (const p of O) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); y0 = Math.min(y0, p[1]); y1 = Math.max(y1, p[1]); }
+  for (const t of THREE.ShapeUtils.triangulateShape(O.map((p) => new THREE.Vector2(p[0], p[1])), [])) { let a = O[t[0]], b = O[t[1]], c = O[t[2]]; if ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) < 0) { const q = b; b = c; c = q; } tri([a[0], a[1], zc(a[1])], [b[0], b[1], zc(b[1])], [c[0], c[1], zc(c[1])], 0x3d3f44); }
+  for (let i = 0; i < O.length; i++) { const p = O[i], q = O[(i + 1) % O.length]; quad([p[0], p[1], zo(p[1])], [q[0], q[1], zo(q[1])], [q[0], q[1], zc(q[1])], [p[0], p[1], zc(p[1])], 0x25262a); }
+  const ya = y0 + (y1 - y0) * 0.62, za = zc(ya); box(x0 + 0.2, x1 - 0.27, ya, ya + 0.055, za - 0.01, za + 0.055, 0x2b2c31); box(x0 + 0.1, x0 + 0.27, ya + 0.12, ya + 0.15, zc(ya + 0.13) - 0.01, zc(ya + 0.13) + 0.02, 0x8d9096);
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 12);
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0, side: THREE.DoubleSide })); m.matrixAutoUpdate = false; m.frustumCulled = false; m.receiveShadow = true; m.name = 'entry_door_card'; return m;
 }
 
 // ---------------------------------------------------------------------------------------------------------------- the open-door car
@@ -184,7 +200,7 @@ class DoorCar {
     if (type in this.kinds) return this.kinds[type];
     let K = null;
     try {
-      const sv = this.sv(), T = sv && sv.types[type], L = T && T.lods[0], d = this.D[type]; if (!L || !d || (d.gen ? !splitGen : !this.bin) || this.off) return (this.kinds[type] = null);
+      const sv = this.sv(), T = sv && sv.types[type], L = T && T.lods[0], d = this.D[type]; if (sv && d && !L && !this.off) return null;      /* board/car: its model is not there yet: ask again at the next F, do not mark the kind doorless for good */ if (!L || !d || (d.gen ? !splitGen : !this.bin) || this.off) return (this.kinds[type] = null);
       const t0 = performance.now(), field = d.gen ? null : new DoorField(this.bin.subarray(d.tris[0], d.tris[0] + d.tris[1]));
       const attr = (n, size) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(n * size), size); a.setUsage(THREE.DynamicDrawUsage); return a; };
       K = { type, L, meta: T.meta, body: attr(1, 16), doorM: attr(1, 16), va: attr(1, 4), col: attr(1, 3), meshes: [], doorTris: 0, group: new THREE.Group() };
@@ -204,22 +220,29 @@ class DoorCar {
       const blobs = sv.group.children.filter((c) => c.isInstancedMesh && c.material && c.material.blending === THREE.MultiplyBlending).sort((a, b) => a.renderOrder - b.renderOrder);
       if (blobs[0]) { K.blob = new THREE.InstancedMesh(blobs[0].geometry, blobs[0].material, 1); K.blob.frustumCulled = false; K.blob.renderOrder = blobs[0].renderOrder; K.blob.matrixAutoUpdate = false; K.group.add(K.blob); }
       if (blobs[1]) { K.tblob = new THREE.InstancedMesh(blobs[1].geometry, blobs[1].material, 4); K.tblob.frustumCulled = false; K.tblob.renderOrder = blobs[1].renderOrder; K.tblob.matrixAutoUpdate = false; K.group.add(K.tblob); }
+      if (d.gen && d.outline && d.side && this.g.P.get('ecard') !== '0') { try { K.card = doorCard(d); K.group.add(K.card); } catch (e) { console.log('[entry] no door card for ' + type + ': ' + (e && e.message)); } }
       K.group.visible = false; K.group.name = 'entry_door_' + type; sv.group.add(K.group);
       if (K.doorTris < 200) { console.log('[entry] ' + type + ': no door found in the model (' + K.doorTris + ' triangles)'); sv.group.remove(K.group); K = null; }
-      else console.log('[entry] door of ' + type + ': ' + K.doorTris + ' triangles, ' + Math.round(performance.now() - t0) + ' ms');
+      else { console.log('[entry] door of ' + type + ': ' + K.doorTris + ' triangles, ' + Math.round(performance.now() - t0) + ' ms'); (this.warmQ ||= []).push(K); }
     } catch (e) { console.log('[entry] door of ' + type + ' failed: ' + (e && (e.stack || e.message))); K = null; }
     return (this.kinds[type] = K);
   }
   // this car's door stands at `angle` (radians) from now until clear()
   set(v, angle) { const K = this.kind(v.type); if (!K) { this.cur = null; return false; } if (this.cur && this.cur.K !== K) this.cur.K.group.visible = false; this.cur = { v, K }; this.angle = angle; return true; }
   clear() { if (this.cur) this.cur.K.group.visible = false; this.cur = null; }
+  // board/car: one frame with a freshly cut kind in the picture's own passes (1 cm big, 40 m under the camera), so its materials are compiled and its
+  // index buffers uploaded before the door is first opened. Returns the kind to hide again after the frame.
+  warmOne(cam) { const K = this.warmQ && this.warmQ.shift(); if (!K || !K.group.parent) return null; try { _mr.makeScale(0.01, 0.01, 0.01).setPosition(cam.position.x, cam.position.y - 40, cam.position.z);
+      for (const a of [K.body, K.doorM, K.wm, K.tm]) if (a) { for (let i = 0; i < a.count; i++) _mr.toArray(a.array, i * 16); a.needsUpdate = true; }
+      if (K.blob) { K.blob.setMatrixAt(0, _mr); K.blob.instanceMatrix.needsUpdate = true; } if (K.tblob) { for (let i = 0; i < 4; i++) K.tblob.setMatrixAt(i, _mr); K.tblob.instanceMatrix.needsUpdate = true; }
+      if (K.card) { K.card.matrix.copy(_mr); K.card.matrixWorldNeedsUpdate = true; } K.group.visible = true; return K; } catch (e) { return null; } }
   // the car's body matrix as the streets layer places it (ride height and sink included)
   matrix(v, out, q) { const vv = v._vv || { ride: 0 }; _e.set(v.roll || 0, v.h, v.pitch || 0, 'YZX'); q.setFromEuler(_e); return out.compose(_v.set(v.x, (v.z || 0) + (this.sv() ? (vv.ride || 0) - this.sink : 0), -v.y), q, _one); }
   // called just before the world is drawn: place our copy
   place() {
     const c = this.cur; if (!c) return; const v = c.v, K = c.K, vv = v._vv; if (!vv) { K.group.visible = false; return; }
     const M = this.matrix(v, _m, _q); M.toArray(K.body.array); K.body.needsUpdate = true;
-    const H = this.D[v.type].hinge; _m2.makeTranslation(H[0], 0, H[2]).multiply(_mr.makeRotationY(-this.angle)).multiply(_mt.makeTranslation(-H[0], 0, -H[2])).premultiply(M).toArray(K.doorM.array); K.doorM.needsUpdate = true;
+    const H = this.D[v.type].hinge; _m2.makeTranslation(H[0], 0, H[2]).multiply(_mr.makeRotationY(-this.angle)).multiply(_mt.makeTranslation(-H[0], 0, -H[2])).premultiply(M).toArray(K.doorM.array); K.doorM.needsUpdate = true; if (K.card) { K.card.matrix.copy(_m2); K.card.matrixWorldNeedsUpdate = true; }
     const dirt = v.type === 'ox_cab' ? Math.max(vv.dirt, 0.42) : vv.dirt; K.va.array.set([dirt, vv.seed01, v.color === TAXI_YELLOW ? 1 : 0, v.braking ? 1 : 0]); K.va.needsUpdate = true;
     _c.set(v.color); K.col.array.set([_c.r, _c.g, _c.b]); K.col.needsUpdate = true;
     if (K.liv) { const on = vv.livery >= 0; for (const m of K.liv) m.visible = on; if (on) { K.lva.array.set([vv.dirt, vv.seed01, vv.livery, 0]); K.lva.needsUpdate = true; _c.set(vv.ink); K.lcol.array.set([_c.r, _c.g, _c.b]); K.lcol.needsUpdate = true; } }
@@ -240,7 +263,7 @@ const _mr = new THREE.Matrix4(), _mt = new THREE.Matrix4(), _c = new THREE.Color
 
 // ---------------------------------------------------------------------------------------------------------------- the feature
 class Entry {
-  constructor(game) { this.g = game; this.P = {}; this.fig = {}; this.D = null; this.cars = null; this.cam = { k: 0, on: false }; this.npc = null; this.speed = +(game.P.get('espeed') || 1.75); this.stats = { enters: 0, exits: 0, jacks: 0, cancels: 0 }; this.last = null; }
+  constructor(game) { this.g = game; this.P = {}; this.fig = {}; this.D = null; this.cars = null; this.cam = { k: 0, on: false }; this.npc = null; this.speed = +(game.P.get('espeed') || 1.35); this.stats = { enters: 0, exits: 0, jacks: 0, cancels: 0 }; this.last = null; }
   async init() {
     const g = this.g; let bin = null;
     try { const [j, b] = await Promise.all([fetch('assets/entry/doors.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)), fetch('assets/entry/doors.bin', { cache: 'no-store' }).then((r) => (r.ok ? r.arrayBuffer() : null))]); this.D = j; if (b) bin = new Int16Array(b); } catch (e) { console.log('[entry] door data not loaded: ' + (e && e.message)); }
@@ -290,22 +313,22 @@ class Entry {
     { const near0 = g.nearestCar.bind(g); g.nearestCar = function (d) { const b = g.player.busy; return b && b.entry ? null : near0(d); }; }      // no 'F Get in' prompt while he is getting in or out
     g.tryEnter = function () {
       if (g.player.busy) return false; const n = g.nearestCar(), driver = n && n.kind === 'traffic' ? n.c : null, vis = g.player.vis;
-      const door0 = g.sound.door; g.sound.door = () => {}; let r; try { r = tryEnter0(); } finally { g.sound.door = door0; }
-      const b = g.player.busy; if (!r || !b || b.kind !== 'in' || !b.v) return r;       // no animated figure (or ?noanim): the game's own instant entry stands
+      const door0 = g.sound.door, anim0 = g.playerAnim; g.sound.door = () => {}; g.playerAnim = () => {}; let r; try { r = tryEnter0(); } finally { g.sound.door = door0; g.playerAnim = anim0; }
+      const b = g.player.busy; if (!r || !b || b.kind !== 'in' || !b.v) { if (b && b.kind === 'in' && !b.entry) g.playerAnim('getin'); else if (r && g.player.vehicle) g.playerAnim('drive'); return r; }       // no animated figure (or ?noanim): the game's own instant entry stands
       E.begin(b.v, 'in', driver); return r;
     };
     g.exitVehicle = function () {
-      const v = g.player.vehicle, door0 = g.sound.door; g.sound.door = () => {}; try { exit0(); } finally { g.sound.door = door0; }
-      const b = g.player.busy; if (!b || b.kind !== 'out') return; E.begin(v, 'out', null);
+      const v = g.player.vehicle, door0 = g.sound.door, anim0 = g.playerAnim; g.sound.door = () => {}; g.playerAnim = () => {}; try { exit0(); } finally { g.sound.door = door0; g.playerAnim = anim0; }
+      const b = g.player.busy; if (!b || b.kind !== 'out') { if (b && !b.entry) g.playerAnim('getout'); return; } E.begin(v, 'out', null);
     };
     g.stepBusy = function (dt) { const b = g.player.busy; if (b && b.entry) E.step(dt); else stepBusy0(dt); };
-    g.updateCamera = function (dt) { if (E.camStep(dt)) return; return cam0(dt); };
+    g.updateCamera = function (dt) { if (E.camStep(dt)) { E.camHand(dt, true); return; } const r = cam0(dt); E.camHand(dt, false); return r; };
     g.syncVisuals = function (dt) { sync0(dt); E.sync(dt); };
     g.seatOf = function (v, name) { const P = E.params(v); if (!P.eye || g.P.get('eseat') === '0') return seat0(v, name); const f = E.measure(name); if (!f) return seat0(v, name); const S = seatFor(P, null, f); return [S.x - f.hipsX, -S.z, S.y - f.hipsY]; };
     g.readInput = function () { read0(); if (E.script) E.runScript(1 / 60); };
     const world = g.world, render0 = world.render.bind(world);
     world.render = function (...a) {
-      const c = E.cars.cur; if (!c) return render0(...a);
+      const c = E.cars.cur; if (!c) { const wk = E.cars.warmQ && E.cars.warmQ.length && !g.player.busy && g.P.get('ewarm') !== '0' ? E.cars.warmOne(world.camera) : null; if (!wk) return render0(...a); try { return render0(...a); } finally { wk.group.visible = false; } }
       const i = g.vehicles.indexOf(c.v); if (i < 0 || !c.v._vv) return render0(...a);
       E.cars.place(); g.vehicles.splice(i, 1); try { return render0(...a); } finally { g.vehicles.splice(i, 0, c.v); }
     };
@@ -315,6 +338,7 @@ class Entry {
   begin(v, kind, driver) {
     const g = this.g, pl = g.player, vis = pl.vis, P = this.params(v);
     const b = (pl.busy = { entry: true, kind, v, t: 0, dur: 99, z: 0, x: pl.x, y: pl.y, h: pl.h, phase: kind === 'in' ? 'walk' : 'act', u: kind === 'in' ? 0 : T_IN, w: kind === 'in' ? 0 : 1, moved: false, still: false, path: null, jack: null });
+    if (kind === 'in') { b.z = g.statics.onSidewalk(pl.x, pl.y) ? 0.15 : 0; this.handOver(); }      /* board/car: on the pavement he stays on it; the camera eases from whatever view was up (the guns lane's shoulder view cut to the game's in one frame: 0.55 m) */
     this.last = v; b.nodoor = !this.cars.kind(v.type); this.me.pose.doorMax = b.doorMax = this.doorRoom(v, P);
     if (kind === 'in') {
       b.path = this.route(v, P); b.wp = 0;
@@ -367,10 +391,11 @@ class Entry {
   cancel() { const g = this.g, pl = g.player; pl.busy = null; this.me.release(); this.stats.cancels++; if (this.npc && this.npc.state === 'seated') { /* the driver stays in the car, which is now a loose vehicle: leave them seated */ } }
 
   step(dt) {
-    const g = this.g, pl = g.player, b = pl.busy, v = b.v, I = g.input, vis = pl.vis, P = this.params(v); b.t += dt; dt *= this.speed;
+    const g = this.g, pl = g.player, b = pl.busy, v = b.v, I = g.input, vis = pl.vis, P = this.params(v); b.t += dt; dt *= this.speed * (b.kind === 'out' ? 1.2 : 1);
     if (b.phase === 'walk') {
       const moving = Math.hypot(I.mx, I.my) > 0.3; if (!moving) b.still = true; else if (b.still && !g.demo) { this.cancel(); return; }
       if (b.t > 12) { this.cancel(); return; }
+      b.z += ((g.statics.onSidewalk(pl.x, pl.y) ? 0.15 : 0) - b.z) * Math.min(1, dt * 9);      // board/car: kerb up and down on the way round
       const wp = b.path[b.wp], dx = wp.x - pl.x, dy = wp.y - pl.y, d = Math.hypot(dx, dy), last = b.wp === b.path.length - 1;
       let rest = d; for (let i = b.wp; i < b.path.length - 1; i++) rest += Math.hypot(b.path[i + 1].x - b.path[i].x, b.path[i + 1].y - b.path[i].y);
       const sp = Math.min(rest > 4.5 ? 3.4 : 1.9, Math.max(0.7, rest * 3.2)), stepLen = sp * dt;
@@ -400,15 +425,15 @@ class Entry {
   // things that happen once as the time passes a mark (either direction)
   cues(a, b, v, dir) {
     const g = this.g, vis = g.player.vis, hit = (t) => a < t && b >= t;
-    if (hit(0.28)) { if (dir > 0) g.sound.door(); }                                             // latch
-    if (hit(dir > 0 ? 2.66 : 0.32)) g.sound.door();                                            // shut
-    if (hit(2.33) && dir < 0) g.sound.door();                                                  // opened from inside
+    if (hit(0.32)) { if (dir > 0) g.sound.door(); }                                             // latch
+    if (hit(dir > 0 ? 2.80 : 0.32)) g.sound.door();                                            // shut
+    if (hit(2.75) && dir < 0) g.sound.door();                                                  // opened from inside
     if (hit(1.0) && vis.mixer && vis.acts.drive && vis.acts.idle) { const from = dir > 0 ? 'idle' : 'drive', to = dir > 0 ? 'drive' : 'idle'; vis.acts[from].fadeOut(0.5); vis.acts[to].reset().fadeIn(0.5).play(); vis.cur = to; vis.mixer.timeScale = 1; }
   }
   finish(b) {
     const g = this.g, pl = g.player, v = b.v; this.cars.clear();
     if (b.kind === 'in') { this.stats.enters++; this.cam.on = true; g.finishEnter(v); }      // the game's own: vehicle set, Drive playing, missions told
-    else { this.stats.exits++; pl.busy = null; this.me.release(); g.playerAnim('idle'); g.statics.resolve(pl.x, pl.y, 0.34, _o); pl.x = _o.x; pl.y = _o.y; this.cam.on = false; this.cam.k = 0; }
+    else { this.stats.exits++; pl.busy = null; this.me.release(); g.playerAnim('idle'); g.statics.resolve(pl.x, pl.y, 0.34, _o); pl.x = _o.x; pl.y = _o.y; if (this.cam.on) this.handOver(); this.cam.on = false; this.cam.k = 0; }
   }
 
   // ------------------------------------------------------------------ someone at the wheel
@@ -427,9 +452,9 @@ class Entry {
       n.u = Math.max(1.35, n.u - dt * (n.u > 2.4 ? 5 : 2.2));
       if (n.u < 2.3 && vis.cur === 'drive' && vis.acts.idle) { vis.acts.drive.fadeOut(0.3); vis.acts.idle.reset().fadeIn(0.3).play(); vis.cur = 'idle'; }
       if (n.u <= 1.351) { n.state = 'flee'; n.t = 0; const P = this.params(v), pose = n.pup.pose; this.toMap(v, pose.hip.x, pose.hip.z, _o); n.x = _o.x; n.y = _o.y; n.h = v.h + pose.yaw; n.pup.release();
-        const run = vis.acts.jog ? 'jog' : vis.acts.run ? 'run' : null; if (run) { vis.acts[vis.cur] && vis.acts[vis.cur].fadeOut(0.25); vis.acts[run].reset().fadeIn(0.25).play(); vis.cur = run; } n.away = v.h + Math.PI - 0.3; n.dir = v.h + Math.PI / 2 + 0.15; }
+        const run = vis.acts.jog ? 'jog' : vis.acts.run ? 'run' : null; if (run) { vis.acts[vis.cur] && vis.acts[vis.cur].fadeOut(0.25); vis.acts[run].reset().fadeIn(0.25).play(); vis.cur = run; } n.away = v.h + Math.PI - 0.3; n.dir = v.h + Math.PI / 2 + 0.75; }
     } else if (n.state === 'flee') {      // stumbles clear of the door, then runs for it back down the street
-      const sp = Math.min(3.6, 1.2 + n.t * 3); if (n.t > 0.55) n.dir = n.away; n.h += wrapPi(n.dir - n.h) * Math.min(1, dt * 5); const nx = n.x + Math.cos(n.h) * sp * dt, ny = n.y + Math.sin(n.h) * sp * dt; g.statics.resolve(nx, ny, 0.3, _o); n.x = _o.x; n.y = _o.y;
+      const sp = Math.min(3.6, 1.2 + n.t * 3); if (n.t > 0.55) n.dir = n.away; n.h += wrapPi(n.dir - n.h) * Math.min(1, dt * 7); const nx = n.x + Math.cos(n.dir) * sp * dt, ny = n.y + Math.sin(n.dir) * sp * dt; g.statics.resolve(nx, ny, 0.3, _o); n.x = _o.x; n.y = _o.y;
       if (vis.mixer) vis.mixer.timeScale = clamp(sp / 2.8, 0.5, 1.4);
       if (n.t > 2 && (n.t > 14 || Math.hypot(n.x - g.player.x, n.y - g.player.y) > 45)) { g.world.scene.remove(vis.object); this.npc = null; }
     }
@@ -480,13 +505,23 @@ class Entry {
     const t = { x: lerp(foot.x, car.x, k), y: lerp(foot.y, car.y, k), z: lerp(foot.z, car.z, k), dist: lerp(foot.dist, car.dist, k), height: lerp(foot.height, car.height, k), fov: lerp(foot.fov, car.fov, k) };
     // if the car is between the camera and the door, come round to the door's side (only while the mouse is left alone)
     if (C.lookT > 1.0 && b) { { const a = v.h - 0.62, hq = g.statics.raycast(t.x, t.y, t.x - Math.cos(a) * (t.dist + 0.6), t.y - Math.sin(a) * (t.dist + 0.6)); c.qo = (c.qo === undefined ? 1 : c.qo) + ((hq < 0.85 ? 0 : 1) - (c.qo === undefined ? 1 : c.qo)) * Math.min(1, dt * 5); }
-      const off = wrapPi(v.h - ((0.62) - 0.47 * (1 - c.qo)) - C.yaw); if (Math.abs(off) > 0.03 + 0.27 * c.qo) C.yaw += off * Math.min(1, dt * 2.4); }      // to the rear quarter on the door's side, where the door does not hide him
+      const rel = wrapPi(C.yaw - v.h), off = c.qo > 0.5 && g.P.get('ecamold') !== '1' ? wrapPi(v.h + clamp(rel, -1.2, -0.35) - C.yaw) : wrapPi(v.h - ((0.62) - 0.47 * (1 - c.qo)) - C.yaw); if (Math.abs(off) > (c.qo > 0.5 ? 0.02 : 0.03 + 0.27 * c.qo)) C.yaw += off * Math.min(1, dt * 2.4); }      // to the rear quarter on the door's side, where the door does not hide him
     else if (C.lookT > 1.5 && !b && pl.vehicle) C.yaw += wrapPi(v.h - C.yaw) * Math.min(1, dt * 3.2 * k);
     const kk = Math.min(1, dt * 14); C.tx += (t.x - C.tx) * kk; C.ty += (t.y - C.ty) * kk; C.tz += (t.z - C.tz) * Math.min(1, dt * 8);
     C.dist += (t.dist - C.dist) * Math.min(1, dt * 5); C.fov += (t.fov - C.fov) * Math.min(1, dt * 5); C.h += (t.height - C.h) * Math.min(1, dt * 5);
     C.shake = Math.max(0, C.shake - dt * 2.2);
     c.v = b && !pl.vehicle ? v : null; this.placeCam(dt, k); return true;
   }
+  // board/car: from our camera to the game's own without a jump: where ours last stood, eased to wherever the game's now puts it
+  handOver() { const cam = this.g.world.camera; this.cam.hand = { p: cam.position.clone(), q: cam.quaternion.clone(), t: 0 }; }
+  // ours = our camera placed this frame. While he gets in or out the view never cuts: if this frame's place is more than 0.7 m from the last frame's (the
+  // walk ending with the camera over the car, the 'clear place behind' taking over: 2 to 5.5 m in one frame, seen Nov 13), it is eased there instead.
+  // Not while the mouse is turning the view, and not round a van or truck (the eased path would go through its body).
+  camHand(dt, ours) { const g = this.g, cam = g.world.camera, c = this.cam, b = g.player.busy, lp = (c.lp ||= V3()), lq = (c.lq ||= new THREE.Quaternion());
+    if ((g.fly && g.fly.on) || (g.heli && g.heli.hasCamera)) { c.hand = null; c.lpOk = false; return; }
+    if (ours && c.lpOk && b && b.entry && !(b.v.def.hgt > 1.9) && g.cam.lookT > 0.12 && dt > 0 && cam.position.distanceTo(lp) > 0.7) c.hand = { p: lp.clone(), q: lq.clone(), t: 0 };
+    const h = c.hand; if (h) { h.t += (dt || 0.016) / 0.5; if (h.t >= 1) c.hand = null; else { const k = ss(h.t, 0, 1), p = cam.position; p.set(h.p.x + (p.x - h.p.x) * k, h.p.y + (p.y - h.p.y) * k, h.p.z + (p.z - h.p.z) * k); _q.copy(cam.quaternion); cam.quaternion.copy(h.q).slerp(_q, k); } }
+    lp.copy(cam.position); lq.copy(cam.quaternion); c.lpOk = true; }
   // the game's placeCamera with its on-foot / in-car differences blended by k
   placeCam(dt, k) {
     const g = this.g, C = g.cam, cam = g.world.camera; const pitch = lerp(Math.max(-0.25, C.pitch), clamp(C.pitch, 0.04, 0.9), k);

@@ -15,7 +15,7 @@
 import * as THREE from 'three';
 import { BAKE_LIGHT_GLSL } from '../facade.js';
 
-const AW = 2048, AH = 1024, SC = AW / 4.9, NL = 14, LOD_NEAR = 22, DIRT = 0.3, SEED = 0.37, DOOR_OPEN = 1.15;
+const AW = 2048, AH = 1024, SC = AW / 4.9, NL = 14, LOD_NEAR = 22, DIRT = 0.55 /* was 0.3: the clean lacquer mirrored the street in every facet ('mirror-chrome reflections', 'faceted', rounds 23, 25); road film on it as on the reference's cars */, SEED = 0.37, DOOR_OPEN = 1.15;
 export const TYPES = {
   sedan: { belt: [[-2.4, 1.03], [-1.7, 1.035], [1.0, 0.95], [2.4, 0.85]], sill: 0.262, door: [-0.265, 0.94], rear: [[-1.22, 1.02], [-1.2, 0.84], [-1.06, 0.69], [-0.965, 0.5], [-0.95, 0.25]],
     band: [0.50, 0.60], Y0: 0.15, doorY0: 0.15, doorH: 1.35, roof: [-0.74, 0.20, 0.60], barX: -0.12, barW: 1.12, rearTxt: [0.765, 0.835], grille: [0.645, 0.25], deck: [-1.55, 1.105, 0.28],
@@ -140,17 +140,17 @@ const RED = { col: [0.22, 0.01, 0.012], glow: [5, 0.04, 0.02], halo: [1.6, 0.05,
 const DARK = [0.022, 0.022, 0.025], SATIN = [0.035, 0.035, 0.04];
 function buildKit(T, probe, hw) {
   const H = newB(), L = newB(), halo = [], crew = newB(), roofY = (x, z) => probe(1, 1, z, x, 0.07) ?? 1.4, frontX = (y, z) => probe(0, 1, y, z, 0.06) ?? 2.4;
-  const x0 = T.barX, W = T.barW, yr = Math.max(roofY(x0, 0.12), roofY(x0, 0.3)), yb = yr + 0.05, yl = yb + 0.01 + 0.031, yc = yb + 0.01 + 0.062 + 0.009;
+  const x0 = T.barX, W = T.barW, yr = Math.max(roofY(x0, 0.12), roofY(x0, 0.3)), LH = 0.046, yb = yr + 0.032, yl = yb + 0.01 + LH / 2, yc = yb + 0.01 + LH + 0.006; /* a low bar, 9 cm from roof to cap and 25 cm deep: at 14 cm by 33 it read as 'a block', 'a grid of blue cubes' (rounds 21, 25, 26) */
   /* housing: feet on the roof edges, a base, a core that shows between the modules, a cap */
   for (const s of [1, -1]) { const zf = s * (W / 2 - 0.06), y0 = roofY(x0, Math.abs(zf)) - 0.012; mbox(H, DARK, x0, (y0 + yb) / 2, zf, 0.2, yb - y0, 0.07); mbox(H, DARK, x0, y0 + 0.012, s * (W / 2 + 0.01), 0.16, 0.03, 0.09); }
-  mbox(H, DARK, x0, yb, 0, 0.32, 0.02, W); mbox(H, DARK, x0, yl, 0, 0.25, 0.058, W - 0.04); mbox(H, DARK, x0, yl, 0, 0.30, 0.062, 0.12); mbox(H, DARK, x0, yc, 0, 0.33, 0.018, W + 0.02);
+  mbox(H, DARK, x0, yb, 0, 0.26, 0.02, W); mbox(H, DARK, x0, yl, 0, 0.19, LH - 0.004, W - 0.04); mbox(H, DARK, x0, yl, 0, 0.24, LH, 0.12); mbox(H, DARK, x0, yc, 0, 0.255, 0.012, W + 0.012);
   const hp = (x, y, z, dx, dz, lamp, K, size) => halo.push({ p: [x + dx * 0.03, y, z + dz * 0.03], d: [dx, 0, dz], lamp, col: K.halo, size: size || 1 });
   for (const s of [1, -1]) {      /* s = -1: the car's left: red */
     const K = s < 0 ? RED : BLUE, mods = [[0.115, 0.40], [0.42, 0.705], [0.725, 0.99]];
     for (let i = 0; i < 3; i++) { const z0 = mods[i][0] * W / 2, z1 = mods[i][1] * W / 2, zc = s * (z0 + z1) / 2, w = z1 - z0, cols = Math.max(3, Math.round(w / 0.027));
       for (const f of [1, -1]) { const KK = i === 0 ? (f > 0 ? CLEAR : AMBER) : K, lamp = i === 0 ? (f > 0 ? (s < 0 ? 4 : 5) : (s < 0 ? 6 : 7)) : i === 1 ? (s < 0 ? 1 : 2) : (s < 0 ? 0 : 3), led = {}; led[f > 0 ? 'px' : 'nx'] = [2, cols]; if (i === 2) led[s > 0 ? 'pz' : 'nz'] = [5, 2];
-        lens(L, x0 + f * 0.0775, yl, zc, 0.145, 0.062, w, KK.col, KK.glow, lamp, led); hp(x0 + f * 0.15, yl, zc, f, 0, lamp, KK); }
-      if (i === 2) hp(x0, yl, s * W / 2, 0, s, s < 0 ? 0 : 3, K); }
+        lens(L, x0 + f * 0.0635, yl, zc, 0.117, LH, w, KK.col, KK.glow, lamp, led); hp(x0 + f * 0.125, yl, zc, f, 0, lamp, KK, 1.5); }
+      if (i === 2) hp(x0, yl, s * W / 2, 0, s, s < 0 ? 0 : 3, K, 1.5); }
     /* behind the grille */
     { const gy = T.grille[0], gz = s * T.grille[1], gx = frontX(gy, Math.abs(gz)) + 0.014, lamp = s < 0 ? 8 : 9; lens(L, gx, gy, gz, 0.022, 0.036, 0.12, K.col, K.glow, lamp, { px: [1, 5] }); hp(gx + 0.011, gy, gz, 1, 0, lamp, K, 0.8); }
     /* on the rear shelf, seen through the back window */
@@ -264,12 +264,12 @@ const LIGHT_V = `
 const SPEC_V = 'varying vec3 vP; varying vec3 vN; void main() { vec4 wp = modelMatrix * vec4(position, 1.0); vP = wp.xyz; vN = normalize(mat3(modelMatrix) * normal); gl_Position = projectionMatrix * viewMatrix * wp; }';
 const SPEC_F = `uniform vec3 uLw[3]; uniform vec3 uLc[3]; uniform float uSpec; varying vec3 vP; varying vec3 vN;
   void main() { vec3 N = normalize(vN), V = normalize(cameraPosition - vP), s = vec3(0.0);
-    for (int i = 0; i < 3; i++) { vec3 L = uLw[i] - vP; float r2 = dot(L, L); L *= inversesqrt(r2 + 1e-4); float nl = dot(N, L); if (nl <= 0.0) continue; vec3 H = normalize(L + V); s += uLc[i] * pow(max(dot(N, H), 0.0), 90.0) * 2.0 / (1.0 + r2 * 3.0); }
+    for (int i = 0; i < 3; i++) { vec3 L = uLw[i] - vP; float r2 = dot(L, L); L *= inversesqrt(r2 + 1e-4); float nl = dot(N, L); if (nl <= 0.0) continue; vec3 H = normalize(L + V); s += uLc[i] * (pow(max(dot(N, H), 0.0), 90.0) * 2.0 + 0.22 * nl) / (1.0 + r2 * 3.0); /* and the colour itself on the roof and bonnet round the bar ('no cast light on the bodywork', round 21) */ }
     gl_FragColor = vec4(s * uSpec, 1.0); }`;
 const HALO_V = `attribute vec3 aDir; attribute vec3 aCol; attribute float aLamp; attribute float aSize; uniform float uLamp[${NL}]; uniform float uPx; varying vec3 vC;
   void main() { vec4 wp = modelMatrix * vec4(position, 1.0); vec3 wn = normalize(mat3(modelMatrix) * aDir), V = normalize(cameraPosition - wp.xyz);
     float I = uLamp[int(aLamp + 0.5)] * smoothstep(0.05, 0.55, dot(wn, V)); vC = aCol * I; vec4 mv = viewMatrix * wp; gl_Position = projectionMatrix * mv;
-    gl_PointSize = I > 0.001 ? clamp(uPx * 0.5 * aSize / max(0.1, -mv.z), 5.0, 150.0) : 0.0; }`;
+    gl_PointSize = I > 0.001 ? clamp(uPx * 0.5 * aSize / max(0.1, -mv.z), 6.0, 210.0) : 0.0; }`;
 const HALO_F = `varying vec3 vC; void main() { vec2 q = gl_PointCoord - 0.5; float r = length(q) * 2.0, core = pow(max(0.0, 1.0 - r), 3.0), st = max(0.0, 1.0 - abs(q.x) * 2.0); st = st * st * st * smoothstep(0.07, 0.0, abs(q.y));
     gl_FragColor = vec4(vC * (core * 0.9 + st * 0.45), 1.0); }`;
 
@@ -353,7 +353,7 @@ export class CarLook {
   /* which lamp groups are lit now. 0 1: red outer, inner; 2 3: blue inner, outer; 4 5: clear front; 6 7: amber rear; 8 9: grille; 10 11: rear deck */
   flash(v, D, on) {
     const A = D.lamp; A.fill(0); if (!on || !this.P.flash) return false;
-    const p = (((this.heat.t * 1.15 + v.id * 0.37) % 1) + 1) % 1, dbl = (a) => { const q = (((p - a) % 1) + 1) % 1; return q < 0.075 || (q > 0.14 && q < 0.215) ? 1 : 0; }, moving = !!v.drive;
+    const p = (((this.heat.t * 1.15 + v.id * 0.37) % 1) + 1) % 1, dbl = (a) => { const q = (((p - a) % 1) + 1) % 1; return q < 0.09 || (q > 0.13 && q < 0.22) || (q > 0.26 && q < 0.37) ? 1 : 0; /* three flashes a side, so that one end of the bar is lit in four frames of five (it was dark in most stills: 'no bloom', 'never visibly lit') */ }, moving = !!v.drive;
     A[0] = dbl(0.0); A[1] = dbl(0.07); A[3] = dbl(0.5); A[2] = dbl(0.57);
     if (moving) { A[4] = p > 0.30 && p < 0.47 ? 1 : 0; A[5] = p > 0.80 && p < 0.97 ? 1 : 0; }
     else { const s = (((this.heat.t * 0.9 + v.id * 0.21) % 1) + 1) % 1; A[6] = s < 0.42 ? 1 : 0; A[7] = s > 0.5 && s < 0.92 ? 1 : 0; }

@@ -107,6 +107,7 @@ class Heli {
     await part('cockpit', (m) => m.buildCockpit(ctx, this.model)); if (this.parts.cockpit && this.parts.cockpit.root && !this.parts.cockpit.root.parent) this.model.root.add(this.parts.cockpit.root);
     await part('sound', (m) => new m.HeliSound(ctx));
     await part('wash', (m) => new m.Wash(ctx)); if (this.parts.wash && this.parts.wash.solids) H.solids = this.parts.wash.solids;
+    if (g.P.get('hboard') !== '0') try { await (await import('../entry/heliboard.js')).addHeliBoard(this); } catch (e) { console.log('[hboard] not loaded, the old boarding beat stands: ' + (e && (e.stack || e.message))); }     // gameplay lane: getting in and out as a watched beat (walk, door, climb, camera); ?hboard=0 off
     // where it stands: a street-level spot by the player's start, and marked roofs to land on
     this.pads = [this.streetPad()];
     for (const [name, x, y] of [['The Grand Madison', -66.7, -124.3], ['1150 Broadway', -156.0, -62.5], ['Park Avenue South', 107.4, -137.2], ['East 21st', 107.9, -299.2], ['West 22nd', -366.5, -354.6], ['West 25th', -261.5, -180.2]]) { const p = H.findFlat(x, y, 34, 15, 25); if (p) this.pads.push({ name, x: p.x, y: p.y, h: this.pads[0].h, roof: true, z: p.z }); }

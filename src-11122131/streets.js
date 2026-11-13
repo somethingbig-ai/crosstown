@@ -20,5 +20,7 @@ export async function addStreets(game, opts = {}) {
     catch (e) { out.report[p] = 'FAILED: ' + (e && (e.stack || e.message) || e).toString().slice(0, 400); console.log('[streets] ' + p + ' not loaded: ' + (e && e.message)); }
   }
   console.log('[streets] ' + JSON.stringify(out.report).slice(0, 900));
+  // lead, Nov 12 (CHIEF: no solid trunk in a traffic lane): a tree's collision circle that stands in a lane is switched off (5 of 1414 on the 19:25 build); the streets lane moves or drops those trees
+  try { const st = game.statics, rd = game.roads; let n = 0; if (st && st.circ && rd && rd.inLane) for (const a of st.circ.values()) for (const c of a) if (c.tag === 'tree' && c.on && rd.inLane(c.x, c.y, c.r)) { c.on = false; n++; } if (n) console.log('[streets] ' + n + ' tree trunks in a traffic lane made passable'); out.report.trunksInLane = n; } catch (e) {}
   return out;
 }

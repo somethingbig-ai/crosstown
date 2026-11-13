@@ -116,6 +116,20 @@ function crouch(fit, k, o) {
 const COWER = { drop: 0.42, lean: 62, nod: 20, armUp: 140, fore: 115 }, DUCK = { drop: 0.2, lean: 30, nod: 16, armUp: 38, fore: 85 };
 // Cower (a loop: crouched, hands over the head, trembling) and Duck (the startle: down fast, half up) for every crowd character,
 // made from its standing pose and baked into the crowd's clip texture beside the mocap
+// the crowd's clip texture with the columns of `names` (clips already pushed onto cast.animations and sim.clipNames, last) added on the right;
+// null when the crowd's own numbers are not there to copy (then the caller bakes everything, as before)
+function bakeAdd(Bd, R, cast, sim, names) {
+  const B0 = R.baked, d0 = B0 && B0.tex && B0.tex.image && B0.tex.image.data, t0 = performance.now();
+  if (!(d0 instanceof Uint16Array) || d0.length !== B0.W * B0.H * 4 || B0.clips.length !== sim.clipNames.length - names.length) return null;
+  const B1 = bake(Bd.g.world.renderer, cast, names, R.smooth || 0), d1 = B1.tex.image.data; B1.tex.dispose();
+  if (B1.H !== B0.H || B1.ROWS !== B0.ROWS || B1.NB !== B0.NB || B1.missing.length || !(d1 instanceof Uint16Array)) return null;
+  const W = B0.W + B1.W, H = B0.H, h = new Uint16Array(W * H * 4), w0 = B0.W * 4, w1 = B1.W * 4;
+  for (let y = 0; y < H; y++) { h.set(d0.subarray(y * w0, (y + 1) * w0), y * W * 4); h.set(d1.subarray(y * w1, (y + 1) * w1), y * W * 4 + w0); }
+  const tex = new THREE.DataTexture(h, W, H, THREE.RGBAFormat, THREE.HalfFloatType), s = B0.tex;
+  tex.minFilter = s.minFilter; tex.magFilter = s.magFilter; tex.generateMipmaps = false; tex.wrapS = s.wrapS; tex.wrapT = s.wrapT; tex.colorSpace = s.colorSpace; tex.needsUpdate = true;
+  for (const c of B1.clips) c.x0 += B0.W;
+  return { tex, W, H, NB: B0.NB, ROWS: B0.ROWS, clips: B0.clips.concat(B1.clips), ms: Math.round(performance.now() - t0), missing: B0.missing.slice() };
+}
 function addClips(Bd) {
   const cr = Bd.crowd, R = cr.render, cast = Bd.cast, sim = Bd.sim, t0 = performance.now(); if (sim.clips.some((c) => c.name === 'Cower')) return;
   const idleName = (sim.idles[0] || sim.clips[0]).name, idle = cast.animations.find((c) => c.name.toLowerCase() === idleName.toLowerCase()); if (!idle) return;
@@ -134,7 +148,11 @@ function addClips(Bd) {
     reset(); act.stop(); mixer.uncacheRoot(root);
   }
   defs.forEach(([name, dur], di) => { cast.animations.push(new THREE.AnimationClip(name, dur, out[di])); sim.clipNames.push(name); sim.clips.push({ i: sim.clips.length, name, duration: dur, speed: 0, loop: true, needs: null }); });
-  const Bk = bake(Bd.g.world.renderer, cast, sim.clipNames, R.smooth || 0), old = R.baked.tex; R.baked = Bk; R.U.tAnim.value = Bk.tex; R.U.uAnimInv.value.set(1 / Bk.W, 1 / Bk.H); old.dispose();
+  /* perf, Nov 12: only the two new clips are baked and their columns set to the right of the crowd's own (bakeAdd): the result is the same texture, number for number, as baking every clip again (?gbakechk=1 does both and compares), in about a tenth of the time (the full re-bake was 360 ms of load on an M2 Max) */
+  let Bk = null; try { Bk = bakeAdd(Bd, R, cast, sim, defs.map((d) => d[0])); } catch (e) { Bk = null; }
+  if (Bk && Bd.g.P && Bd.g.P.get && Bd.g.P.get('gbakechk') === '1') { const F = bake(Bd.g.world.renderer, cast, sim.clipNames, R.smooth || 0), a = F.tex.image.data, b = Bk.tex.image.data; let bad = a.length !== b.length || F.W !== Bk.W || F.H !== Bk.H ? -1 : 0; if (!bad) for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) bad++; const cl = F.clips.every((c, i) => c.x0 === Bk.clips[i].x0 && c.F === Bk.clips[i].F && c.dur === Bk.clips[i].dur && !!c.missing === !!Bk.clips[i].missing && !!c.loop === !!Bk.clips[i].loop); console.log('[people] bake check: full ' + F.ms + ' ms, ' + F.W + 'x' + F.H + '; added-only differs in ' + bad + ' of ' + a.length + ' numbers; clip table ' + (cl ? 'same' : 'DIFFERENT')); F.tex.dispose(); }
+  if (!Bk) Bk = bake(Bd.g.world.renderer, cast, sim.clipNames, R.smooth || 0);
+  const old = R.baked.tex; R.baked = Bk; R.U.tAnim.value = Bk.tex; R.U.uAnimInv.value.set(1 / Bk.W, 1 / Bk.H); old.dispose();
   Bd.cower = sim.clips.find((c) => c.name === 'Cower'); Bd.duck = sim.clips.find((c) => c.name === 'Duck');
   console.log('[people] cower and duck clips made for ' + cast.chars.length + ' characters, crowd clips re-baked: ' + Math.round(performance.now() - t0) + ' ms');
 }
@@ -179,13 +197,13 @@ BLOB_GEO.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([0, 1
 // so it shows as the same dark red in sun and shade (lit it went pink, unlit and undivided it glowed).
 const POOL_K = { value: 1 }, POOL_TEX = { value: null }, POOL_TEXON = { value: 0 };      // (live play meters exposure into a 1x1 texture the film pass reads, world.js tExp / uExpTex: the pool divides by the same texel, or it glows red in shade: seen in out/pub/lead_over.jpg)
 function poolMat() {
-  const m = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: false, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
+  const m = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, fog: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.SrcColorFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor });
   const U = (m.uniforms = { uA: { value: 0 }, uS: { value: 0 }, uH: { value: 0.22 }, uPK: POOL_K, tPExp: POOL_TEX, uPExpOn: POOL_TEXON });
   m.onBeforeCompile = (sh) => { Object.assign(sh.uniforms, U);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vQ;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvQ = position.xz;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uA; uniform float uS; uniform float uH; uniform float uPK; uniform sampler2D tPExp; uniform float uPExpOn; varying vec2 vQ;')
-      .replace('#include <color_fragment>', '#include <color_fragment>\n{ float an = atan(vQ.y, vQ.x); float edge = 0.72 + 0.12 * sin(an * 2.0 + uS) + 0.08 * sin(an * 5.0 + uS * 2.3) + 0.05 * sin(an * 9.0 + uS * 0.7) + 0.05 * uH * sin(an * 14.0 + uS * 1.9); float pd = length(vQ) / edge; pd *= 1.0 + 0.10 * sin(vQ.x * 9.0 + uS * 3.1) * sin(vQ.y * 11.0 - uS * 1.7); float pa = 1.0 - smoothstep(mix(0.86, 0.95, uH), 1.0, pd); /* (close stills, Nov 12: the rim had round punched holes and one flat colour: a sticker. Now a whole lobed shape, thin and browner at the rim, deep in the middle, with a faint wet sheen off-centre) */ if (uA * pa < 0.5) discard; float thick = 1.0 - smoothstep(0.25, 0.97, pd); vec3 bc = mix(vec3(0.085, 0.012, 0.008), vec3(0.036, 0.0012, 0.0012), smoothstep(0.0, 0.55, thick)); float sh = exp(-dot(vQ - vec2(0.18, -0.22), vQ - vec2(0.18, -0.22)) * 9.0) * (0.6 + 0.4 * sin(vQ.x * 17.0 + uS)); bc += vec3(0.022, 0.016, 0.016) * sh * thick; float pk = uPExpOn > 0.5 ? 1.0 / clamp(texture2D(tPExp, vec2(0.5)).r, 0.25, 8.0) : uPK; diffuseColor = vec4(bc * pk, 1.0); }'); };
-  m.customProgramCacheKey = () => 'bloodpool11'; return m;
+      .replace('#include <color_fragment>', '#include <color_fragment>\n{ float an = atan(vQ.y, vQ.x); float edge = 0.72 + 0.12 * sin(an * 2.0 + uS) + 0.08 * sin(an * 5.0 + uS * 2.3) + 0.05 * sin(an * 9.0 + uS * 0.7) + 0.05 * uH * sin(an * 14.0 + uS * 1.9); float pd = length(vQ) / edge; pd *= 1.0 + 0.10 * sin(vQ.x * 9.0 + uS * 3.1) * sin(vQ.y * 11.0 - uS * 1.7); float pa = 1.0 - smoothstep(mix(0.80, 0.90, uH), 1.0, pd); /* (close stills, Nov 12: the rim had round punched holes and one flat colour: a sticker. Now a whole lobed shape, thin and browner at the rim, deep in the middle, with a faint wet sheen off-centre) */ if (uA * pa < 0.02) discard; float thick = 1.0 - smoothstep(0.25, 0.97, pd); vec3 bc = mix(vec3(0.36, 0.05, 0.035), vec3(0.115, 0.006, 0.005), smoothstep(0.0, 0.5, thick)); float sh = exp(-dot(vQ - vec2(0.18, -0.22), vQ - vec2(0.18, -0.22)) * 9.0) * (0.6 + 0.4 * sin(vQ.x * 17.0 + uS)); bc += vec3(0.10, 0.07, 0.07) * sh * thick; float pk = uPExpOn > 0.5 ? 1.0 / clamp(texture2D(tPExp, vec2(0.5)).r, 0.25, 8.0) : uPK; float cov = clamp(uA, 0.0, 1.0) * pa; diffuseColor = vec4(mix(vec3(1.0), bc, cov), 0.22 * cov * cov * cov); }'); };
+  m.customProgramCacheKey = () => 'bloodpool13'; return m;
 }
 // blood in the air at the hit: a short burst of dark drops out of the far side (and a few back toward the gun) that fall and leave
 // small spots on the ground behind the person. One Points object for everything; restrained: no chunks, gone in half a second
@@ -223,9 +241,9 @@ class Drops {
     s.t = 0; s.r = sz; s.me.material.uniforms.uH.value = 0.7; s.me.position.set(x, g + 0.03, z); s.me.rotation.y = x * 7.1 + z * 3.3; s.me.material.uniforms.uS.value = x * 3.7 + z; s.me.material.uniforms.uA.value = 0.9; s.me.scale.setScalar(s.r * 0.4);
   }
 }
-const PATCH_MAT = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8, uniforms: { uA: { value: 0 }, uS: { value: 0 } },
+const PATCH_MAT = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.DstColorFactor, blendDst: THREE.ZeroFactor, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8, uniforms: { uA: { value: 0 }, uS: { value: 0 } },
   vertexShader: 'varying vec2 vQ; void main(){ vQ = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-  fragmentShader: 'uniform float uA; uniform float uS; varying vec2 vQ; void main(){ float an = atan(vQ.y, vQ.x); float edge = 0.7 + 0.14 * sin(an * 3.0 + uS) + 0.09 * sin(an * 5.0 + uS * 2.3) + 0.05 * sin(an * 11.0 + uS * 0.7); float d = length(vQ) / edge; float a = 1.0 - smoothstep(0.78, 1.0, d); gl_FragColor = vec4(mix(vec3(0.05, 0.002, 0.002), vec3(0.02, 0.001, 0.001), smoothstep(0.0, 0.6, 1.0 - d)), uA * a); }' });
+  fragmentShader: 'uniform float uA; uniform float uS; varying vec2 vQ; void main(){ float an = atan(vQ.y, vQ.x); float edge = 0.7 + 0.14 * sin(an * 3.0 + uS) + 0.09 * sin(an * 5.0 + uS * 2.3) + 0.05 * sin(an * 11.0 + uS * 0.7); float d = length(vQ) / edge; float a = 1.0 - smoothstep(0.78, 1.0, d); gl_FragColor = vec4(mix(vec3(1.0), mix(vec3(0.45, 0.06, 0.05), vec3(0.17, 0.014, 0.012), smoothstep(0.0, 0.6, 1.0 - d)), clamp(uA, 0.0, 1.0) * a), 1.0); }' });
 // where a bullet meets the figure's own surface (the hit test is a cylinder): one ray against the skinned meshes as they are posed now
 const _rc = new THREE.Raycaster();
 function surface(root, h) {

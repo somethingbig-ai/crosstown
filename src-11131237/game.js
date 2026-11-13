@@ -273,23 +273,53 @@ export class Game {
     this.sound.update(dt);
   }
 
-  collideCars(v) {
-    // the player's car against moving traffic and other loose cars: push apart, bleed speed, stun the other driver
-    const L = v.def.len, r = v.def.wid * 0.5;
+  collideCars(v, dt = DT) {
+    // the player's car against moving traffic and other loose cars: push apart, bleed speed, stun the other driver.
+    // Traffic (public report 20261112132507, "got stuck and glitched"): a traffic car runs on its lane like a tram and was a wall to the player's car, so
+    // a player between a queue and the parked row could not move. Touched at under 3.2 m/s it now gives way at walking pace (traffic.shove: along its
+    // lane and a little sideways, never into another car, a parked car or a wall) and the player's car keeps pushing instead of bouncing off; what it
+    // cannot give, the player's car still takes. Faster than that is a crash, as before. Against traffic each car is three circles (were two: the middle was open), a traffic car's reaching its ends (a van's and a bus's stopped short), five for a long one.
+    const L = v.def.len, r = v.def.wid * 0.5, T = this.traffic, K2 = [1, -1], K3 = [1, 0, -1], K5 = [1, 0.5, 0, -0.5, -1];
     const hitOne = (o, movable) => {
-      const oL = o.def.len, orr = o.def.wid * 0.5;
-      for (const a of [L * 0.3, -L * 0.3]) for (const b of [oL * 0.28, -oL * 0.28]) {
+      const oL = o.def.len, orr = o.def.wid * 0.5, K = movable ? K2 : K3, oe = movable ? oL * 0.28 : Math.max(oL * 0.28, oL / 2 - orr), KB = movable ? K2 : oe > 1.8 * orr ? K5 : K3;
+      for (const ka of K) for (const kb of KB) {
+        const a = L * 0.3 * ka, b = oe * kb;
         const ax = v.x + Math.cos(v.h) * a, ay = v.y + Math.sin(v.h) * a, bx = o.x + Math.cos(o.h) * b, by = o.y + Math.sin(o.h) * b;
         let dx = ax - bx, dy = ay - by; const d = Math.hypot(dx, dy), R = r + orr;
         if (d < R && d > 1e-4) {
-          dx /= d; dy /= d; const pen = R - d; v.x += dx * pen; v.y += dy * pen;
-          const ovx = movable ? o.vx : Math.cos(o.h) * o.v, ovy = movable ? o.vy : Math.sin(o.h) * o.v; const vn = (v.vx - ovx) * dx + (v.vy - ovy) * dy;
+          dx /= d; dy /= d; const pen = R - d;
+          const ov = movable ? 0 : o.v - (o.rev || 0), ovx = movable ? o.vx : Math.cos(o.h) * ov, ovy = movable ? o.vy : Math.sin(o.h) * ov; const vn = (v.vx - ovx) * dx + (v.vy - ovy) * dy;
+          if (!movable && vn > -3.2 && T.shove) {
+            const cap = 1.5 * Math.min(1, 4.8 / oL) * dt, gave = vn < -0.02 ? T.shove(o, -dx, -dy, pen, cap) : 0;
+            v.x += dx * (pen - gave); v.y += dy * (pen - gave);
+            if (vn < 0) { const keep = gave > 1e-5 ? Math.max(vn, -cap / dt) : 0; v.vx += (keep - vn) * dx; v.vy += (keep - vn) * dy;
+              if (o.v > 1) { o.stun = Math.max(o.stun, 1.6); o.v *= 0.4; } else { o.stun = Math.max(o.stun, 0.8); o.v = 0; }
+              if (-vn > 2.5) { v.damage += -vn; v.hitT = 0.35; this.onCrash(v, -vn); } }
+            continue;
+          }
+          v.x += dx * pen; v.y += dy * pen;
           if (vn < 0) { v.vx -= vn * 1.1 * dx; v.vy -= vn * 1.1 * dy; if (movable) { o.vx += vn * 0.8 * dx; o.vy += vn * 0.8 * dy; } else { o.stun = 1.6; o.v *= 0.4; }
             if (-vn > 2.5) { v.damage += -vn; v.hitT = 0.35; this.onCrash(v, -vn); } }
         }
       }
     };
-    for (const c of this.traffic.cars) { if (Math.abs(c.x - v.x) > 12 || Math.abs(c.y - v.y) > 12) continue; hitOne(c, false); }
+    // what the circles leave open (a corner in the hollow between two circles, up to half a metre): the two bodies as boxes, parted along the
+    // shallowest of their four axes; a slow touch shoves the traffic car as above, the rest moves the player's car. No bounce.
+    const box = (o) => {
+      const ax = Math.cos(v.h), ay = Math.sin(v.h), bx = Math.cos(o.h), by = Math.sin(o.h), dx = o.x - v.x, dy = o.y - v.y, al = L / 2 - 0.04, aw = r - 0.04, bl = o.def.len / 2 - 0.04, bw = o.def.wid / 2 - 0.04;
+      if (dx * dx + dy * dy > (al + aw + bl + bw) ** 2) return;
+      const c = Math.abs(ax * bx + ay * by), s = Math.abs(ax * by - ay * bx); let best = 1e9, nx = 0, ny = 0;
+      let p = dx * ax + dy * ay, d = al + bl * c + bw * s - Math.abs(p); if (d <= 0) return; best = d; nx = p > 0 ? -ax : ax; ny = p > 0 ? -ay : ay;
+      p = -dx * ay + dy * ax; d = aw + bl * s + bw * c - Math.abs(p); if (d <= 0) return; if (d < best) { best = d; nx = p > 0 ? ay : -ay; ny = p > 0 ? -ax : ax; }
+      p = dx * bx + dy * by; d = bl + al * c + aw * s - Math.abs(p); if (d <= 0) return; if (d < best) { best = d; nx = p > 0 ? -bx : bx; ny = p > 0 ? -by : by; }
+      p = -dx * by + dy * bx; d = bw + al * s + aw * c - Math.abs(p); if (d <= 0) return; if (d < best) { best = d; nx = p > 0 ? by : -by; ny = p > 0 ? -bx : bx; }
+      const ov = o.v - (o.rev || 0), vn = (v.vx - Math.cos(o.h) * ov) * nx + (v.vy - Math.sin(o.h) * ov) * ny, cap = 1.5 * Math.min(1, 4.8 / o.def.len) * dt;
+      best = Math.min(best, 0.6);     // (two cars deep in each other, as after a hand-placed test start, part over a few steps, not in one throw)
+      const gave = vn < -0.02 && vn > -3.2 && T.shove ? T.shove(o, -nx, -ny, best, cap) : 0;
+      v.x += nx * (best - gave); v.y += ny * (best - gave);
+      if (vn < 0) { const keep = gave > 1e-5 ? Math.max(vn, -cap / dt) : 0; v.vx += (keep - vn) * nx; v.vy += (keep - vn) * ny; }
+    };
+    for (const c of this.traffic.cars) { if (Math.abs(c.x - v.x) > 12 || Math.abs(c.y - v.y) > 12) continue; hitOne(c, false); box(c); }
     for (const c of this.vehicles) if (c !== v && Math.abs(c.x - v.x) < 12 && Math.abs(c.y - v.y) < 12) hitOne(c, true);
   }
   onCrash(v, force) { if (v === this.player.vehicle) { this.cam.shake = Math.min(1, this.cam.shake + force * 0.06); this.sound.crash(force); this.missions.onCrash(force); } }

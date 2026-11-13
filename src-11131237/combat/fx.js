@@ -40,14 +40,14 @@ function crazeTex() {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
 /* a car window that is OUT: the dark inside of the car seen through the opening, a ragged rim of crazed glass left in the frame. Twice as wide as high; laid on the pane's own outline by Combat.paneGo */
-function paneTex() {
+function paneTex(thin = 0) {      /* thin: a narrow rim of glass teeth and a black opening, drawn unlit ('a flat grey card', blind critics, of the lit one) */
   const c = document.createElement('canvas'); c.width = 256; c.height = 128; const x = c.getContext('2d'); if (!x) return null;
   const edge = (inset, jit) => { const P = [], n = 44; for (let k = 0; k < n; k++) { const u = k / n, per = u * 4, sd = Math.floor(per), f = per - sd, m = inset + rnd() * jit; let X, Y; if (sd === 0) { X = 10 + f * 236; Y = 8 + m; } else if (sd === 1) { X = 246 - m * 1.2; Y = 8 + f * 112; } else if (sd === 2) { X = 246 - f * 236; Y = 120 - m * 0.7; } else { X = 10 + m * 1.2; Y = 120 - f * 112; } P.push([X, Y]); } return P; };
   const path = (P) => { x.beginPath(); P.forEach((q, i) => x[i ? 'lineTo' : 'moveTo'](q[0], q[1])); x.closePath(); };
-  x.fillStyle = 'rgba(176,190,194,0.5)'; x.beginPath(); x.roundRect ? x.roundRect(6, 5, 244, 118, 16) : x.rect(6, 5, 244, 118); x.fill();      // the crazed glass still in the frame
+  x.fillStyle = thin ? 'rgba(196,208,212,0.62)' : 'rgba(176,190,194,0.5)'; x.beginPath(); x.roundRect ? x.roundRect(6, 5, 244, 118, 16) : x.rect(6, 5, 244, 118); x.fill();      // the crazed glass still in the frame
   x.strokeStyle = 'rgba(232,240,242,0.55)'; x.lineWidth = 0.7; for (let k = 0; k < 150; k++) { const X = 6 + rnd() * 244, Y = 5 + rnd() * 118, a = rnd() * 6.283, L = 3 + rnd() * 7; x.beginPath(); x.moveTo(X, Y); x.lineTo(X + Math.cos(a) * L, Y + Math.sin(a) * L); x.stroke(); }
-  x.fillStyle = 'rgba(5,6,8,0.96)'; path(edge(5, 13)); x.fill();      // the opening
-  x.fillStyle = 'rgba(30,33,36,0.5)'; x.fillRect(40, 78, 176, 30);      // a hint of seat backs in the dark
+  x.fillStyle = thin ? 'rgba(1,1,2,1)' : 'rgba(5,6,8,0.96)'; path(thin ? edge(1.5, 6) : edge(5, 13)); x.fill();      // the opening
+  if (!thin) { x.fillStyle = 'rgba(30,33,36,0.5)'; x.fillRect(40, 78, 176, 30); }      // a hint of seat backs in the dark
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
 }
 function decalTex(kind) {
@@ -95,7 +95,7 @@ class Quads {
   }
   begin() { this.n = 0; }
   put(p, ax, ay, az) { const i = this.n++; this.pos.setXYZ(i, p.x, p.y, p.z); this.axis.setXYZ(i, ax, ay, az); this.sr.setXY(i, p.size, p.rot); this.col.setXYZW(i, p.cr, p.cg, p.cb, p.ca); this.frame.setX(i, p.frame); }
-  end() { this.g.instanceCount = this.n; for (const a of [this.pos, this.axis, this.sr, this.col, this.frame]) { a.clearUpdateRanges(); a.addUpdateRange(0, this.n * a.itemSize); a.needsUpdate = true; } }
+  end(keep) { this.g.instanceCount = this.n; this.mesh.visible = this.n > 0 || !!keep;      /* perf, Nov 12: an empty batch is not handed to the renderer (keep: the first frames, so its program and buffers are made behind the start screen) */ if (!this.n) return; if (!this.all) this.all = [this.pos, this.axis, this.sr, this.col, this.frame]; for (const a of this.all) { a.clearUpdateRanges(); a.addUpdateRange(0, this.n * a.itemSize); a.needsUpdate = true; } }
 }
 
 export class Fx {
@@ -109,6 +109,7 @@ export class Fx {
     this.decals = {}; const geo = new THREE.PlaneGeometry(1, 1);
     if (this.ok) for (const [k, cap] of [['concrete', 180], ['metal', 120], ['glass', 60]]) {
       const mat = new THREE.MeshStandardMaterial({ map: decalTex(k), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3, roughness: k === 'concrete' ? 1 : 0.45, metalness: k === 'metal' ? 0.6 : 0 });
+      if (k === 'glass') { mat.emissive = new THREE.Color(0.3, 0.32, 0.33); mat.emissiveMap = mat.map; }      /* a crack is crushed glass and scatters light: lit only by the scene it was all but invisible on a shop window in the shade of an awning or shed (seen on laptop 2, Nov 12); in the sun the added third is not seen */
       const im = new THREE.InstancedMesh(geo, mat, cap); im.frustumCulled = false; im.count = cap; im.renderOrder = 4; im.receiveShadow = true; _m.makeScale(0, 0, 0); for (let i = 0; i < cap; i++) im.setMatrixAt(i, _m);
       this.group.add(im); this.decals[k] = { im, cap, i: 0, rec: new Array(cap).fill(null) };
     }
@@ -194,7 +195,7 @@ export class Fx {
   /* round 33: a pane that is out (kind 'hole': the dark inside of the car in the pane's own outline) or crazed all over (kind 'craze': laminated glass). pos / uv: the pane's own triangles in the car's frame, a few millimetres proud of the glass; it rides on the car like the decals */
   pane(pos, uv, kind, attach) {
     if (!this.ok || !attach) return; const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2)); g.computeVertexNormals();
-    const mat = kind === 'out' ? (this._pout ||= new THREE.MeshStandardMaterial({ color: 0x5c6266, map: paneTex(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, roughness: 0.6, metalness: 0, side: THREE.DoubleSide })) : kind === 'craze' ? (this._crz ||= new THREE.MeshStandardMaterial({ map: crazeTex(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, roughness: 0.7, metalness: 0, side: THREE.DoubleSide })) : (this._hol ||= new THREE.MeshBasicMaterial({ color: 0x020303, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, side: THREE.DoubleSide }));
+    const mat = kind === 'out2' ? (this._pout2 ||= new THREE.MeshBasicMaterial({ color: 0x565c60, map: paneTex(1), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, side: THREE.DoubleSide })) : kind === 'out' ? (this._pout ||= new THREE.MeshStandardMaterial({ color: 0x5c6266, map: paneTex(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, roughness: 0.6, metalness: 0, side: THREE.DoubleSide })) : kind === 'craze' ? (this._crz ||= new THREE.MeshStandardMaterial({ map: crazeTex(), transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, roughness: 0.7, metalness: 0, side: THREE.DoubleSide })) : (this._hol ||= new THREE.MeshBasicMaterial({ color: 0x020303, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, side: THREE.DoubleSide }));
     const m = new THREE.Mesh(g, mat); m.matrixAutoUpdate = false; m.frustumCulled = false; m.renderOrder = 3; m.visible = false; this.scene.add(m); (this.panes ||= []).push({ m, attach });
   }
   dropDecals(attach) { if (this.panes) for (let k = this.panes.length - 1; k >= 0; k--) if (this.panes[k].attach === attach) { const m = this.panes[k].m; this.scene.remove(m); m.geometry.dispose(); this.panes.splice(k, 1); } for (let k = this.riding.length - 1; k >= 0; k--) { const r = this.riding[k]; if (r.attach === attach) { _m.makeScale(0, 0, 0); r.D.im.setMatrixAt(r.i, _m); r.D.im.instanceMatrix.needsUpdate = true; r.D.rec[r.i] = null; this.riding.splice(k, 1); } } }
@@ -219,7 +220,8 @@ export class Fx {
   emitter(e) { e.t = 0; e.acc = 0; this.emit.push(e); return e; }
 
   update(dt, cam) {
-    if (!this.ok) return; const d = this.day;
+    if (!this.ok) return; const d = this.day, warm = ++this.frames <= WARM;
+    if (this.frames === WARM + 1) { for (const k in this.decals) this.decals[k].im.visible = !!this.decals[k].used; for (const k in this.cas) if (this.cas[k]) this.cas[k].im.visible = this.cas[k].list.length > 0; }      /* perf, Nov 12: after the first frames, the hole and casing batches are drawn only once they hold something */
     for (let k = this.emit.length - 1; k >= 0; k--) {
       const e = this.emit[k]; e.t += dt; if (e.t > e.life || e.dead) { this.emit.splice(k, 1); continue; } const p = typeof e.pos === 'function' ? e.pos(_v3) : e.pos; if (!p) continue;
       e.acc += dt * (e.kind === 'fire' ? 60 : e.kind === 'steam' ? 9 : 12) * (e.rate || 1); const fadeOut = Math.min(1, (e.life - e.t) / 3);
@@ -232,6 +234,7 @@ export class Fx {
         else { const c = e.kind === 'steam' ? 0.5 : 0.16; this.spawn({ x: p.x + rs(0.25), y: p.y, z: p.z + rs(0.25), vx: rs(0.3) + 0.35, vy: rr(1.0, 2.2), vz: rs(0.3), life: rr(1.6, 3.4), s0: 0.3, s1: rr(1.6, 3.2) * (e.kind === 'steam' ? 0.55 : 1), r: c * d, g: c * d, b: c * d, a: (e.kind === 'steam' ? 0.1 : 0.5) * fadeOut, frame: this.cursor % 4, drag: 0.4, rotv: rs(0.7), fin: 0.2 }); }
       }
     }
+    if (this.any || warm) {      /* perf, Nov 12: with no particle alive the 1800 slots are not walked and no buffer is sent */
     this.alpha.begin(); this.add.begin(); let live = 0;
     for (const p of this.p) {
       if (!p.on) continue; if (p.delay > 0) { p.delay -= dt; live++; continue; }
@@ -249,7 +252,8 @@ export class Fx {
       else if (p.up) Q.put(p, 0, p.size * p.up, 0);
       else Q.put(p, p.ax, p.ay, p.az);
     }
-    this.live = live; this.alpha.end(); this.add.end();
+    this.live = live; this.alpha.end(warm); this.add.end(warm); this.any = live > 0;
+    }
     if (this.lightT > 0 || this.light.intensity > 0) { this.lightT -= dt; this.light.intensity = this.lightT > 0 ? this.lightI * Math.min(1, this.lightT / 0.05) : 0; }
     // casings: ballistic, a couple of ringing bounces, then they lie on their side
     for (const k in this.cas) { const C = this.cas[k]; if (!C || !C.list.length) continue; let dirty = false;

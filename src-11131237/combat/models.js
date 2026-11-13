@@ -809,10 +809,11 @@ export function buildCasing(kind) {
 export const WEAPON_KINDS = ['pistol', 'smg', 'shotgun', 'rifle'];
 const BUILDERS = { pistol, smg, shotgun, rifle }, templates = {};
 let loading = null;
-export function loadWeapons() {
+export function loadWeapons(kinds = WEAPON_KINDS) {
   // built one gun per task so the page keeps painting while they are made (about a second in all)
+  // perf, Nov 12: kinds = which to build (default all, as before); calls queue behind each other, a kind is built once
   const tick = () => new Promise((r) => setTimeout(r, 0));
-  if (!loading) loading = (async () => { await tick(); ensureMaterials(); for (const k of WEAPON_KINDS) { await tick(); templates[k] = templates[k] || BUILDERS[k](); } })();
+  loading = (loading || Promise.resolve()).then(async () => { ensureMaterials(); for (const k of kinds) { if (!BUILDERS[k] || templates[k]) continue; await tick(); templates[k] = templates[k] || BUILDERS[k](); } }).catch(() => {});
   return loading;
 }
 export function buildWeapon(kind) {

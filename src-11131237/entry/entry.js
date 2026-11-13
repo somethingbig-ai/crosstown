@@ -249,8 +249,24 @@ class Entry {
     this.hook();
     if (g.P.has('eat')) { const a = g.P.get('eat').split(',').map(Number), pl = g.player; pl.x = a[0]; pl.y = a[1]; if (a.length > 2) pl.h = a[2]; g.focus.x = pl.x; g.focus.y = pl.y; try { g.traffic.populate(pl.x, pl.y); } catch (e) {} g.cam.yaw = pl.h; g.snapCamera(); }
     if (g.P.has('escript')) this.script = { name: g.P.get('escript'), t: 0, i: 0, st: 'find' };
-    // the door meshes of each kind are cut on first use (some tens of ms a kind): do them one at a time in quiet moments after loading, not on the F press
-    if (!g.capture && typeof setTimeout === 'function' && g.streetVehicles) { const kinds = Object.keys(this.D); const next = () => { const t = kinds.shift(); if (!t) return; if (!g.player.busy) this.cars.kind(t); else kinds.unshift(t); setTimeout(next, 900); }; setTimeout(next, 4000); }
+    // the door meshes of each kind are cut on first use (some tens of ms a kind): not on the F press if it can be helped.
+    // perf, Nov 12: all 15 kinds used to be cut one every 0.9 s from 4 s after load, which on a slow machine was 13 hitches (up to 44 ms on an M2 Max,
+    // six times that on a weak laptop) in the first seconds of play. Now a kind is cut when a car of that kind is within 45 m of the player
+    // (on foot, or in a car that is not moving), nearest first, one at a time in an idle moment: the cars round the spawn are done behind the start
+    // screen, a kind never met is never cut. F on a kind not yet cut still cuts it on the press, as before (DoorCar.set -> kind). ?ecut=all = the old way.
+    // Measured at 4x CPU throttle (laptop 3): the old timer's cuts ran until 72.5 s and the lead's warm-up could not end before them (PLAY live at
+    // 74.8 s); cut near the spawn only and back to back, PLAY went live at 62.9 s.
+    if (!g.capture && typeof setTimeout === 'function' && g.streetVehicles && g.P.get('ecut') === 'all') { const kinds = Object.keys(this.D); const next = () => { const t = kinds.shift(); if (!t) return; if (!g.player.busy) this.cars.kind(t); else kinds.unshift(t); setTimeout(next, 900); }; setTimeout(next, 4000); }
+    else if (!g.capture && typeof setTimeout === 'function' && g.streetVehicles) {
+      const idle = typeof requestIdleCallback === 'function' ? (f) => requestIdleCallback(f, { timeout: 1500 }) : (f) => setTimeout(f, 0), K = this.cars.kinds, D = this.D, pk = [];
+      const look = () => { let t = null;
+        try { const pl = g.player; if (!pl.busy && !(pl.vehicle && Math.abs(pl.vehicle.vf || 0) > 3)) { let bd = 45 * 45; const sv = g.streetVehicles, see = (v) => { const ty = v && v.type; if (!ty || ty in K || !(ty in D)) return; const T = sv && sv.types && sv.types[ty]; if (!T || !T.lods || !T.lods[0]) return;      /* its model is not there yet: asked again later, not marked as a kind without a door */ const d = (v.x - pl.x) * (v.x - pl.x) + (v.y - pl.y) * (v.y - pl.y); if (d < bd) { bd = d; t = ty; } };
+          for (const v of g.vehicles) see(v); for (const s of g.parked.near(pl.x, pl.y, 45, pk)) see(s); for (const c of g.traffic.cars) see(c); } } catch (e) {}
+        const quiet = typeof window !== 'undefined' && (!window.__ready || window.__warming || window.__startScreen || g.paused);      // before the game runs (the shaders are compiling) and behind the start screen there is no frame to spoil: cut at once, back to back
+        if (t && quiet) setTimeout(() => { try { this.cars.kind(t); } catch (e) {} setTimeout(look, 20); }, 0);
+        else if (t) idle(() => { try { if (!g.player.busy) this.cars.kind(t); } catch (e) {} setTimeout(look, 250); }); else setTimeout(look, 500); };
+      setTimeout(look, 0);      // the first ones go while the shaders compile, before the lead's warm-up frames start (a cut over 40 ms among them resets its count of good frames)
+    }
     console.log('[entry] on: ' + Object.keys(this.D).length + ' car kinds with door data; rig ' + (this.me.rig ? 'ok' : 'none'));
     return this;
   }

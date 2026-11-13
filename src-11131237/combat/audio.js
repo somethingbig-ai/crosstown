@@ -359,7 +359,8 @@ export class GunAudio {
         }
       }
     } catch (e) { /* no recordings: the synthesized guns play instead */ }
-    try { for (const k of allKeys().concat(this._more())) { if (!this.bufs.has(k)) this._data(k); await new Promise((r) => setTimeout(r, 0)); } } catch (e) { /* anything missing is rendered on first use */ }
+    /* perf, Nov 12: the sounds of guns the player does not have (this.kinds, set by combat.js: the SMG and the shotgun unless ?gall=1) are not rendered at load; one that is asked for anyway is rendered on first use, like anything missing. The guns in hand come first. */
+    try { const has = this.kinds, skip = (k) => { const g = k.split(':')[1]; return !!has && KINDS.includes(g) && !has.includes(g); }; for (const k of allKeys().concat(this._more())) { if (skip(k)) continue; if (!this.bufs.has(k)) this._data(k); await new Promise((r) => setTimeout(r, 0)); } } catch (e) { /* anything missing is rendered on first use */ }
   }
   /* perf, Nov 12: a casing that lands on the road (asphalt) was rendered in the frame it landed, 2 to 4 ms each, five variants a gun: they are rendered at load with the rest */
   _more() { const k = []; for (const g of this.kinds || KINDS) for (let v = 0; v < 5; v++) k.push(`casing:${g}:asphalt:${v}`); return k; }
@@ -367,6 +368,9 @@ export class GunAudio {
   prime() { if (this._primed) return true; if (!this._ok()) return false; this._primed = true; const has = this.kinds || KINDS, keys = allKeys().concat(this._more()).filter((k) => { const g = k.split(':')[1]; return !KINDS.includes(g) || has.includes(g); });
     const idle = typeof requestIdleCallback === 'function' ? (f) => requestIdleCallback(f, { timeout: 1000 }) : (f) => setTimeout(f, 0), step = () => { let n = 0; while (keys.length && n < 2) { const k = keys.shift(); if (!this.bufs.has(k)) { try { this._buf(k); } catch (e) {} n++; } } if (keys.length) idle(step); }; idle(step); return true; }
   _data(key) { let d = this.data.get(key); if (!d) { d = bake(key, (k) => this.data.get(k) || bake(k)); this.data.set(key, d); } return d; }
+  _irBuf(a) { if (a.sampleRate === SR) return this._buf('ir'); const d = this._data('ir'), k = SR / a.sampleRate, n = Math.max(1, Math.round(d[0].length / k)), b = a.createBuffer(2, n, a.sampleRate);
+    for (let c = 0; c < 2; c++) { const src = d[c], o = b.getChannelData(c), m = src.length - 1; for (let i = 0; i < n; i++) { const x = i * k, j = Math.min(m, Math.floor(x)), f = x - j; o[i] = (src[j] + ((j < m ? src[j + 1] : 0) - src[j]) * f) * k; } }      /* linear resample; scaled by the rate ratio so the echo's level is the same */
+    return b; }
   _buf(key) {
     let b = this.bufs.get(key);
     if (!b) { const d = this._data(key); b = this.ac.createBuffer(2, d[0].length, SR); b.copyToChannel(d[0], 0); b.copyToChannel(d[1], 1); this.bufs.set(key, b); this.data.delete(key); }      // the AudioBuffer holds its own copy
@@ -387,7 +391,8 @@ export class GunAudio {
         const pre = a.createGain(); pre.gain.value = 1 / 3;
         const post = (this.post = a.createGain()); post.gain.value = 1;
         bus.connect(pre); pre.connect(lim); lim.connect(post); post.connect(s.out);
-        const conv = (this.conv = a.createConvolver()); conv.normalize = false; conv.buffer = this._buf('ir');
+        /* perf, Nov 13 (THE CARBINE'S COST ON LAPTOP 2, and silent guns): a ConvolverNode only takes a buffer at the context's own sample rate. Ours is rendered at 48 kHz; on a machine whose output runs at another rate (44.1 kHz: many headsets, displays and Windows machines) this line threw, the bus was thrown away, NO gun sound played, and every later sound call built the bus and rendered the street echo again: 14 ms a call, two or three calls a shot. The echo is now resampled to the context's rate, and if the convolver still fails the guns play dry and the bus is kept. */
+        let conv; try { conv = a.createConvolver(); conv.normalize = false; conv.buffer = this._irBuf(a); } catch (e) { conv = a.createGain(); conv.gain.value = 0; if (!this._irErr) { this._irErr = true; console.log('[guns] street echo off: ' + (e && e.message)); } } this.conv = conv;
         const wet = (this.wet = a.createGain()); wet.gain.value = 1; conv.connect(wet); wet.connect(bus);
         this.preload();      // if the game did not call it at load, start now (in the background)
       } catch (e) { this.ac = null; return false; }

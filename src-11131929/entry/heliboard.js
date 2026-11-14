@@ -16,6 +16,10 @@
 import * as THREE from 'three';
 import { EntryRig } from './rig.js';
 import { DIMS } from '../heli/dims.js';
+import { carsNear, depth, pushOut, planBest, say, TIGHT, FOOT, BODY_R } from './walkround.js';      /* board 4: never through the aircraft */
+// the aircraft standing on the ground, as boxes a walking person cannot pass (aircraft frame: x0, x1, z0, z1): pod with its skids, nose (two steps), engine bay,
+// boom (its underside is 1.6 to 1.85 m up: head height), fin with the tail rotor on its right. The stabiliser (1.9 m up) is walked under.
+const HULL = [[-1.5, 1.6, -1.13, 1.13], [1.6, 2.6, -0.92, 0.92], [2.6, 3.37, -0.66, 0.66], [-3.0, -1.5, -0.87, 0.87], [-7.6, -3.0, -0.25, 0.25], [-7.65, -5.3, -0.25, 0.62]], _o2 = {};
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v)), lerp = (a, b, t) => a + (b - a) * t;
 const ss = (x, a, b) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); }, smoother = (t) => t * t * t * (t * (t * 6 - 15) + 10);
@@ -132,9 +136,10 @@ class HeliBoard {
     const self = this;
     this.canBoard0 = heli.canBoard.bind(heli); this.step0 = heli.step.bind(heli); this.sync0 = heli.sync.bind(heli); this.board0 = heli.board.bind(heli); this.hcam0 = heli.updateCamera.bind(heli); this.gcam0 = g.updateCamera.bind(g);
     heli.canBoard = function () { return self.canBoard(); };
-    heli.tryBoard = function () { if (!self.canBoard()) return false; self.begin('in'); return true; };
+    heli.tryBoard = function () { if (!self.canBoard()) return false; return self.begin('in') !== false; };
     heli.leave = function () { self.begin('out'); };
-    heli.step = function (dt, I) { if (self.beat) { try { self.advance(dt, I); } catch (e) { self.fail('step', e); } } self.step0(dt, I); if (self.beat || self.doorNow > 0) { heli.door = self.doorNow; if (!self.beat) self.doorNow = 0; } };
+    this.round = g.P.get('hround') !== '0';      /* ?hround=0: the walk as before board 4 */
+    heli.step = function (dt, I) { if (self.beat) { try { self.advance(dt, I); } catch (e) { self.fail('step', e); } } else if (self.round) self.pushFoot(g.player); self.step0(dt, I); if (self.beat || self.doorNow > 0) { heli.door = self.doorNow; if (!self.beat) self.doorNow = 0; } };
     heli.sync = function (dt) { self.sync0(dt); try { self.sync(dt); } catch (e) { self.fail('sync', e); } };
     g.updateCamera = function (dt) { let own = false; try { own = self.camera(dt); } catch (e) { self.fail('camera', e); } if (!own) return self.gcam0(dt); };
   }
@@ -158,7 +163,25 @@ class HeliBoard {
     const p = this.toCraft(pl.x, pl.y, _v3); return p.x > -2.6 && p.x < 5.2 && p.z > -3.2 && p.z < 4.4;      // anywhere round the cabin and nose (the old rule: within 2.6 m of the door)
   }
   // the way to the standing spot from p (aircraft frame, on the ground): round the nose if he is on the far side or ahead of it
+  // board 4: the aircraft's body as boxes on the map
+  hull() { const hd = this.h.f.heading, c = Math.cos(hd), s = Math.sin(hd), out = (this._hull ||= HULL.map(() => ({})));
+    for (let i = 0; i < HULL.length; i++) { const r = HULL[i], B = out[i]; this.toMap(_v2.set((r[0] + r[1]) / 2, 0, (r[2] + r[3]) / 2), B); B.c = c; B.s = s; B.hl = (r[1] - r[0]) / 2; B.hw = (r[3] - r[2]) / 2; B.o = this.h; B.pad = undefined; } return out; }
+  // ordinary walking: he cannot stand inside the aircraft
+  pushFoot(pl) { const h = this.h, f = h.f, r = h.root.position; if (h.piloted || h.busy || !f.onGround || pl.vehicle || pl.busy || (this.g.fly && this.g.fly.on)) return; const dx = pl.x - r.x, dy = pl.y + r.z; if (dx * dx + dy * dy > 110 || Math.abs((pl.alt || 0) - (f.surface > 1 ? f.surface : 0)) > 2.5) return;
+    if (pushOut(this.hull(), pl, FOOT)) { this.stats.pushes = (this.stats.pushes || 0) + 1; if (pl.alt > 1) { h._rx = pl.x; h._ry = pl.y; } } }
+  // the way to the standing spot on foot, outside the aircraft and any car beside it (walkround.js); null if there is none
   route(p) {
+    if (!this.round) return this.route0(p);
+    const fw = fwdOf(K.yawS, _v), S0 = V(K.S.x - fw.x * 0.75, 0, K.S.z - fw.z * 0.75), S = K.S.clone(), g = this.g, pl = g.player, m0 = this.toMap(S0, {}), mS = this.toMap(S, {});
+    const hull = this.hull(), cars = carsNear(g, pl.x, pl.y, 15, (this.poolC ||= { boxes: [], pk: [] })), st = this.h.f.surface > 1 ? null : g.statics;
+    const mk = (T) => (pad) => (x, y) => { const near = (x - T.x) * (x - T.x) + (y - T.y) * (y - T.y) < 0.36, q = near ? Math.min(pad, TIGHT) : pad;
+      for (let i = 0; i < hull.length; i++) if (depth(hull[i], x, y, q) > 0) return true; for (let i = 0; i < cars.length; i++) if (depth(cars[i], x, y, q) > 0) return true; return st ? st.resolve(x, y, BODY_R, _o2, near) > 0 : false; };
+    let w = planBest(pl.x, pl.y, m0.x, m0.y, mk(m0)), tail = [S0, S]; if (!w) { w = planBest(pl.x, pl.y, mS.x, mS.y, mk(mS)); tail = [S]; }
+    if (!w || w.len > 30) return null; this.stats.planMs = Math.max(this.stats.planMs || 0, +w.ms.toFixed(2));
+    const out = w.pts.slice(1, -1).map((q) => this.toCraft(q.x, q.y, V())); if (!out.length && tail.length > 1 && Math.hypot(p.x - S.x, p.z - S.z) <= 1.0 && !mk(mS)(TIGHT)((pl.x + mS.x) / 2, (pl.y + mS.y) / 2)) tail = [S];
+    for (const q of tail) out.push(q); return out;
+  }
+  route0(p) {
     const fw = fwdOf(K.yawS, _v), S0 = V(K.S.x - fw.x * 0.75, 0, K.S.z - fw.z * 0.75), S = K.S.clone(), out = [];
     const left = p.z < -1.25, ahead = p.x > 3.6 && p.z < 1.3;
     if (left && p.x < 4.4) out.push(V(4.9, 0, Math.min(-2.1, p.z)));
@@ -169,7 +192,7 @@ class HeliBoard {
   begin(kind) {
     const g = this.g, h = this.h, pl = g.player, f = h.f, cam = g.world.camera, c = this.c;
     if (kind === 'in') {
-      const p = this.toCraft(pl.x, pl.y, V()), path = this.route(p); let len = 0, q = p; for (const w of path) { len += Math.hypot(w.x - q.x, w.z - q.z); q = w; }
+      const p = this.toCraft(pl.x, pl.y, V()), path = this.route(p); if (!path) { say('No way round to the pilot\u2019s door'); return false; } let len = 0, q = p; for (const w of path) { len += Math.hypot(w.x - q.x, w.z - q.z); q = w; }
       const vis = pl.vis, wk = (vis.walks || []).find((w) => w.name === 'walkbrisk') || (vis.walks || [])[0] || { name: 'walk', speed: 1.45 }, run = len > 4.2 && vis.acts && vis.acts.run;
       this.beat = { kind, ph: 'walk', t: 0, path, i: 0, len, run, wk, vw: Math.min(2.0, wk.speed), vr: 4.4, cr: vis.runSpeed || 5.0, y0: vis.object.position.y, seated: false };
       h.busy = { kind: 'hb', t: 0, dur: Infinity, hb: true, ph: 'in:walk' };
@@ -194,10 +217,10 @@ class HeliBoard {
     if (!f.onGround && !b.seated) { this.abort(); return; }
     b.t += dt;
     if (b.kind === 'in' && b.ph === 'walk') {
-      if (use || b.t > 7) { this.cancel(); return; }
+      if (use || b.t > 9) { this.cancel(); return; }
       const w = b.path[b.i], m = this.toMap(w, (this._mp ||= {})), dx = m.x - pl.x, dy = m.y - pl.y, d = Math.hypot(dx, dy), last = b.i === b.path.length - 1, run = b.run && !last, v = run ? b.vr : b.vw, stepLen = v * dt;     /* jogs the long way round, walks the last steps to the door */
-      if (d <= (last ? stepLen : 0.4)) { if (last) { pl.x = m.x; pl.y = m.y; b.ph = 'act'; b.t = 0; b.h0 = wrapPi(pl.h - f.heading); h.busy.ph = 'in:act'; this.fade('idle', 0.22); pl.speed = 0; return; } b.i++; return; }
-      pl.h += wrapPi(Math.atan2(dy, dx) - pl.h) * Math.min(1, dt * 11); pl.x += dx / d * stepLen; pl.y += dy / d * stepLen; pl.speed = v;      /* straight at the mark (steering by the heading alone circled it at a jog) */
+      if (d <= (last ? stepLen : this.round ? Math.max(stepLen, 0.12) : 0.4)) { if (last) { pl.x = m.x; pl.y = m.y; b.ph = 'act'; b.t = 0; b.h0 = wrapPi(pl.h - f.heading); h.busy.ph = 'in:act'; this.fade('idle', 0.22); pl.speed = 0; return; } b.i++; return; }
+      pl.h += wrapPi(Math.atan2(dy, dx) - pl.h) * Math.min(1, dt * 11); pl.x += dx / d * stepLen; pl.y += dy / d * stepLen; pl.speed = v; if (this.round && pushOut(this.hull(), pl, 0.2)) this.stats.walkPushes = (this.stats.walkPushes || 0) + 1;      /* straight at the mark (steering by the heading alone circled it at a jog) */
       if (g.cam.lookT > 0.6) g.cam.yaw += wrapPi(pl.h - g.cam.yaw) * Math.min(1, dt * (b.run ? 3 : 1.2));      /* mouse left alone: the view comes round behind him (round the nose it would stay on the far side) */
       g.playerAnim(run ? 'run' : b.wk.name); if (pl.vis.mixer) pl.vis.mixer.timeScale = v / (run ? b.cr : b.wk.speed);
       return;

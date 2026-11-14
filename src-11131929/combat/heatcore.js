@@ -21,6 +21,10 @@ const CRIME = { shots: { p: 0.12, min: 1, cap: 3 }, wound: { p: 1 }, kill: { p: 
 /* share of an officer's damage that lands, and how wide he shoots, per step: the first two officers are a warning, the top is a wall */
 /* how far they know him from, as a share of 80 m on foot and 60 m from a moving car: at one step a block's run loses them */
 const EYE = [1, 0.48, 0.6, 0.78, 1, 1];
+/* seconds a patrol car stays off him after it has hit his car, per step */
+/* a patrol car's top speed in a chase, m/s, per step (86, 86, 86, 97, 106, 112 km/h) */
+const VCAP = [24, 24, 24, 27, 29.5, 31];
+const RAMCD = [[9, 9], [9, 9], [9, 9], [6.5, 9.5], [4.5, 7], [3, 5]];
 const LETH = [0, 0.6, 0.7, 0.85, 1, 1.15], WIDE = [1, 1.15, 1.1, 1.05, 1, 0.92];
 /* how officers shoot: error (degrees, one sigma), share of the weapon's damage that reaches the player, burst and pause */
 const GUN = { pistol: { sig: 1.7, dm: 0.42, burst: [2, 4], gap: [0.3, 0.45], rest: [0.7, 1.6], band: [8, 17], mag: 15 }, shotgun: { sig: 2.8, dm: 0.3, burst: [1, 1], gap: [1.1, 1.1], rest: [0.5, 1.0], band: [7, 14], mag: 6, pellets: 6 }, rifle: { sig: 1.8, dm: 0.24, burst: [3, 5], gap: [0.1, 0.1], rest: [0.9, 1.8], band: [14, 30], mag: 30 } };
@@ -70,7 +74,7 @@ export class Heat {
       const r = hit0(h, W, first); if (self.copFire) return r;
       if (r === 'ped') self.crime('wound', h.x, h.y); else if (r === 'kill') self.crime('kill', h.x, h.y); else if (r === 'car') self.lastCarHitT = self.t;
       return r; };
-    const ex0 = c.explode.bind(c); c.explode = function (v, S) { self.blast = { x: v.x, y: v.y }; const mine = g.player.vehicle === v, h0 = c.health; ex0(v, S); if (self.t - self.lastCarHitT < 15) self.crime('blast', v.x, v.y); if (mine) { if (h0 > 55) { if (c.health < 12) c.health = 12; } else c.hurt(999); } self.blast = null; };
+    const ex0 = c.explode.bind(c); c.explode = function (v, S) { self.blast = { x: v.x, y: v.y }; const mine = g.player.vehicle === v, h0 = c.health; ex0(v, S); if (self.t - self.lastCarHitT < 15) self.crime('blast', v.x, v.y); if (mine) { if (h0 > 55 && !self.god) { const pl = g.player; if (pl.vehicle === v) { pl.vehicle = null; pl.busy = null; g.cam.mode = 'foot'; if (pl.vis && pl.vis.object) pl.vis.object.visible = true; pl.x = v.x - Math.sin(v.h) * (v.def.wid / 2 + 0.9); pl.y = v.y + Math.cos(v.h) * (v.def.wid / 2 + 0.9); v.vx = v.vy = 0; v.vf = 0; } c.hurt(Math.min(45, h0 - 15)); self.lastHurtT = self.t; self.say('his car blew up under him: thrown out, hp ' + Math.round(c.health)); } else c.hurt(999); } self.blast = null; };
     const hurt0 = c.hurt.bind(c); c.hurt = function (n) { if (self.dead || c.dead || self.god) return; hurt0(n); self.onHurt(n, self.src || self.blast); };
     const ph0 = g.onPedHit.bind(g); g.onPedHit = function (p, v) { ph0(p, v); /* (guns v1 hands a bullet to the lead's pedhit as a stand-in car: that is not a running-over) */ if (v === g.player.vehicle && !v.bullet && !self._ph) self.crime('runover', p.x, p.y); };
     const te0 = g.tryEnter.bind(g); g.tryEnter = function () { let n = null; try { n = g.nearestCar(); } catch (e) {} const ok = te0(); if (ok && n && (n.kind === 'traffic' || (n.kind === 'veh' && n.v.patrol))) self.crime('jack', g.player.x, g.player.y); return ok; };
@@ -166,6 +170,7 @@ export class Heat {
     { const pv = pl.vehicle; /* his car's speed at the last step, before whatever it hits next (see onCrash) */ this.pv0 = pv ? [pv.vx, pv.vy] : null; }
     { const pv = pl.vehicle, T = this.trail || (this.trail = []); if (!pv) T.length = 0; else if (!T.length || Math.hypot(pv.x - T[T.length - 1][0], pv.y - T[T.length - 1][1]) > 6) { T.push([pv.x, pv.y]); if (T.length > 18) T.shift(); } }
     this.rsT = (this.rsT || 0) + dt; if (this.rsT >= 0.3) { this.realSp = this.rsX === undefined ? 9 : Math.hypot(pl.x - this.rsX, pl.y - this.rsY) / this.rsT; this.rsX = pl.x; this.rsY = pl.y; this.rsT = 0; }
+    { const pv = pl.vehicle; this.stillT = pv && Math.hypot(pv.vx, pv.vy) < 1 ? (this.stillT || 0) + dt : 0; }
     { const pv = pl.vehicle; this.slowT = pv && Math.hypot(pv.vx, pv.vy) < 4 ? (this.slowT || 0) + dt : 0; }
     this.sightT -= dt; if (this.sightT <= 0) { this.sightT = 0.1; this.sight(); }
     if (this.level > 0 && !this.dead) {
@@ -199,10 +204,11 @@ export class Heat {
   // ------------------------------------------------------------------ dispatch
   dispatch(dt) {
     this.dispT += dt; const L = this.level, g0 = this.g; const pv0 = g0.player.vehicle, hunt = pv0 && Math.hypot(pv0.vx, pv0.vy) > 6 && !this.cars.some((v) => v.drive && !v.left && Math.hypot(v.x - pv0.x, v.y - pv0.y) < 100); if (this.dispT < DISP[L] * (this.fast || hunt ? 0.5 : 1)) return;
-    const alive = this.cops.filter((k) => k.hp > 0 && k.mode !== 'leave').length, crew = this.cars.reduce((n, v) => n + (v.drive && !v.left && !v.wreck ? (v.heavy ? 3 : 2) : 0), 0);
-    if (alive + crew >= FORCE[L]) return; this.dispT = 0;
-    const cars = this.cars.filter((v) => !v.wreck && !v.left).length, wantCars = [0, 0, 1, 2, 4, 6][L], foot = this.cops.some((k) => k.hp > 0 && !k.car);
+    const alive = this.cops.filter((k) => k.hp > 0 && k.mode !== 'leave' && !(hunt && Math.hypot(k.x - pv0.x, k.y - pv0.y) > 90)).length, crew = this.cars.reduce((n, v) => n + (v.drive && !v.left && !v.wreck ? (v.heavy ? 3 : 2) : 0), 0);
+    if (alive + crew >= FORCE[L] || this.cops.filter((k) => k.hp > 0 && k.mode !== 'leave').length + crew >= FORCE[L] + 4) return; this.dispT = 0;
+    const cars = this.cars.filter((v) => !v.wreck && !v.left && !(hunt && !v.drive && Math.hypot(v.x - pv0.x, v.y - pv0.y) > 90)).length, wantCars = [0, 0, 1, 2, 4, 6][L], foot = this.cops.some((k) => k.hp > 0 && !k.car);
     if (cars < wantCars && alive + crew + 2 <= FORCE[L]) { const heavy = L >= 4 && this.cars.filter((v) => v.heavy && !v.wreck).length < L - 3; if (this.sendCar(heavy, this.fast ? 2 : 0)) return; }
+    if (hunt) return;
     if ((L < 3 || !foot || cars >= wantCars) && g0.P.get('heatfoot') !== '0') this.sendFoot();
   }
   sendFoot() {
@@ -253,6 +259,8 @@ export class Heat {
     const g = this.g, R = g.roads, pl = g.player, cand = [];
     for (const e of R.edges) { if (e.out || e.len < 40) continue; e.line.at(e.len / 2, _t); const d = Math.hypot(_t.x - this.lkp.x, _t.y - this.lkp.y); if (near === 2 ? d < 85 || d > 150 : near ? d < 40 || d > 130 : d < 120 || d > 240) continue; if (Math.abs(_t.x) > g.bounds.x - 20 || Math.abs(_t.y) > g.bounds.y - 20) continue; if (!near && this.wall.raycast(pl.x, pl.y, _t.x, _t.y) >= 1) continue; if (this._clr && Math.hypot(_t.x - pl.x, _t.y - pl.y) < this._clr) continue; cand.push(e); }
     let nh = 0; if (this._hid) { const hid = [], vis = []; for (const e of cand) { e.line.at(e.len / 2, _t); (this.wall.raycast(pl.x, pl.y, _t.x, _t.y) < 1 ? hid : vis).push(e); } cand.length = 0; cand.push(...hid, ...vis); nh = hid.length; }
+    if (!this._clr && !this._hid) { let pick = null, n = 0; for (let k = 0; k < 8 && cand.length && n < 4; k++) { const e = cand.splice(Math.floor(this.rnd() * cand.length), 1)[0]; let b = null; for (const dir of e.oneway ? [1] : [1, -1]) { R.lanePos(e, dir, 0, e.len / 2, _t); const p = this.routeTo(_t.x, _t.y, e, dir, e.len / 2); if (p && (!b || p.length < b.length)) b = p; }
+        if (!b || b.length > 90 || g.traffic.cars.some((q) => Math.hypot(q.x - b[0][0], q.y - b[0][1]) < 9) || this.cars.some((q) => Math.hypot(q.x - b[0][0], q.y - b[0][1]) < 14)) continue; n++; if (!pick || b.length < pick.n) pick = { e, n: b.length }; } cand.length = 0; if (pick) cand.push(pick.e); }
     for (let k = 0; k < (this._clr ? 12 : 6) && cand.length; k++) {
       const e = nh > 0 && k < 5 ? cand.splice(Math.floor(this.rnd() * nh--), 1)[0] : cand.splice(nh + Math.floor(this.rnd() * (cand.length - nh)), 1)[0]; let best = null; if (!e) continue;
       for (const dir of e.oneway ? [1] : [1, -1]) { R.lanePos(e, dir, 0, e.len / 2, _t); const p = this.routeTo(_t.x, _t.y, e, dir, e.len / 2); if (p && (!best || p.length < best.p.length)) best = { p, x: p[0][0], y: p[0][1], h: Math.atan2(p[1][1] - p[0][1], p[1][0] - p[0][0]) }; }
@@ -260,13 +268,13 @@ export class Heat {
       const type = heavy ? 'suv' : 'sedan', def = g.kit.cars[type] || g.kit.cars.sedan, v = new Patrol(def, best.x, best.y, best.h, heavy ? 0x0b0d12 : 0x0d0d0f);
       Object.assign(v, { heat: this, patrol: true, heavy, drive: { pts: best.p, i: 1, blockT: 0, off: 0, ghost: 0, t0: this.t, d0: Math.hypot(best.x - this.lkp.x, best.y - this.lkp.y) }, vf: 9, crew: [], doorK: 0, id: ++this.units, sideSgn: this.rnd() < 0.5 ? 1 : -1 });
       g.vehicles.push(v); this.cars.push(v); if (REAL) this.dressCar(v);
-      this.say('dispatch: ' + (heavy ? 'heavy unit' : 'patrol car') + ' ' + v.id + ' from ' + Math.round(v.drive.d0) + ' m, ' + best.p.length + ' points'); return true;
+      this.say('dispatch: ' + (heavy ? 'heavy unit' : 'patrol car') + ' ' + v.id + ' from ' + Math.round(v.drive.d0) + ' m, ' + best.p.length * 7 + ' m by road'); return true;
     }
     return false;
   }
   driveCar(v, dt) {
     const g = this.g, D = v.drive, pl = g.player, plv = pl.vehicle, plSp = plv ? Math.hypot(plv.vx, plv.vy) : 0, G0 = v.goal || this.lkp, dPl = Math.hypot(pl.x - v.x, pl.y - v.y);
-    /* the chase: he is driving and they have him */ const moving = !v.goal && !!plv && ((this.seen && (plSp > 4 || (this.slowT || 0) < 2.5)) || this.guess()), ram = this.seen && plSp > 4 && moving && this.level >= 3 && dPl < 32 && this.los(v.x, v.y, pl.x, pl.y);
+    /* the chase: he is driving and they have him */ const moving = !v.goal && !!plv && ((this.seen && (plSp > 4 || (this.slowT || 0) < 2.5)) || this.guess()), ram = this.seen && plSp > 4 && moving && this.level >= 3 && dPl < 32 && this.t > (D.ramCd || 0) && this.t > (this.ramHold || 0) && this.los(v.x, v.y, pl.x, pl.y);
     if (!v.goal && !D.stop) { D.rT = (D.rT || 0) - dt; const E = D.pts[D.pts.length - 1]; if (D.rT <= 0 && (Math.hypot(E[0] - this.lkp.x, E[1] - this.lkp.y) > 28 || (moving && D.i >= D.pts.length - 1))) { D.rT = 1.3; this.reroute(v); } }
     const P = D.pts;
     while (D.i < P.length - 1 && Math.hypot(P[D.i][0] - v.x, P[D.i][1] - v.y) < 6.5) D.i++;
@@ -278,23 +286,24 @@ export class Heat {
     const dh = wrapPi(Math.atan2(wy - v.y, wx - v.x) - v.h), dScene = Math.hypot(G0.x - v.x, G0.y - v.y), last = D.i >= P.length - 1 && Math.hypot(tx - v.x, ty - v.y) < 9;
     /* speed: quick on the straight, down for the corner ahead, down to nothing behind whatever is in the way */
     let turn = Math.abs(dh); if (!direct && D.i + 2 < P.length) turn = Math.max(turn, Math.abs(wrapPi(Math.atan2(P[D.i + 2][1] - P[D.i + 1][1], P[D.i + 2][0] - P[D.i + 1][0]) - v.h)) * 0.8);
-    let want = lerp(Math.max(this.level >= 3 ? 22 : 18, moving ? Math.min(31, plSp + 2.5) : 0), 6.5, clamp(turn / 0.7, 0, 1)), gap = 99; if (ram) want = Math.max(want, Math.min(24, plSp + 5)); const look = 7 + v.vf * 1.3;
-    const test = (ox, oy, rad) => { const dx = ox - v.x, dy = oy - v.y, f = dx * cs + dy * sn; if (f < 1 || f > look + rad) return; if (Math.abs(-dx * sn + dy * cs) > 1.3 + rad * 0.5) return; gap = Math.min(gap, f - v.def.len / 2 - rad); };
+    let want = lerp(Math.max(this.level >= 3 ? 22 : 18, moving ? Math.min(VCAP[this.level], plSp + 2.5) : 0), 6.5, clamp(turn / 0.7, 0, 1)), gap = 99; if (ram) want = Math.max(want, Math.min(24, plSp + 5)); const look = 7 + v.vf * 1.3;
+    const test = (ox, oy, rad) => { const dx = ox - v.x, dy = oy - v.y, f = dx * cs + dy * sn; if (f < 1 || f > look + rad) return; if (Math.abs(-dx * sn + dy * cs) > (f - v.def.len / 2 - rad < 1 ? 1.95 : 1.3 + rad * 0.5)) return; gap = Math.min(gap, f - v.def.len / 2 - rad); };
     if (D.ghost > 0) D.ghost -= dt; else for (const o of g.traffic.cars) { if (Math.abs(o.x - v.x) > 40 || Math.abs(o.y - v.y) > 40) continue; test(o.x, o.y, o.def.len * 0.42); }
     /* never through another patrol car or a standing car, seen or not; the player's car only when they mean to hit it */ for (const o of g.vehicles) if (o !== v && !(ram && o === plv)) test(o.x, o.y, o.def.len * 0.42); if (!pl.vehicle) test(pl.x, pl.y, 0.6);
-    if (ram && dPl < (v.def.len + plv.def.len) * 0.5 + 0.2 && this.t - (D.hitT || -9) > 0.8) { D.hitT = this.t; v.vf *= 0.55; }
+    if (ram && dPl < (v.def.len + plv.def.len) * 0.5 + 0.2 && this.t - (D.hitT || -9) > 0.8) { D.hitT = this.t; v.vf *= 0.55; D.ramCd = this.t + this.rr(RAMCD[this.level][0], RAMCD[this.level][1]); this.ramHold = this.t + 2.2; this.stats.ramHits = (this.stats.ramHits || 0) + 1; }
     if (gap < 99) want = Math.min(want, Math.sqrt(Math.max(0, 2 * 7 * (gap - 1.5))));
     /* stuck behind something: pull out round it; if that fails too, push through */
-    if (v.vf < 1.2 && gap < 5) { D.blockT += dt; if (D.blockT > 0.9 && !D.off) { D.off = v.sideSgn * 3.3; D.offT = 5; } if (D.blockT > 0.8 && (dPl > 95 || !this.los(pl.x, pl.y, v.x, v.y))) { D.ghost = 2.5; D.blockT = 0; } if (D.blockT > 3.2) { D.blockT = 0; /* through it only where he cannot see it happen; in his sight the crew gets out here and comes on foot */ if (dPl > 95 || !this.los(pl.x, pl.y, v.x, v.y)) D.ghost = 2.5; else if (dScene < 80 && !moving) D.stop = D.jam = true; else D.off = -(D.off || v.sideSgn * 3.3), D.offT = 4; } } else D.blockT = Math.max(0, D.blockT - dt * 0.5);
+    if (D.revT > 0) { /* backing off: not if something is behind */ D.revT -= dt; for (const o of g.vehicles) { if (o === v) continue; const dx = o.x - v.x, dy = o.y - v.y, f = dx * cs + dy * sn; if (f < -1 && f > -(v.def.len / 2 + o.def.len / 2 + 2.2) && Math.abs(-dx * sn + dy * cs) < 2) D.revT = 0; } for (const o of g.traffic.cars) { if (Math.abs(o.x - v.x) > 12 || Math.abs(o.y - v.y) > 12) continue; const dx = o.x - v.x, dy = o.y - v.y, f = dx * cs + dy * sn; if (f < -1 && f > -(v.def.len / 2 + o.def.len / 2 + 2.2) && Math.abs(-dx * sn + dy * cs) < 2) D.revT = 0; } if (D.revT <= 0) { D.off = D.off || v.sideSgn * 3.3; D.offT = 4; } }
+    else if (v.vf < 1.2 && gap < 5) { D.blockT += dt; if (D.blockT > 0.9 && !D.off) { D.off = v.sideSgn * 3.3; D.offT = 5; } if (D.blockT > 1.3 && !D.stop && (moving || dScene >= 80) /* held up near the scene of a man on foot: the crew gets out there, as before */ && this.t - (D.revAt || -9) > 3 && !(dPl > 95 || !this.los(pl.x, pl.y, v.x, v.y))) { D.revAt = this.t; D.revT = 1.25; D.revN = (D.revN || 0) + 1; D.off = (D.revN % 2 ? 1 : -1) * v.sideSgn * 3.3; D.offT = 6; D.blockT = 0; } if (D.blockT > 0.8 && (dPl > 95 || !this.los(pl.x, pl.y, v.x, v.y))) { D.ghost = 2.5; D.blockT = 0; } if (D.blockT > 3.2) { D.blockT = 0; /* through it only where he cannot see it happen; in his sight the crew gets out here and comes on foot */ if (dPl > 95 || !this.los(pl.x, pl.y, v.x, v.y)) D.ghost = 2.5; else if (dScene < 80 && !moving) D.stop = D.jam = true; else D.off = -(D.off || v.sideSgn * 3.3), D.offT = 4; } } else D.blockT = Math.max(0, D.blockT - dt * 0.5);
     if (D.off) { D.offT -= dt; if (D.offT <= 0) D.off = 0; }
     /* at the scene: brake, and swing the nose across the lane */
     const arrive = moving || (!v.goal && plv && plSp > 6 && this.unseenT < 20) ? false : (dScene < this.stopD && this.los(v.x, v.y, G0.x, G0.y)) || dScene < Math.min(16, this.stopD) || last
       /* a car coming up on one that has already stopped at the scene stops a length short of it, beside it, not behind or in it */
       || (dScene < this.stopD + 14 && this.cars.some((o) => o !== v && !o.drive && o.out && !o.wreck && Math.hypot(o.x - v.x, o.y - v.y) < 10.5 && (o.x - v.x) * cs + (o.y - v.y) * sn > 0));
     if (arrive && !D.stop) { D.stop = true; this.stats.arrive.push(+(this.t - D.t0).toFixed(1)); this.say((v.heavy ? 'heavy unit ' : 'car ') + v.id + ' on scene after ' + (this.t - D.t0).toFixed(1) + ' s (' + Math.round(D.d0) + ' m out)'); }
-    if (D.stop) want = 0;
-    const acc = clamp(want - v.vf, -(D.stop ? 13 : 9) * dt, 4.2 * dt); v.vf = Math.max(0, v.vf + acc); v.braking = acc < -0.05 || v.vf < 0.3;
-    const maxYaw = Math.min(v.vf / 4.6, 7.5 / Math.max(v.vf, 1)); let yaw = clamp(dh * 3.2, -maxYaw, maxYaw); if (D.stop && v.vf > 0.6) yaw = v.sideSgn * Math.min(1.7, 0.5 + v.vf / 3.5) * this.swingK; /* the nose swings across the lane as it brakes */
+    if (D.stop) want = 0; const rev = D.revT > 0 && !D.stop; if (rev) want = -3.4;
+    const acc = clamp(want - v.vf, -(D.stop ? 13 : 9) * dt, 4.2 * dt); v.vf = Math.max(rev ? -3.4 : 0, v.vf + acc); v.braking = acc < -0.05 || v.vf < 0.3;
+    const maxYaw = Math.max(0, Math.min(v.vf / 4.6, 7.5 / Math.max(v.vf, 1))); let yaw = clamp(dh * 3.2, -maxYaw, maxYaw); if (v.vf < 0) yaw = Math.sign(D.off || v.sideSgn) * 0.32 * Math.min(1, -v.vf / 2); if (D.stop && v.vf > 0.6) yaw = v.sideSgn * Math.min(1.7, 0.5 + v.vf / 3.5) * this.swingK; /* the nose swings across the lane as it brakes */
     v.yawV = yaw; v.h = wrapPi(v.h + yaw * dt); v.steer = clamp(Math.atan(yaw * v.def.wheelbase / Math.max(v.vf, 2)), -0.6, 0.6);
     const x0 = v.x, y0 = v.y, h0 = v.h - yaw * dt;
     v.vx = Math.cos(v.h) * v.vf; v.vy = Math.sin(v.h) * v.vf; v.x += v.vx * dt; v.y += v.vy * dt; v.spin += (v.vf * dt) / v.def.radius;
@@ -329,8 +338,9 @@ export class Heat {
     if (v.wreck) { v.drive = null; return; }
     if (v.away) { const d = Math.hypot(v.x - pl.x, v.y - pl.y); if (pl.vehicle === v) { v.away = false; v.goal = null; v.drive = null; v.stolen = true; return; } if (!v.drive || d > 170 || (d > 55 && !this.los(pl.x, pl.y, v.x, v.y)) || this.t - v.drive.t0 > 70) { v.left = true; v.drive = null; const j = g.vehicles.indexOf(v); if (j >= 0) g.vehicles.splice(j, 1); } return; }
     if (pl.vehicle === v) { v.stolen = true; v.drive = null; return; }
+    if (v.drive) v.drive.dMin = Math.min(v.drive.dMin ?? 1e9, Math.hypot(v.x - pl.x, v.y - pl.y));
     /* left far behind by a driver: the car and its crew are gone from the street (new ones come from ahead of him) */
-    if (this.level > 0 && v.drive && !v.goal && !v.away && !v.stolen && pl.vehicle && Math.hypot(pl.vehicle.vx, pl.vehicle.vy) > 6 && this.t - v.drive.t0 > 4 && Math.hypot(v.x - pl.x, v.y - pl.y) > 170 && !this.los(pl.x, pl.y, v.x, v.y)) { v.left = true; v.drive = null; const j = g.vehicles.indexOf(v); if (j >= 0) g.vehicles.splice(j, 1); this.say('unit ' + v.id + ' outrun'); return; }
+    if (this.level > 0 && v.drive && !v.goal && !v.away && !v.stolen && pl.vehicle && Math.hypot(pl.vehicle.vx, pl.vehicle.vy) > 6 && this.t - v.drive.t0 > 4 && Math.hypot(v.x - pl.x, v.y - pl.y) > 170 && (Math.hypot(v.x - pl.x, v.y - pl.y) > (v.drive.dMin ?? 1e9) + 40 || (this.t - v.drive.t0 > 20 && Math.hypot(v.x - pl.x, v.y - pl.y) > 220)) && !this.los(pl.x, pl.y, v.x, v.y)) { v.left = true; v.drive = null; const j = g.vehicles.indexOf(v); if (j >= 0) g.vehicles.splice(j, 1); this.say('unit ' + v.id + ' outrun'); return; }
     if (this.level > 0 && !v.drive && !v.stolen) { const d = Math.hypot(v.x - pl.x, v.y - pl.y); if (d > 260 || (d > (pl.vehicle ? 110 : 150) && Math.hypot(v.x - this.lkp.x, v.y - this.lkp.y) > (pl.vehicle ? 90 : 150) && !this.los(pl.x, pl.y, v.x, v.y))) { for (const k of v.crew) if (k.hp > 0) { k.hp = 0; k.gone = true; this.release(k); } this.cops = this.cops.filter((k) => !k.gone); v.left = true; const j = g.vehicles.indexOf(v); if (j >= 0) g.vehicles.splice(j, 1); this.say('unit ' + v.id + ' left behind'); return; } }
     if (this.level === 0 && !v.drive) { v.leaveT = (v.leaveT || 0) + dt; const crew = v.crew.filter((k) => k.hp > 0), d = Math.hypot(v.x - pl.x, v.y - pl.y);
       /* the crew is back (or gone): shut the doors, and when nobody is looking the car is gone */
@@ -393,7 +403,7 @@ export class Heat {
     if (k.mode === 'move' && k.cover && k.post && this.unseenT < 6 && Math.hypot(k.post.x - k.x, k.post.y - k.y) > 1.2) return;
     if (!k.see && d > 12) { if (k.mode !== 'move' || !k.post || Math.hypot(k.post.x - tx, k.post.y - ty) > 14) { k.post = { x: tx + Math.cos(ang + this.rr(-0.5, 0.5)) * 8, y: ty + Math.sin(ang + this.rr(-0.5, 0.5)) * 8 }; k.cover = null; k.mode = 'move'; k.path = null; } return; }
     /* one step of heat and no challenge made yet: close in to shouting distance first, at a run, whatever he holds (they used to stop behind the first car, as far off as 44 m, and wait there for good) */
-    if (L === 1 && !this.chal && k.see && d > 21) { if (k.mode !== 'move' || k.cover || !k.post || Math.hypot(k.post.x - tx, k.post.y - ty) > 20) this.go(k, null, tx + Math.cos(ang) * (15 + 3 * (k.n % 2)), ty + Math.sin(ang) * (15 + 3 * (k.n % 2))); return; }
+    if (L === 1 && !this.chal && k.see && d > 21 && this.t - (this.firedSeenT ?? -99) > 8) { if (k.mode !== 'move' || k.cover || !k.post || Math.hypot(k.post.x - tx, k.post.y - ty) > 20) this.go(k, null, tx + Math.cos(ang) * (15 + 3 * (k.n % 2)), ty + Math.sin(ang) * (15 + 3 * (k.n % 2))); return; }
     /* in the fight: from cover whenever there is some; close up by bounds from one car to the next; one of a pair works round the side */
     const hot = this.hot(), far = d > G.band[1] + (L === 1 ? -4 : 0), near = d < 5, mate = this.cops.find((q) => q !== k && q.hp > 0 && q.car === k.car && q.mode === 'move'), at = k.post ? Math.hypot(k.post.x - k.x, k.post.y - k.y) : 0;
     if (k.mode === 'move' && k.post && at < 1.2) k.mode = 'hold';
@@ -433,7 +443,7 @@ export class Heat {
       if (cv) this.go(k, cv, px, py); }
     /* the challenge, and the arrest of someone unarmed who stands still for it */
     if (this.level <= 2 && this.level > 0 && k.see && (k.dist < 26 || k.onT > 4) && !this.chal) { this.chal = { t0: this.t }; this.shout(c.slot !== 'unarmed' ? 'POLICE! Drop the weapon! Drop it NOW!' : 'POLICE! Stay where you are! Hands!', 2); }
-    if (this.level <= 2 && this.level > 0 && this.chal && !this.dead && (pl.vehicle ? this.t - (this.violT ?? -99) > 25 : c.slot === 'unarmed') && k.see && this.t - this.lastShotT > 5) { if (pl.vehicle ? k.dist < 3.6 && Math.hypot(pl.vehicle.vx, pl.vehicle.vy) < 1 : k.dist < 2.6 && Math.min(pl.speed, this.realSp ?? 9) < 0.6) { this.arrest(); return; } if (k.dist > 2 && (k.mode === 'hold' || !k.post || Math.hypot(k.post.x - pl.x, k.post.y - pl.y) > 1.5)) { k.post = { x: pl.x, y: pl.y }; k.cover = null; k.mode = 'move'; k.path = null; } }
+    if (this.level <= 2 && this.level > 0 && this.chal && !this.dead && (pl.vehicle ? this.t - (this.violT ?? -99) > 25 : c.slot === 'unarmed') && k.see && this.t - this.lastShotT > 5) { if (pl.vehicle ? k.dist < 3.6 && (this.stillT || 0) > 1.5 : k.dist < 2.6 && Math.min(pl.speed, this.realSp ?? 9) < 0.6) { this.arrest(); return; } if (k.dist > 2 && (k.mode === 'hold' || !k.post || Math.hypot(k.post.x - pl.x, k.post.y - pl.y) > 1.5)) { k.post = { x: pl.x, y: pl.y }; k.cover = null; k.mode = 'move'; k.path = null; } }
     if (k.mode === 'move' && !k.cover && k.see && k.dist < 48 && this.t - this.lastShotT < 1.2 && this.t > (k.holdT || 0) + 3 && this.hot() && this.canFire(k)
       /* not a man just out of a car that he can be behind in two seconds: he keeps going round it (rounds 10-12: 'kneels in the open in front of his own car, on the player's side') */
       && !(k.car && !k.car.wreck && this.t - (k.outT ?? -99) < 5 && Math.hypot(k.x - k.car.x, k.y - k.car.y) < 5.5)) { k.mode = 'hold'; k.post = { x: k.x, y: k.y }; k.holdT = this.t + this.rr(1.8, 2.8); k.fireCd = Math.min(k.fireCd, this.rr(0.2, 0.4)); k.aim = Math.max(k.aim, 0.5); }

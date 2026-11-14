@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { clamp, lerp, wrapPi } from '../geo.js';
 import { EntryRig } from './rig.js';
 import * as DS from './doorsplit.js';
+import { carBox, carsNear, depth, gap, pushOut, planBest, say, WIDE, TIGHT, FOOT, BODY_R } from './walkround.js';      /* board/car 4: never through a car */
 const { splitDoor, DoorField } = DS, splitGen = DS.splitGen || null;      // splitGen: only in the newer doorsplit.js; without it the five body-made doors are simply not cut
 
 const ss = (u, a, b) => { u = clamp((u - a) / (b - a), 0, 1); return u * u * (3 - 2 * u); };
@@ -114,6 +115,7 @@ function entryPoseRaw(u, P, S, R, gy, out, doorOpen = -1) {
   }
   wheelHand(P, S, 1, hR.p, hR.f, hR.n); hR.w = ss(u, 1.05, 1.8); hR.curl = 0.8 * ss(u, 1.75, 1.95);      // the right hand takes the rim early: he lowers himself on it
   if (!tall && P.roofY && u > 0.98 && u < 2.34) { hL.p.set(S.x + 0.20, P.roofY + 0.035, P.roofZ - 0.05); hL.f.set(0.15, 0.05, 1); hL.n.set(0, -1, 0.1); hL.w = ss(u, 0.98, 1.45) * (1 - ss(u, 2.06, 2.32)); hL.curl = 0.45; }      // the left hand on the roof rail over the opening while he drops in
+  limZ(o);      /* board/car 4: a car or wall close beside the door: he keeps inside the room there is */
   // eyes: the handle, then down into the cabin, then the road
   const lk = (o.look ||= V3()); const kA = ss(u, 1.0, 1.5), kB = ss(u, 2.2, 2.8);
   lk.set(P.xr + 0.3 - hip.x, hy + 0.1 - (hip.y + R.headUp), zs - hip.z).normalize().lerp(_v.set(S.x + 0.5 - hip.x, S.y + 0.1 - (hip.y + R.headUp * 0.8), S.z - hip.z).normalize(), kA).lerp(_v.set(1, -0.05, 0), kB).lerp(_v.set(0.55, -0.15, -0.85), 0.8 * bump(u, 2.3, 2.75, 3.3)).normalize();
@@ -121,6 +123,10 @@ function entryPoseRaw(u, P, S, R, gy, out, doorOpen = -1) {
   return o;
 }
 const _p0 = V3(), _pb = V3(), _l0 = V3(), _r0 = V3(), _l1 = V3(), _l3 = V3(), _r2 = V3();
+function limZ(o) { const z = o.zLim; if (z === undefined) return; if (o.hip.z < z) o.hip.z = z; if (o.fL.z < z - 0.06) o.fL.z = z - 0.06; if (o.fR.z < z - 0.06) o.fR.z = z - 0.06; }
+// board/car 4: the same pose on the passenger's side (getting out there when the driver's side is shut in). No door is drawn moving for it.
+function mirrorPose(o) { o.hip.z = -o.hip.z; _mv.copy(o.fL); o.fL.set(o.fR.x, o.fR.y, -o.fR.z); o.fR.set(_mv.x, _mv.y, -_mv.z); o.yaw = -o.yaw; const a = o.yawL; o.yawL = -o.yawR; o.yawR = -a; const p = o.pitL; o.pitL = o.pitR; o.pitR = p; o.roll = -o.roll; o.hL.w = 0; o.hR.w = 0; o.look.z = -o.look.z; o.door = 0; return o; }
+const _mv = V3();
 // a hand on the steering wheel's rim: side -1 left (about ten to), +1 right (ten past); p = wrist, f = wrist-to-knuckles, n = the rig's hand normal
 function wheelHand(P, S, side, p, f, n) {
   if (!P.wheelC) { p.set(S.x + 0.42, S.y + 0.42, S.z + side * 0.17); f.set(0.6, 0.75, 0); n.set(0, 0, 1); return; }
@@ -169,7 +175,7 @@ function playerJackPose(pose, t, npcRig, cmInv, P, S) {
   if (grab > 0.01 && npcRig) {
     npcRig.pos('upper_arm_L', _v).applyMatrix4(cmInv); _v.y -= 0.12; pose.hL.p.copy(_v); pose.hL.w = grab; pose.hL.curl = 0.8 * grab; pose.hL.f.set(0.3, -0.2, 0.9); pose.hL.n.set(0.9, 0, -0.3);
     npcRig.pos('chest2', _v).applyMatrix4(cmInv); _v.z -= 0.14; _v.x -= 0.05; pose.hR.p.copy(_v); pose.hR.w = grab; pose.hR.curl = 0.8 * grab; pose.hR.f.set(0.2, 0.1, 0.95); pose.hR.n.set(-0.9, 0, 0.2); }
-  return pose;
+  limZ(pose); return pose;
 }
 
 // board/car 2: the inside face of a door cut from the game's own body (doors.json 'gen' kinds): a trim card 6 cm inside the skin, following its lean,
@@ -269,7 +275,7 @@ const _mr = new THREE.Matrix4(), _mt = new THREE.Matrix4(), _c = new THREE.Color
 
 // ---------------------------------------------------------------------------------------------------------------- the feature
 class Entry {
-  constructor(game) { this.g = game; this.P = {}; this.fig = {}; this.D = null; this.cars = null; this.cam = { k: 0, on: false }; this.npc = null; this.speed = +(game.P.get('espeed') || 1.35); this.stats = { enters: 0, exits: 0, jacks: 0, cancels: 0 }; this.last = null; }
+  constructor(game) { this.g = game; this.P = {}; this.fig = {}; this.D = null; this.cars = null; this.cam = { k: 0, on: false }; this.npc = null; this.speed = +(game.P.get('espeed') || 1.35); this.stats = { enters: 0, exits: 0, jacks: 0, cancels: 0, noway: 0, noroom: 0 }; this.last = null; this.on4 = game.P.get('eround') !== '0'; }      /* ?eround=0: the walk straight to the door as before board/car 4 */
   async init() {
     const g = this.g; let bin = null;
     try { const [j, b] = await Promise.all([fetch('assets/entry/doors.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)), fetch('assets/entry/doors.bin', { cache: 'no-store' }).then((r) => (r.ok ? r.arrayBuffer() : null))]); this.D = j; if (b) bin = new Int16Array(b); } catch (e) { console.log('[entry] door data not loaded: ' + (e && e.message)); }
@@ -309,7 +315,7 @@ class Entry {
   params(v) { return this.P[v.type] || (this.P[v.type] = carParams(v.type, this.D, v.def || {}, null)); }
   seat(v, name = 'player') { const P = this.params(v), st = this.seatLane(v); return seatFor(P, st, this.g.P.get('eseat') === '0' ? null : this.measure(name)); }
   seatLane(v) { return (this.g.kit.seats && this.g.kit.seats[v.type]) || [-0.05, 0.37, 0.1]; }
-  ground(v) { const g = this.g, c = Math.cos(v.h), s = Math.sin(v.h), base = (v.z || 0) + (this.cars.sv() ? ((v._vv && v._vv.ride) || 0) - this.cars.sink : 0); return (x, z) => (g.statics.onSidewalk(v.x + c * x + s * z, v.y + s * x - c * z) ? 0.15 : 0) - base; }
+  ground(v, far) { const g = this.g, c = Math.cos(v.h), s = Math.sin(v.h), base = (v.z || 0) + (this.cars.sv() ? ((v._vv && v._vv.ride) || 0) - this.cars.sink : 0), m = far ? -1 : 1; return (x, z) => (g.statics.onSidewalk(v.x + c * x + s * z * m, v.y + s * x - c * z * m) ? 0.15 : 0) - base; }
   // car frame (x ahead, z right) to map metres
   toMap(v, x, z, o) { const c = Math.cos(v.h), s = Math.sin(v.h); o.x = v.x + c * x + s * z; o.y = v.y + s * x - c * z; return o; }
 
@@ -319,19 +325,22 @@ class Entry {
     { const near0 = g.nearestCar.bind(g); g.nearestCar = function (d) { const b = g.player.busy; return b && b.entry ? null : near0(d); }; }      // no 'F Get in' prompt while he is getting in or out
     g.tryEnter = function () {
       if (g.player.busy) return false; const n = g.nearestCar(), driver = n && n.kind === 'traffic' ? n.c : null, vis = g.player.vis;
+      let way = null; if (n && E.on4 && vis.acts && vis.acts.getin && !g.P.has('noanim')) { way = E.wayIn(n.v || n.s || n.c); if (!way) { E.stats.noway++; say(E.sideShut ? 'No room at the driver\u2019s door' : 'No way round to the driver\u2019s door'); return false; } }      /* board/car 4 */
       const door0 = g.sound.door, anim0 = g.playerAnim; g.sound.door = () => {}; g.playerAnim = () => {}; let r; try { r = tryEnter0(); } finally { g.sound.door = door0; g.playerAnim = anim0; }
       const b = g.player.busy; if (!r || !b || b.kind !== 'in' || !b.v) { if (b && b.kind === 'in' && !b.entry) g.playerAnim('getin'); else if (r && g.player.vehicle) g.playerAnim('drive'); return r; }       // no animated figure (or ?noanim): the game's own instant entry stands
-      E.begin(b.v, 'in', driver); return r;
+      E.begin(b.v, 'in', driver, way); return r;
     };
     g.exitVehicle = function () {
-      const v = g.player.vehicle, door0 = g.sound.door, anim0 = g.playerAnim; g.sound.door = () => {}; g.playerAnim = () => {}; try { exit0(); } finally { g.sound.door = door0; g.playerAnim = anim0; }
-      const b = g.player.busy; if (!b || b.kind !== 'out') { if (b && !b.entry) g.playerAnim('getout'); return; } E.begin(v, 'out', null);
+      const v = g.player.vehicle, door0 = g.sound.door, anim0 = g.playerAnim; let side = 'door'; if (v && E.on4 && g.player.vis.acts && g.player.vis.acts.getout && !g.P.has('noanim')) { side = E.exitSide(v); if (!side) { E.stats.noroom++; say('No room to get out here'); return; } }      /* board/car 4: out on a side with room, or not at all */
+      g.sound.door = () => {}; g.playerAnim = () => {}; try { exit0(); } finally { g.sound.door = door0; g.playerAnim = anim0; }
+      const b = g.player.busy; if (!b || b.kind !== 'out') { if (b && !b.entry) g.playerAnim('getout'); return; } E.begin(v, 'out', null, null, side === 'far');
     };
     g.stepBusy = function (dt) { const b = g.player.busy; if (b && b.entry) E.step(dt); else stepBusy0(dt); };
     g.updateCamera = function (dt) { if (E.camStep(dt)) { E.camHand(dt, true); return; } const r = cam0(dt); E.camHand(dt, false); return r; };
     g.syncVisuals = function (dt) { sync0(dt); E.sync(dt); };
     g.seatOf = function (v, name) { const P = E.params(v); if (!P.eye || g.P.get('eseat') === '0') return seat0(v, name); const f = E.measure(name); if (!f) return seat0(v, name); const S = seatFor(P, null, f); return [S.x - f.hipsX, -S.z, S.y - f.hipsY]; };
     g.readInput = function () { read0(); if (E.script) E.runScript(1 / 60); };
+    if (E.on4 && g.traffic && g.traffic.pushPlayer && g.P.get('efoot') !== '0') { const pp0 = g.traffic.pushPlayer.bind(g.traffic); g.traffic.pushPlayer = function (pl) { pp0(pl); E.pushFoot(pl); }; }      /* board/car 4: on foot, the game calls this each step after he has moved */
     const world = g.world, render0 = world.render.bind(world);
     world.render = function (...a) {
       const c = E.cars.cur; if (!c) { const wk = (E.cars.warmK || (E.cars.warmQ && E.cars.warmQ.length)) && !g.player.busy && g.P.get('ewarm') !== '0' ? E.cars.warmOne(world.camera) : null; if (!wk) return render0(...a); try { return render0(...a); } finally { wk.group.visible = false; } }
@@ -341,13 +350,14 @@ class Entry {
   }
 
   // ------------------------------------------------------------------ state
-  begin(v, kind, driver) {
+  begin(v, kind, driver, way, far) {
     const g = this.g, pl = g.player, vis = pl.vis, P = this.params(v);
     const b = (pl.busy = { entry: true, kind, v, t: 0, dur: 99, z: 0, x: pl.x, y: pl.y, h: pl.h, phase: kind === 'in' ? 'walk' : 'act', u: kind === 'in' ? 0 : T_IN, w: kind === 'in' ? 0 : 1, moved: false, still: false, path: null, jack: null });
     if (kind === 'in') { b.z = g.statics.onSidewalk(pl.x, pl.y) ? 0.15 : 0; this.handOver(); }      /* board/car: on the pavement he stays on it; the camera eases from whatever view was up (the guns lane's shoulder view cut to the game's in one frame: 0.55 m) */
-    this.last = v; b.nodoor = !this.cars.kind(v.type); this.me.pose.doorMax = b.doorMax = this.doorRoom(v, P);
+    this.last = v; b.far = !!far; b.nodoor = !this.cars.kind(v.type) || b.far; this.me.pose.doorMax = b.doorMax = this.doorRoom(v, P);
+    this.me.pose.zLim = b.zLim = this.on4 ? this.sideRoom(v, P, b.far) : undefined;
     if (kind === 'in') {
-      b.path = this.route(v, P); b.wp = 0;
+      if (!this.on4) b.path = this.route(v, P); else { const w = way || this.wayIn(v); b.path = w ? w.pts.slice(1) : [this.toMap(v, P.xr, P.zs - 0.41, {})]; b.pp = { t: 0, n: 0, stall: 0, best: 1e9, wait: 0, dirty: false, own: Math.max(0.03, gap(carBox(v), b.path[b.path.length - 1].x, b.path[b.path.length - 1].y) - 0.08) }; } b.wp = 0;
       if (!driver && g.P.has('edriver')) driver = { id: +g.P.get('edriver') || 1 };      // QA: someone sits in the parked car too
       if (driver && this.g.kit.person) this.seatDriver(v, driver, b); else if (this.npc && this.npc.v === v && this.npc.state === 'seated') b.jack = { t: 0 };
     } else { this.cam.k = 1; this.cam.on = true; if (vis.acts.drive) { g.playerAnim('drive'); } }
@@ -369,6 +379,50 @@ class Entry {
     }
     pts.push([tx, tz]);
     return pts.map((p) => this.toMap(v, p[0], p[1], {}));
+  }
+  // ---- board/car 4: never through a car. Matt, Nov 13: "the guy literally walked through it to get to the door... He should have walked around it."
+  // The way on foot from where he stands to the spot by the driver's door of `o` (a parked slot, a car in traffic or one of the player's): outside
+  // this car's body and every other car's, clear of walls; between two bumpers if a body fits, round the neighbour if not. null = no way.
+  wayIn(o) {
+    const g = this.g, pl = g.player, P = this.params(o), T = this.toMap(o, P.xr, P.zs - 0.41, {}), boxes = carsNear(g, o.x, o.y, 17, (this.poolW ||= { boxes: [], pk: [] }));
+    let own = boxes.find((B) => B.o === o); if (!own) boxes.push((own = carBox(o)));
+    const ownTight = Math.max(0.05, Math.min(TIGHT, gap(own, T.x, T.y) - 0.06)), st = g.statics, off = []; this.sideShut = false;
+    if (o.circles) for (const c of o.circles) if (c.on) { c.on = false; off.push(c); }      // this car's own collision circles reach past the spot by its door on some kinds
+    try {
+      const mk = (pad) => (x, y) => { const near = (x - T.x) * (x - T.x) + (y - T.y) * (y - T.y) < 0.36;
+        for (let i = 0; i < boxes.length; i++) { const B = boxes[i]; if (depth(B, x, y, near ? Math.min(pad, B === own ? ownTight : TIGHT) : pad) > 0) return true; }
+        return st.resolve(x, y, BODY_R, _o2, near) > 0; };      // walls everywhere; posts and trunks too, except on the last step to the door
+      if (mk(TIGHT)(T.x, T.y)) { this.sideShut = true; return null; }
+      const w = planBest(pl.x, pl.y, T.x, T.y, mk); if (w) { this.stats.planMs = Math.max(this.stats.planMs || 0, +w.ms.toFixed(2)); this.stats.plans = (this.stats.plans || 0) + 1; if (w.len > 34) return null; w.T = T; }
+      return w;
+    } finally { for (const c of off) c.on = true; }
+  }
+  // is the rest of his way still clear of every car as they stand now (one may have driven up)?
+  wayClear(b, boxes) {
+    const pl = this.g.player; let ax = pl.x, ay = pl.y;
+    for (let i = b.wp; i < b.path.length; i++) { const q = b.path[i], d = Math.hypot(q.x - ax, q.y - ay), n = Math.ceil(d / 0.12);
+      for (let k = 1; k <= n; k++) { const x = ax + (q.x - ax) * k / n, y = ay + (q.y - ay) * k / n; for (let j = 0; j < boxes.length; j++) if (depth(boxes[j], x, y, 0.16) > 0 && !(boxes[j].o === b.v && i === b.path.length - 1)) return false; }
+      ax = q.x; ay = q.y; }
+    return true;
+  }
+  // how far out from the door (car frame z, the driver's side is negative) his hips may go: a car or wall close beside it bounds the step back
+  sideRoom(v, P, far) {
+    const g = this.g, m = far ? -1 : 1, boxes = carsNear(g, v.x, v.y, 15, (this.poolS ||= { boxes: [], pk: [] }), v), xs = [P.xr - 0.45, P.xr, (P.xr + P.hinge.x) / 2, P.hinge.x - 0.15];
+    for (let d = 0.2; d <= 1.3; d += 0.05) for (const x of xs) { this.toMap(v, x, (P.zs - d) * m, _o2); const mx = _o2.x, my = _o2.y; let hit = g.statics.resolve(mx, my, TIGHT, _o2, true) > 0; for (let i = 0; i < boxes.length && !hit; i++) if (depth(boxes[i], mx, my, TIGHT) > 0) hit = true; if (hit) return P.zs - (d - 0.05); }
+    return undefined;
+  }
+  // which side he can get out on: 'door' (the driver's), 'far' (the passenger's, when the driver's side is shut in), or null (neither)
+  exitSide(v) {
+    const g = this.g, P = this.params(v), boxes = carsNear(g, v.x, v.y, 15, (this.poolS ||= { boxes: [], pk: [] }), v);
+    const ok = (m) => { this.toMap(v, P.xr, (P.zs - 0.41) * m, _o2); const mx = _o2.x, my = _o2.y; if (g.statics.resolve(mx, my, TIGHT, _o2, true) > 0 || g.statics.raycast(v.x, v.y, mx, my) < 1) return false;
+      for (const B of boxes) if (!(Math.abs(B.o.v || 0) > 1) && depth(B, mx, my, TIGHT) > 0) return false; return true; };
+    return ok(1) ? 'door' : ok(-1) ? 'far' : null;
+  }
+  // ordinary walking: he is put back outside any car body he has stepped into (parked cars had two round blockers with a waist between them, a car he
+  // had used one round blocker short of its ends) and outside the helicopter
+  pushFoot(pl) {
+    const g = this.g; if (g.heli && g.heli.hb && g.heli.hb.round && g.heli.hb.pushFoot) g.heli.hb.pushFoot(pl); if (pl.alt > 1) return; const boxes = carsNear(g, pl.x, pl.y, 8.5, (this.poolF ||= { boxes: [], pk: [] }));
+    if (boxes.length && pushOut(boxes, pl, FOOT)) { this.stats.pushes = (this.stats.pushes || 0) + 1; g.statics.resolve(pl.x, pl.y, 0.34, _o2, true); if (!boxes.some((B) => depth(B, _o2.x, _o2.y, 0) > 0)) { pl.x = _o2.x; pl.y = _o2.y; } }
   }
   // how far this car's door can swing (0..1 of OPEN) before its edge meets a wall or a car standing beside it
   doorRoom(v, P) {
@@ -392,7 +446,7 @@ class Entry {
     if (this.npc) { g.world.scene.remove(this.npc.vis.object); this.npc = null; }
     g.world.scene.add(vis.object); const pup = new Puppet(vis, who); if (!pup.rig) { g.world.scene.remove(vis.object); return; }
     if (vis.acts.drive) { vis.acts.drive.play(); vis.cur = 'drive'; }
-    this.npc = { vis, pup, who, v, u: T_RAW, state: 'seated', t: 0, x: 0, y: 0, h: 0 }; b.jack = { t: 0 };
+    this.npc = { vis, pup, who, v, u: T_RAW, state: 'seated', t: 0, x: 0, y: 0, h: 0 }; b.jack = { t: 0 }; pup.pose.zLim = b.zLim;
   }
   cancel() { const g = this.g, pl = g.player; pl.busy = null; this.me.release(); this.stats.cancels++; if (this.npc && this.npc.state === 'seated') { /* the driver stays in the car, which is now a loose vehicle: leave them seated */ } }
 
@@ -402,6 +456,7 @@ class Entry {
       const moving = Math.hypot(I.mx, I.my) > 0.3; if (!moving) b.still = true; else if (b.still && !g.demo) { this.cancel(); return; }
       if (b.t > 12) { this.cancel(); return; }
       b.z += ((g.statics.onSidewalk(pl.x, pl.y) ? 0.15 : 0) - b.z) * Math.min(1, dt * 9);      // board/car: kerb up and down on the way round
+      if (this.on4) { this.walk4(dt, b, v, pl, vis); return; }
       const wp = b.path[b.wp], dx = wp.x - pl.x, dy = wp.y - pl.y, d = Math.hypot(dx, dy), last = b.wp === b.path.length - 1;
       let rest = d; for (let i = b.wp; i < b.path.length - 1; i++) rest += Math.hypot(b.path[i + 1].x - b.path[i].x, b.path[i + 1].y - b.path[i].y);
       const sp = Math.min(rest > 4.5 ? 3.4 : 1.9, Math.max(0.7, rest * 3.2)), stepLen = sp * dt;
@@ -412,6 +467,7 @@ class Entry {
       return;
     }
     pl.speed = 0; b.w = Math.min(1, b.w + dt / 0.28);
+    if (this.on4 && this.npc && this.npc.pup) this.npc.pup.pose.zLim = b.zLim;
     if (b.kind === 'in') {
       const j = b.jack, n = this.npc;
       if (j && n && n.state !== 'gone' && b.u >= 1.0 && j.t < 1) { j.t += dt / 1.7; this.stepJack(dt, b, j, n); if (j.t >= 1) { this.stats.jacks++; } }      // door open: the driver comes out before the player goes on
@@ -422,10 +478,33 @@ class Entry {
       if (b.u <= 0) { b.u = 0; this.finish(b); return; }
     }
     // the game's idea of where the player is follows the hips
-    const S = this.seat(v), pose = entryPose(b.u, P, S, this.sizes(), this.ground(v), this.me.pose); this.toMap(v, pose.hip.x, pose.hip.z, _o); pl.x = lerp(pl.x, _o.x, b.w); pl.y = lerp(pl.y, _o.y, b.w); pl.h = b.w < 1 && b.h0 !== undefined && b.kind === 'in' ? b.h0 + wrapPi(v.h + pose.yaw - b.h0) * b.w : v.h + pose.yaw; b.z = 0;
+    const S = this.seat(v), pose = entryPose(b.u, P, S, this.sizes(), this.ground(v, b.far), this.me.pose); if (b.far) mirrorPose(pose); this.toMap(v, pose.hip.x, pose.hip.z, _o); pl.x = lerp(pl.x, _o.x, b.w); pl.y = lerp(pl.y, _o.y, b.w); pl.h = b.w < 1 && b.h0 !== undefined && b.kind === 'in' ? b.h0 + wrapPi(v.h + pose.yaw - b.h0) * b.w : v.h + pose.yaw; b.z = 0;
     // the car takes the weight: it leans to the door side as he sits (and bobs once), and shivers when the door slams
     { const wu = warp(b.u), tau = Math.max(0, wu - 1.85), sl = Math.max(0, wu - 3.34), want = -0.020 * (ss(wu, 1.62, 1.9) + 0.55 * Math.exp(-5 * tau) * Math.sin(17 * tau) * (tau > 0 ? 1 : 0)) + 0.004 * Math.exp(-9 * sl) * Math.sin(40 * sl) * (sl > 0 && b.kind === 'in' ? 1 : 0); v.roll += (want * (v.def.len > 5.5 ? 0.5 : 1) - v.roll) * 0.6; }
-    this.cars.set(v, pose.door * OPEN); if (pose.door <= 0.0005 && (b.kind === 'out' ? b.u < 0.28 : b.u > 2.68)) this.cars.clear();
+    if (b.far) this.cars.clear(); else { this.cars.set(v, pose.door * OPEN); if (pose.door <= 0.0005 && (b.kind === 'out' ? b.u < 0.28 : b.u > 2.68)) this.cars.clear(); }
+  }
+  // board/car 4: along the planned way, straight from mark to mark (the marks were tested against every body; steering by the heading alone cut corners).
+  // Each step he is also kept out of walls and out of every car as it stands this frame; if a car has driven into the way, a new way; if there is none, he stops.
+  walk4(dt, b, v, pl, vis) {
+    const g = this.g, pp = b.pp, near = () => { const a = carsNear(g, pl.x, pl.y, 9.5, (this.poolF ||= { boxes: [], pk: [] })); for (const B of a) if (B.o === v) B.pad = pp.own; return a; };      // the spot by the door is nearer this car's side than the margin kept from the others
+    let boxes = near(); pp.t += dt;
+    if (pp.dirty || pp.t > 0.3) { pp.t = 0;
+      if (pp.dirty || !this.wayClear(b, boxes)) { const w = this.wayIn(v); pp.dirty = false; pp.n++;
+        if (w) { b.path = w.pts.slice(1); b.wp = 0; pp.wait = 0; pp.best = 1e9; pp.stall = 0; } else { pp.wait += 0.3; if (pp.wait > 2.4 || pp.n > 12) { say('No way round to the driver\u2019s door'); this.cancel(); g.playerAnim('idle'); return; } }
+        boxes = near(); } }
+    if (pp.wait > 0) { pl.speed = 0; g.playerAnim('idle'); if (vis.mixer) vis.mixer.timeScale = 1; return; }      // something has driven across his way: he waits for it
+    const wp = b.path[b.wp], dx = wp.x - pl.x, dy = wp.y - pl.y, d = Math.hypot(dx, dy), last = b.wp === b.path.length - 1;
+    let rest = d; for (let i = b.wp; i < b.path.length - 1; i++) rest += Math.hypot(b.path[i + 1].x - b.path[i].x, b.path[i + 1].y - b.path[i].y);
+    const sp = Math.min(rest > 4.5 ? 3.4 : 1.9, Math.max(0.7, rest * 3.2)), stepLen = sp * dt;
+    const arrive = () => { b.phase = 'act'; b.u = 0; b.w = 0; b.h0 = pl.h; g.playerAnim('idle'); if (vis.mixer) vis.mixer.timeScale = 1; pl.speed = 0; };
+    if (d <= Math.max(stepLen, last ? 0.03 : 0.1)) { if (last) { pl.x = wp.x; pl.y = wp.y; arrive(); return; } b.wp++; return; }
+    const want = Math.atan2(dy, dx); pl.h += wrapPi(want - pl.h) * Math.min(1, dt * 11);
+    g.statics.resolve(pl.x + dx / d * stepLen, pl.y + dy / d * stepLen, BODY_R, _o2, last && d < 0.6); _pp.x = _o2.x; _pp.y = _o2.y;
+    if (pushOut(boxes, _pp, 0.2)) this.stats.walkPushes = (this.stats.walkPushes || 0) + 1;
+    pl.x = _pp.x; pl.y = _pp.y;
+    if (rest < pp.best - 0.004) { pp.best = rest; pp.stall = 0; } else if ((pp.stall += dt) > 0.45) { if (last && d < 0.5) { arrive(); return; } pp.stall = 0; pp.dirty = true; }      // held up (a post, a car that moved): from where he is now
+    const wk = (vis.walks || []).find((w) => w.name === 'walkbrisk') || (vis.walks || [])[0] || { name: 'walk', speed: 1.45 };
+    pl.speed = sp; g.playerAnim(sp > 3 ? (vis.acts.jog ? 'jog' : 'run') : wk.name); if (vis.mixer) vis.mixer.timeScale = sp > 3 ? sp / (vis.acts.jog ? (g.kit.clipSpeed.jog || 2.6) * ((g.kit.tall && g.kit.tall.player) || 1) : vis.runSpeed || 5) : sp / wk.speed;
   }
   sizes() { const r = this.me.rig; return r || FALLBACK; }
   // things that happen once as the time passes a mark (either direction)
@@ -446,7 +525,7 @@ class Entry {
   // a car with no door to open and someone at the wheel: he is on his feet beside it at once, and runs
   skipJack(b) {
     const j = b.jack, n = this.npc; if (!j || !n || n.state !== 'seated') return; j.t = 1; this.stats.jacks++;
-    try { const v = n.v, P = this.params(v), vis = n.vis; this.toMap(v, P.xr + 0.55, P.zs - 0.85, _o); n.x = _o.x; n.y = _o.y; n.h = v.h + Math.PI / 2 + 0.15; n.state = 'flee'; n.t = 0.3; n.pup.release();
+    try { const v = n.v, P = this.params(v), vis = n.vis; this.toMap(v, P.xr + 0.55, Math.max(P.zs - 0.85, b.zLim === undefined ? -9 : b.zLim), _o); n.x = _o.x; n.y = _o.y; n.h = v.h + Math.PI / 2 + 0.15; n.state = 'flee'; n.t = 0.3; n.pup.release();
       const run = vis.acts.jog ? 'jog' : vis.acts.run ? 'run' : null; if (run) { for (const k in vis.acts) if (k !== run) vis.acts[k].stop(); vis.acts[run].reset().play(); vis.cur = run; } n.away = v.h + Math.PI - 0.3; n.dir = n.h; } catch (e) { console.log('[entry] driver not put out: ' + (e && e.message)); }
   }
   stepJack(dt, b, j, n) {
@@ -460,7 +539,7 @@ class Entry {
       if (n.u <= 1.351) { n.state = 'flee'; n.t = 0; const P = this.params(v), pose = n.pup.pose; this.toMap(v, pose.hip.x, pose.hip.z, _o); n.x = _o.x; n.y = _o.y; n.h = v.h + pose.yaw; n.pup.release();
         const run = vis.acts.jog ? 'jog' : vis.acts.run ? 'run' : null; if (run) { vis.acts[vis.cur] && vis.acts[vis.cur].fadeOut(0.25); vis.acts[run].reset().fadeIn(0.25).play(); vis.cur = run; } n.away = v.h + Math.PI - 0.3; n.dir = v.h + Math.PI / 2 + 0.75; }
     } else if (n.state === 'flee') {      // stumbles clear of the door, then runs for it back down the street
-      const sp = Math.min(3.6, 1.2 + n.t * 3); if (n.t > 0.55) n.dir = n.away; n.h += wrapPi(n.dir - n.h) * Math.min(1, dt * 7); const nx = n.x + Math.cos(n.dir) * sp * dt, ny = n.y + Math.sin(n.dir) * sp * dt; g.statics.resolve(nx, ny, 0.3, _o); n.x = _o.x; n.y = _o.y;
+      const sp = Math.min(3.6, 1.2 + n.t * 3); if (n.t > 0.55) n.dir = n.away; n.h += wrapPi(n.dir - n.h) * Math.min(1, dt * 7); const nx = n.x + Math.cos(n.dir) * sp * dt, ny = n.y + Math.sin(n.dir) * sp * dt; g.statics.resolve(nx, ny, 0.3, _o); if (this.on4) pushOut(carsNear(g, _o.x, _o.y, 8.5, (this.poolN ||= { boxes: [], pk: [] })), _o, FOOT); n.x = _o.x; n.y = _o.y;
       if (vis.mixer) vis.mixer.timeScale = clamp(sp / 2.8, 0.5, 1.4);
       if (n.t > 2 && (n.t > 14 || Math.hypot(n.x - g.player.x, n.y - g.player.y) > 45)) { g.world.scene.remove(vis.object); this.npc = null; }
     }
@@ -481,7 +560,7 @@ class Entry {
         if (n.state === 'out') npcOutPose(pose, n.u);
         n.pup.apply(pose, CM, _cq2, 1); } }
     if (b && b.entry && b.phase !== 'walk') {
-      if (!me.rig) return; const v = b.v, CM = this.cars.matrix(v, _cm, _cq), pose = entryPose(b.u, this.params(v), this.seat(v), me.rig, this.ground(v), me.pose);
+      if (!me.rig) return; const v = b.v, CM = this.cars.matrix(v, _cm, _cq), pose = entryPose(b.u, this.params(v), this.seat(v), me.rig, this.ground(v, b.far), me.pose); if (b.far) mirrorPose(pose);
       if (n && b.jack && b.jack.t > 0 && b.jack.t < 1 && n.pup.rig) playerJackPose(pose, b.jack.t, n.pup.rig, _m2.copy(CM).invert(), this.params(v), this.seat(v));
       if (b.w < 1 && b.h0 !== undefined && b.kind === 'in') pose.yaw = wrapPi(b.h0 - v.h) + wrapPi(pose.yaw - wrapPi(b.h0 - v.h)) * b.w;
       me.apply(pose, CM, _cq, b.w);
@@ -586,7 +665,7 @@ class Entry {
     } else if (sc.st === 'away') { I.my = 1; if (sc.t > 1.6) go(sc.name === 'loop' ? 'find' : 'idle'); }
   }
 }
-const _o = {}, _cm = new THREE.Matrix4(), _cq = new THREE.Quaternion(), _cm2 = new THREE.Matrix4(), _cq2 = new THREE.Quaternion(), ZERO = () => 0;
+const _o = {}, _o2 = {}, _pp = { x: 0, y: 0 }, _cm = new THREE.Matrix4(), _cq = new THREE.Quaternion(), _cm2 = new THREE.Matrix4(), _cq2 = new THREE.Quaternion(), ZERO = () => 0;
 const FALLBACK = { standH: 0.97, ankleH: 0.08, hipW: 0.09, headUp: 0.62 };
 
 export async function addEntry(game) {

@@ -394,6 +394,7 @@ export class CarLook {
     const g = this.g, s = g.sound;
     if (!s || !s.on || !s.ac || !s.out || g.capture || s.ac.state !== 'running') { if (D.sir) this.quiet(D, true); return; }
     /* wail while it drives in; when it stops, a short yelp and then quiet with the lamps on */
+    /* w3: a car driving off after it is over makes no sound (its lamps stay on): a wail after IN THE CLEAR reads as still wanted */ if (v.away && this.heat.level === 0) { D.yelp = 0; if (D.sir) this.quiet(D, false); return; }
     if (v.drive && on) { D.yelp = 1.25; D.sirT = (D.sirT || 0) + dt; } else if (D.yelp > 0 && on) { D.yelp -= dt; D.sirT = (D.sirT || 0) + dt; } else { D.yelp = 0; if (D.sir) this.quiet(D, false); return; }
     const cam = g.world.camera, dx = v.x - cam.position.x, dz = -v.y - cam.position.z, dy = (v.z || 0) + 1.5 - cam.position.y, d = Math.hypot(dx, dy, dz);
     if (!D.sir) { if (d > 320 || this.voices >= 3) return; const a = s.ac, t = a.currentTime, S = { a, osc: [], t0: t };
@@ -408,7 +409,7 @@ export class CarLook {
     const vr = dt > 0 ? Math.max(-40, Math.min(40, (D.dPrev - d) / dt)) : 0; D.dPrev = d; D.vr = (D.vr || 0) + (vr - (D.vr || 0)) * Math.min(1, dt * 4); f *= 343 / (343 - D.vr);
     for (const o of S.osc) o.frequency.setTargetAtTime(f, t, 0.012);
     /* behind a building it is duller and quieter (one ray every fifth of a second) */
-    D.hidT -= dt; if (D.hidT <= 0) { D.hidT = 0.2; D.hid = g.statics.raycast(cam.position.x, -cam.position.z, v.x, v.y) < 1 ? 1 : 0; } D.hidK = (D.hidK || 0) + (D.hid - (D.hidK || 0)) * Math.min(1, dt * 5);
+    D.hidT -= dt; if (D.hidT <= 0) { D.hidT = 0.2; D.hid = (this.heat.wall || g.statics).raycast(cam.position.x, -cam.position.z, v.x, v.y) < 1 ? 1 : 0; /* w3: buildings only: a tree guard or a fence between the camera and the car is not 'behind a building' (the game's collision set holds those too) */ } D.hidK = (D.hidK || 0) + (D.hid - (D.hidK || 0)) * Math.min(1, dt * 5);
     const vol = 0.11 / (1 + Math.pow(d / 45, 1.6)) * (1 - 0.45 * D.hidK) * (v.drive ? 1 : Math.min(1, D.yelp / 0.15));
     S.gain.gain.setTargetAtTime(vol, t, 0.05); S.lp.frequency.setTargetAtTime((4200 - 2800 * D.hidK) / (1 + d / 260), t, 0.08);
     if (S.pan.pan) { cam.matrixWorld.extractBasis(_v, _v2, new THREE.Vector3()); S.pan.pan.setTargetAtTime(Math.max(-0.85, Math.min(0.85, (dx * _v.x + dy * _v.y + dz * _v.z) / Math.max(d, 4))), t, 0.05); }

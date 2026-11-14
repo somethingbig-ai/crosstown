@@ -17,6 +17,11 @@ import * as THREE from 'three';
 import * as FAC from '../facade.js';
 import { makeMask, makeRooms, makeProps } from './storefronts.art.js';
 import * as G from './storefronts.glsl.js';
+/* interiors (lanes/shops/interiors): the shops of interiors/slots.js can be walked into. Their bay is forced to the slot's type, its door is not
+   recessed and the solid front line leaves the door open; layout() returns the door's instances and measurements (doors) and add() hands them to
+   interiors/interiors.js, which swaps the closed door and glass for an open shop near the player. ?interiors=0 = exactly as before. */
+import { IN_SLOTS } from '../interiors/slots.js';
+const INS = (() => { try { return new URLSearchParams(location.search).get('interiors') === '0' ? null : IN_SLOTS; } catch (e) { return null; } })();
 
 const SW = 0.15, TILE = 128, FAR_MAJOR = 520, FAR_FINE = 150;
 const f = Math.fround, fr = (x) => f(x - Math.floor(x));
@@ -187,7 +192,8 @@ export function layout(C, opts = {}) {
   const solOut = (P, a, b2, z) => { let g = 1e9; for (const u of b2 - a > 0.8 ? [a + 0.35, (a + b2) / 2, b2 - 0.35] : [(a + b2) / 2]) { const ox = P.x + P.dx * u + P.nx * 0.03, oy = P.y + P.dy * u + P.ny * 0.03; if (inBuilding(ox, oy)) continue;     /* buried in the next building: nothing to keep open */
       const h = bgrid.ray(ox, oy, P.nx, P.ny, z + 0.9); if (h && h[0] < g) g = h[0]; }
     if (g > 1e8) return z; stats.solidCut++; return Math.min(z, g + 0.03 - 0.9); };
-  const tiles = new Map(), frames = [], shops = [], solid = []; const stats = { buildings: 0, bays: 0, shops: 0, kinds: {}, signs: {}, samples: {}, solidCut: 0 };
+  const tiles = new Map(), frames = [], shops = [], solid = [], doors = [];     /* interiors: doors */
+  const stats = { buildings: 0, bays: 0, shops: 0, kinds: {}, signs: {}, samples: {}, solidCut: 0 };
   let tile = null, fi = 0;
   const bx = (major, x0, x1, y0, y1, z0, z1, kind, col, p0 = 0, p1 = 0, p2 = 0, p3 = 0) => bc(major, (x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2, x1 - x0, y1 - y0, z1 - z0, 0, 0, kind, col, p0, p1, p2, p3);
   const bc = (major, cx, cy, cz, sx, sy, sz, yaw, tilt, kind, col, p0 = 0, p1 = 0, p2 = 0, p3 = 0) => { if (sx <= 0.001 || sy <= 0.001 || sz <= 0.001) return; (major ? tile.major : tile.fine).push(fi, cx, cy, cz, sx, sy, sz, yaw, tilt, kind, col[0], col[1], col[2], p0, p1, p2, p3); };
@@ -270,6 +276,8 @@ export function layout(C, opts = {}) {
       let role = SHOP_ROLE[tn] || 'shop'; if (role === 'dock' && !(P.Lp >= 4.4 && P.kd < 9)) role = 'service';
       P.role = role; P.type = T[tn] || (role === 'lobby' ? T.lobby : T.vacant); P.nameCell = row[1] >= 0 ? nameCell(row[1]) : -1;
     }
+
+    { const IS = opts.interiors !== undefined ? opts.interiors : INS; if (IS) for (const P of pieces) { const t = IS[bid + ':' + P.key]; if (t && P.Lp >= 2.3) { P.inside = t; P.role = t.role; P.type = T[t.type] || (t.role === 'lobby' ? T.lobby : P.type); } } }     /* interiors */
 
     // ---- emit
     const solG = new Map();                               // collision: per wall segment, [from, to, how far out] along the wall of everything drawn solid
@@ -354,16 +362,17 @@ export function layout(C, opts = {}) {
       if (P.role !== 'gate') {
         bk = modern ? 0.12 + 0.1 * r(18) : 0.36 + 0.36 * r(18);
         const dbl = isLobby || TY.dbl || (W > 6.8 && r(19) < 0.5), dw = Math.min(dbl ? 1.86 : 1.02, W - 0.1);
-        const rec = !isLobby && W > dw + 2.6 && r(20) < (style === 0 || style === 4 ? 0.55 : 0.28);
+        const rec = !isLobby && !P.inside && W > dw + 2.6 && r(20) < (style === 0 || style === 4 ? 0.55 : 0.28);
         zF = rec ? pproud + 0.14 : 0.10; const zd = rec ? 0.08 : zF;
         let dxc = isLobby || r(21) < 0.35 ? 0 : (r(22) < 0.5 ? -1 : 1) * (W / 2 - dw / 2 - (r(23) < 0.5 ? 0.02 : 0.9)); if (W < dw + 1.2) dxc = (r(22) < 0.5 ? -1 : 1) * (W - dw) / 2;
         dxc = Math.max(x0 + dw / 2, Math.min(x1 - dw / 2, dxc));
         const dl = dxc - dw / 2, dr = dxc + dw / 2, st = !modern && (style === 0 || style === 4) && r(24) < 0.4 ? 0.14 : 0.025;
-        if (rec) { so(x0, dl, dl - x0 > 0.12 ? zF + 0.085 : zd + 0.07); so(dl, dr, zd + 0.07); so(dr, x1, x1 - dr > 0.12 ? zF + 0.085 : zd + 0.07); } else so(x0, x1, zF + 0.085);     // the glass line; a set-back door stays a closed door at the back of its recess
+        if (rec) { so(x0, dl, dl - x0 > 0.12 ? zF + 0.085 : zd + 0.07); so(dl, dr, zd + 0.07); so(dr, x1, x1 - dr > 0.12 ? zF + 0.085 : zd + 0.07); } else if (P.inside) { so(x0, dl, zF + 0.085); so(dr, x1, zF + 0.085); } /* interiors: the door stays open */ else so(x0, x1, zF + 0.085);     // the glass line; a set-back door stays a closed door at the back of its recess
         if (isLobby) for (const s of [-1, 1]) so(s * (dw / 2 + 0.2) - 0.2, s * (dw / 2 + 0.2) + 0.2, pproud + 0.08);
         if (P.role === 'vacant') { flagsAll = r(25) < 0.6 ? 2 : 0; clutter = 0; tagCell = r(26) < 0.7 ? 131 : 0; }
         else if (!isLobby && r(27) < 0.6 && TY.tag >= 0) tagCell = TY.tag;
         const bkKind = r(28), bkCol = bkKind < 0.3 ? mul(fc[0], 1.0) : (bkKind < 0.55 ? [0.07 + 0.3 * r(29), 0.07 + 0.25 * r(29), 0.07 + 0.2 * r(29)] : (bkKind < 0.8 ? mul(baseCol, 0.9) : [0.5, 0.5, 0.48]));
+        const ih = P.inside ? [tile.glass.length] : null;     /* interiors */
         for (const [sa, sb] of [[x0, dl], [dr, x1]]) {
           if (sb - sa < 0.12) continue;
           if (bkKind < 0.3) bx(1, sa, sb, 0, bk, 0, zF + 0.05, K.PLAIN, bkCol, fc[1], fc[2], 1, seed); else if (bkKind < 0.55) bx(1, sa, sb, 0, bk, 0, zF + 0.05, K.TILE, bkCol, r(32) < 0.5 ? 0.1 : 0.15, r(33) < 0.25 ? 1 : 0, 0, seed);
@@ -377,7 +386,9 @@ export function layout(C, opts = {}) {
         }
         // the door bay
         bx(0, dl - 0.02, dr + 0.02, 0, st, 0, zF + (st > 0.1 ? 0.32 : 0.06), K.TILE, stepTile, r(34) < 0.5 ? 0.05 : 0.3, r(35) < 0.2 ? 1 : 0, 0, seed);
+        if (ih) ih.push(tile.fine.length);     /* interiors */
         door(dl, dr, zd, st, dbl, brass, sLo);
+        if (ih) doors.push({ id: bid + ':' + P.key, kind: P.inside.kind, tile: tk, glass: [ih[0] / GLASS_STRIDE, tile.glass.length / GLASS_STRIDE], fine: [ih[1] / BOX_STRIDE, tile.fine.length / BOX_STRIDE], bi, bid, x: P.x, y: P.y, rot, dx: P.dx, dy: P.dy, nx: P.nx, ny: P.ny, kd: P.kd, Lp, W, x0, x1, dl, dr, dbl, zF, zd, st, bk, sLo, sHi, Hh, pproud, style, frame: fc[0], brass, base: baseCol, lobby: isLobby });     /* interiors */
         if (rec) {
           const zc = (zd + zF) / 2, rl = zF - zd;
           if (dl - x0 > 0.12) { gl(dl, (bk + sLo) / 2, zc, rl, sLo - bk, Math.PI / 2, 0); bx(0, dl - 0.1, dl, 0, bk, zd, zF, K.PLAIN, bkCol, 0.6, 0, 1, seed); F(0, dl - 0.03, dl + 0.03, bk, sLo, zF - 0.02, zF + 0.07); } else F(0, dl - 0.06, dl, 0, sLo, zd, zF);
@@ -442,7 +453,7 @@ export function layout(C, opts = {}) {
     }
   });
   stats.shopsJson = shHit;
-  return { tiles, frames, stats, shops, solid };
+  return { tiles, frames, stats, shops, solid, doors };     /* interiors: doors */
 }
 
 // ------------------------------------------------------------------------------------------------ meshes
@@ -506,7 +517,8 @@ export async function add(game, ctx) {
   const hasDressing = !!(game.dressing && game.dressing.meshes && game.dressing.meshes.length);
   let shopsJ = null;                                    // lanes/shops: the survey (real kind of business per slot, invented names). ?shops=0: the old random mixes
   if (new URLSearchParams(location.search).get('shops') !== '0') { try { const r = await fetch(ctx.A + 'storefronts/shops.json'); if (r.ok) shopsJ = await r.json(); } catch (err) { console.warn('[storefronts] no shops.json', err); } }
-  const { tiles, frames, stats, shops, solid } = layout(C, { noDressing: !hasDressing, shops: shopsJ, core: new URLSearchParams(location.search).get('sfcore') === '1' });
+  const { tiles, frames, stats, shops, solid, doors } = layout(     /* interiors: doors */
+ C, { noDressing: !hasDressing, shops: shopsJ, core: new URLSearchParams(location.search).get('sfcore') === '1' });
   const tex = { mask: makeMask(THREE, shopsJ && shopsJ.names), rooms: makeRooms(THREE), props: makeProps(THREE) };
   const tune = { value: new THREE.Vector4(0.15, 2.8, 0.55, 0.6) };
   const det = await detailArrays(ctx.A); const mSolid = solidMaterial(shared, tex.mask, false, det), mAwn = solidMaterial(shared, tex.mask, true, det), mGlass = glassMaterial(shared, tex, tune);
@@ -565,5 +577,6 @@ export async function add(game, ctx) {
     }
     sol.metres = Math.round(sol.metres);
   }
+  if (doors && doors.length) try { game.interiors = await (await import('../interiors/interiors.js')).addInteriors(game, { doors, meshes, ctx }); } catch (e) { console.log('[interiors] not loaded: ' + (e && (e.stack || e.message))); }     /* interiors */
   return { group, meshes, tune, stats, shops, solidSegs, report: { instances: inst, ktris: Math.round(tris / 1000), shopsJson: stats.shopsJson || 0, bays: stats.bays, shops: stats.shops, kinds: stats.kinds, signs: stats.signs, hid, solid: Object.assign(sol, { cornersHeldBack: stats.solidCut }) } };
 }

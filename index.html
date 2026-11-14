@@ -8,7 +8,7 @@
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="CROSSTOWN: drive, fly and walk a photoreal Manhattan in your browser"><meta name="twitter:description" content="An open-world Manhattan around the Flatiron, built with Blender and three.js. Drive, fly a helicopter, walk the streets. Runs in Chrome on a laptop: no install."><meta name="twitter:image" content="https://nyc.somethingbig.ai/og.jpg"><meta name="twitter:image:alt" content="The game's Manhattan skyline from the air, with the Empire State Building.">
 <link rel="canonical" href="https://nyc.somethingbig.ai/">
 <script>window.__CFG = { public: true, bin: true, feedbackUrl: 'https://crosstown-feedback.onrender.com/api/feedback' };</script>
-<link rel="stylesheet" href="src-11140306/hud.css">
+<link rel="stylesheet" href="src-11140340/hud.css">
 <script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
 <link rel="icon" href="data:,">
 </head><body>
@@ -34,5 +34,5 @@
   addEventListener('keydown', function (e) { if (e.code === 'Backslash' && !e.repeat && !(e.target && e.target.closest && e.target.closest('#fbbox'))) go(); }); })();
 </script>
 <script type="module">/* What's new on the start screen (player 6b805c); a failure here must never stop the game */ import(new URL('whatsnew.js', (document.querySelector('script[src$="main.js"]') || {}).src || new URL('src/main.js', location.href)).href).then((m) => { const d = document.getElementById('whatsnew'); if (d) { d.innerHTML = m.html(); for (const ev of ['click', 'mousedown', 'keydown', 'wheel']) d.addEventListener(ev, (e) => e.stopPropagation()); } }).catch(() => {});</script>
-<script type="module" src="src-11140306/main.js"></script>
+<script type="module" src="src-11140340/main.js"></script>
 </body></html>

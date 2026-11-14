@@ -49,11 +49,11 @@ const TAGS2 = ['FRESH PRODUCE · BAKERY · DELI · ORGANIC', 'NEW ARRIVALS · SN
   'EYE EXAMS · FRAMES · CONTACT LENSES', 'CLASSES · PERSONAL TRAINING · FREE TRIAL', 'WALK-INS WELCOME · MOST INSURANCE ACCEPTED', 'SALES · RENTALS · NOTARY · COPIES', 'WHOLESALE · IMPORT · EXPORT · TO THE TRADE'];
 const BLADE2 = ['MARKET', 'SHOES', 'BAKERY', 'SALON', 'REPAIR', 'GIFTS', 'SMOKE', 'EYES', 'GYM', 'CARE'];
 export function makeMask(THREE, names) {
-  const c = document.createElement('canvas'); c.width = 2048; c.height = names ? 4096 : 2048; const g = c.getContext('2d'); const R = rng(77);
+  const c = document.createElement('canvas'); c.width = 2048; c.height = 5120;     /* always the height the shader reads (SF_MASK_H) */ const g = c.getContext('2d'); const R = rng(77);
   g.fillStyle = '#000'; g.fillRect(0, 0, 2048, c.height); g.textAlign = 'center'; g.textBaseline = 'middle'; g.globalCompositeOperation = 'lighter';
-  const LIST = names ? names.slice(0, 160).map((nm, k) => [k < 80 ? k : 1000 + k - 80, nm]) : NAMES.flatMap((grp, gi) => grp.map((nm, ni) => [gi * 5 + ni, nm]));
+  const LIST = names ? names.slice(0, 208).map((nm, k) => [k < 80 ? k : k < 160 ? 1000 + k - 80 : 2000 + k - 160, nm]) : NAMES.flatMap((grp, gi) => grp.map((nm, ni) => [gi * 5 + ni, nm]));
   LIST.forEach(([i0, nm]) => {
-    const i = i0 % 1000, x = (i % 4) * 512, y = (i0 >= 1000 ? 2048 : 0) + Math.floor(i / 4) * 80, [a, b] = nm.split('|'); const f = FONTS[Math.floor(R() * FONTS.length)], script = f.includes('Brush');
+    const i = i0 % 1000, x = (i % 4) * 512, y = (i0 >= 2000 ? 4096 : i0 >= 1000 ? 2048 : 0) + Math.floor(i / 4) * 80, [a, b] = nm.split('|'); const f = FONTS[Math.floor(R() * FONTS.length)], script = f.includes('Brush');
     g.save(); g.beginPath(); g.rect(x + 4, y + 3, 504, 74); g.clip();
     g.fillStyle = '#f00'; const sp = R() < 0.4 && !script ? 3 : 0;
     const w = fit(g, script ? a.replace(/[A-Z]+/g, (s) => s[0] + s.slice(1).toLowerCase()) : a, f, b ? 46 : 56, 470, x + 256, y + (b ? 30 : 41), sp);

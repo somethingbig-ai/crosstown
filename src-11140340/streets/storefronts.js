@@ -134,7 +134,7 @@ T.pharmacy.sg = [1, 1, 6, 0, 0];      /* lanes/shops: a pharmacy reads as a brig
 Object.keys(T).forEach((k, i) => { T[k].name = k; T[k].id = i; if (T[k].tag === undefined) T[k].tag = T[k].g >= 0 && T[k].g < 16 ? 200 + T[k].g : -1; if (T[k].blade === undefined) T[k].blade = T[k].g >= 0 && T[k].g < 16 ? 100 + T[k].g : -1; });
 // shops.json type -> the game role the bay is built as
 const SHOP_ROLE = { hotel: 'lobby', theatre: 'lobby', church: 'lobby', school: 'lobby', civic: 'lobby', lobby: 'lobby', residential: 'infill', blank: 'infill', vacant: 'vacant', parking: 'dock', auto: 'service' };
-const nameCell = (n) => (n < 80 ? n : 300 + (n - 80));
+const nameCell = (n) => (n < 80 ? n : n < 160 ? 300 + (n - 80) : 600 + (n - 160));     /* lanes/shops handoff-3: names 160..207 in the rows from y 4096 */
 // sign colours that read as the type from across the street (indices into SIGNPAL / LIGHTBOX); a type not listed keeps the full palette
 const TPAL = { pharmacy: [[2, 9, 12, 6], [2, 6, 7]], bank: [[0, 9, 14, 6, 2], [2, 7]], deli: [[1, 5, 12, 13, 15], [0, 1, 3, 4, 6]], market: [[13, 3, 12, 17], [3, 0]], fastfood: [[12, 5, 15, 1, 16], [0, 1, 4, 6]],
   pizza: [[1, 12, 13, 8, 5], [0, 1, 6]], smoke: [[10, 14, 4], [5, 4, 7]], jewelry: [[4, 14, 0, 2], [4, 1]], restaurant: [[3, 7, 8, 0, 14, 17, 10], [0, 3]], bar: [[4, 14, 3, 7, 10], [6, 4]],

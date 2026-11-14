@@ -18,10 +18,19 @@
 // stops at the first wall it meets, on the side it came from, and gives up speed there; a move that cannot be made safe is not made. Building
 // walls and shop fronts hold at any height; low things (fences, tree guards: collision lines more than 1.5 m from any building) hold below
 // LOWH, so a body can go over them. The step costs no more than before (node: 0.05-0.09 ms a body a drawn frame, before 0.08-0.13).
+// CAR SHAPES (gameplay/people, Nov 14, Matt: "a struck person who lands on the car ... then sinks half into the car body, passing through it").
+// Before: every car was one box for the body: full height over the middle 45 % of its length, 64 % of its height over the rest, pushed out through the
+// nearest face, against the car as it stood at the drawn frame. So a body on an SUV's or a van's roof behind the middle lay up to 0.6-1 m inside it, a
+// windscreen and a pickup's cab were open air, and at 15 frames a second the car jumped 2 m into the body between two frames. Now each car is its own side
+// outline (src/carshape.js: bumper, bonnet, windscreen, roof, tail, per kind, read from the car models), the body's points are kept out of it in the CAR'S
+// MOVING FRAME (the car's place is carried through the steps between two drawn frames; a point that has crossed the outline goes back to the panel it came
+// through), and what touches a panel takes the panel's speed through friction: it rides, slides off when the car brakes or turns, and is never left behind in the air.
 import * as THREE from 'three';
+import { shapeOf, pushOut, topAt } from './carshape.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 const MAX = 7, G = 9.81, SUB = 1 / 120, LOWH = 1.0, WREST = 0.2, WFRIC = 0.8, WKEEP = 0.004;
+const CAR_MU = 0.45, CAR_REST = 0.05;      // CAR SHAPES: a body on painted steel and glass: friction, and next to no bounce
 const PTS = ['hips', 'chest', 'head', 'shL', 'shR', 'elL', 'elR', 'haL', 'haR', 'hpL', 'hpR', 'knL', 'knR', 'ftL', 'ftR'];
 const RAD = { hips: 0.13, chest: 0.14, head: 0.11, shL: 0.07, shR: 0.07, elL: 0.05, elR: 0.05, haL: 0.045, haR: 0.045, hpL: 0.09, hpR: 0.09, knL: 0.06, knR: 0.06, ftL: 0.055, ftR: 0.055 };
 const MASS = { hips: 14, chest: 20, head: 5, shL: 3, shR: 3, elL: 2, elR: 2, haL: 1, haR: 1, hpL: 6, hpR: 6, knL: 4, knR: 4, ftL: 1.5, ftR: 1.5 };
@@ -138,27 +147,42 @@ export function install(game, opts = {}) {
       a.p.x = nx; a.p.z = -ny; a.q.x += mx; a.q.z -= my; } }
 
   // ---------------------------------------------------------------- the simulation
-  const boxes = [];
-  function carBoxes(c) {
-    boxes.length = 0; const add = (e, vx, vy) => { if (Math.abs(e.x - c.x) > 14 || Math.abs(e.y + c.z) > 14) return; const d = e.def || {}; boxes.push({ x: e.x, z: -e.y, ch: Math.cos(e.h), sh: Math.sin(e.h), L: (d.len || 4.6) / 2, W: (d.wid || 1.9) / 2, H: d.hgt || 1.4, vx, vz: -vy }); };
-    for (const e of game.vehicles) add(e, e.vx, e.vy);
-    if (game.traffic) for (const e of game.traffic.cars) add(e, Math.cos(e.h) * (e.v || 0), Math.sin(e.h) * (e.v || 0));
-    if (game.parked && game.parked.near) for (const e of game.parked.near(c.x, -c.z, 12, [])) add(e, 0, 0);
+  // ---- CAR SHAPES block 1 of 3: the cars near a body, each with its outline and its place a step ago and now
+  const boxes = [], poseOf = new WeakMap(), _po = { f: 0, y: 0, nf: 0, ny: 0 }; let stamp = 0;
+  function carBoxes(c, span) {
+    boxes.length = 0; const add = (e, vx, vy, still) => { if (Math.abs(e.x - c.x) > 14 || Math.abs(e.y + c.z) > 14) return; const pp = still ? null : poseOf.get(e), ok = pp && pp.n === stamp;
+      // where the car stood when the body was last stepped (kept below), or, the first time, where its speed says it came from
+      boxes.push({ e, S: shapeOf(e.def), x1: e.x, z1: -e.y, h1: e.h, x0: still ? e.x : ok ? pp.x : e.x - vx * span, z0: still ? -e.y : ok ? pp.z : -e.y + vy * span, h0: still || !ok ? e.h : pp.h, ax: 0, az: 0, ach: 1, ash: 0, bx: 0, bz: 0, bch: 1, bsh: 0 }); };
+    for (const e of game.vehicles) add(e, e.vx, e.vy, false);
+    if (game.traffic) for (const e of game.traffic.cars) add(e, Math.cos(e.h) * (e.v || 0), Math.sin(e.h) * (e.v || 0), false);
+    if (game.parked && game.parked.near) for (const e of game.parked.near(c.x, -c.z, 12, [])) add(e, 0, 0, true);
   }
+  // the cars' places for step k of n between two drawn frames
+  function carsAt(k, n) { for (const c of boxes) { let dh = c.h1 - c.h0; if (dh > Math.PI) dh -= 2 * Math.PI; else if (dh < -Math.PI) dh += 2 * Math.PI; const u0 = k / n, u1 = (k + 1) / n, ha = c.h0 + dh * u0, hb = c.h0 + dh * u1;
+    c.ax = c.x0 + (c.x1 - c.x0) * u0; c.az = c.z0 + (c.z1 - c.z0) * u0; c.ach = Math.cos(ha); c.ash = Math.sin(ha); c.bx = c.x0 + (c.x1 - c.x0) * u1; c.bz = c.z0 + (c.z1 - c.z0) * u1; c.bch = Math.cos(hb); c.bsh = Math.sin(hb); } }
+  function keepPoses() { stamp++; const put = (e) => { let pp = poseOf.get(e); if (!pp) poseOf.set(e, (pp = { x: 0, z: 0, h: 0, n: 0 })); pp.x = e.x; pp.z = -e.y; pp.h = e.h; pp.n = stamp; }; for (const e of game.vehicles) put(e); if (game.traffic) for (const e of game.traffic.cars) put(e); }
+  // ---- end of CAR SHAPES block 1
   function step(R, h) {
     const P = R.P; let vmax = 0;
-    for (const k of PTS) { const a = P[k], vx = (a.p.x - a.q.x), vy = (a.p.y - a.q.y), vz = (a.p.z - a.q.z); a.q.copy(a.p); a.sx = a.p.x; a.sz = a.p.z; a.p.x += vx * 0.999; a.p.y += vy * 0.999 - G * h * h; a.p.z += vz * 0.999; }
+    for (const k of PTS) { const a = P[k], vx = (a.p.x - a.q.x), vy = (a.p.y - a.q.y), vz = (a.p.z - a.q.z); a.q.copy(a.p); a.sx = a.p.x; a.sz = a.p.z; a.sy = a.p.y; a.p.x += vx * 0.999; a.p.y += vy * 0.999 - G * h * h; a.p.z += vz * 0.999; }
     for (let it = 0; it < 7; it++) {
       for (const [a, b, L] of R.sticks) { _v.copy(b.p).sub(a.p); const d = _v.length() || 1e-6, e = (d - L) / d / (a.im + b.im); a.p.addScaledVector(_v, e * a.im); b.p.addScaledVector(_v, -e * b.im); }
       for (const [a, b, L] of R.apart) { _v.copy(b.p).sub(a.p); const d = _v.length() || 1e-6; if (d >= L) continue; const e = (d - L) / d / (a.im + b.im); a.p.addScaledVector(_v, e * a.im); b.p.addScaledVector(_v, -e * b.im); }
     }
     for (const k of PTS) { const a = P[k];
-      // other cars and our own: out through the nearest face; a point pushed by a face takes the car's speed, one on the roof is carried
-      for (const c of boxes) { const dx = a.p.x - c.x, dz = a.p.z - c.z, f = dx * c.ch - dz * c.sh, s = dx * c.sh + dz * c.ch, top = (Math.abs(f) < c.L * 0.45 ? c.H : c.H * 0.64);
-        const pf = c.L + a.r - Math.abs(f), ps = c.W + a.r - Math.abs(s), pt = top + a.r - a.p.y; if (pf <= 0 || ps <= 0 || pt <= 0) continue;
-        if (pt < pf && pt < ps) { a.p.y += pt; a.q.x += (a.p.x - a.q.x - c.vx * h) * 0.35; a.q.z += (a.p.z - a.q.z - c.vz * h) * 0.35; a.q.y = Math.max(a.q.y, a.p.y - 0.02 * h); }
-        else { const along = pf < ps, sg = Math.sign(along ? f : s) || 1, nx = along ? c.ch * sg : c.sh * sg, nz = along ? -c.sh * sg : c.ch * sg, pen = along ? pf : ps; a.p.x += nx * pen; a.p.z += nz * pen;
-          const vn = (a.p.x - a.q.x) * nx + (a.p.z - a.q.z) * nz, cn = (c.vx * nx + c.vz * nz) * h; if (vn < cn) { a.q.x -= (cn - vn) * nx; a.q.z -= (cn - vn) * nz; } } }
+      // ---- CAR SHAPES block 2 of 3: our own car and the others, each as its outline, in the car's moving frame (see CAR SHAPES at the top)
+      for (const c of boxes) { const S2 = c.S, r = a.r, dx = a.p.x - c.bx, dz = a.p.z - c.bz, f = dx * c.bch - dz * c.bsh, s = dx * c.bsh + dz * c.bch, W = S2.W;
+        if (Math.abs(s) >= W + r || f > S2.xf + r || f < S2.xb - r || a.p.y > S2.top + r) continue;
+        const ex = a.sx - c.ax, ez = a.sz - c.az, f0 = ex * c.ach - ez * c.ash, s0 = ex * c.ash + ez * c.ach, dp = pushOut(S2, f, a.p.y, r, f0, a.sy, _po); if (!dp) continue;
+        let F = _po.f, Sd = s, Y = _po.y, nf = _po.nf, ns = 0, ny = _po.ny; const ps = W + r - Math.abs(s);
+        // out through the side if that is where it came from, or if it was inside a moment ago too and the side is nearer
+        if (Math.abs(s0) >= W + r - 0.002 || (ps < dp && (() => { const t0 = topAt(S2, f0); return t0 >= 0 && a.sy < t0; })())) { const sg = Math.sign(s) || 1; F = f; Y = a.p.y; Sd = sg * (W + r); nf = 0; ny = 0; ns = sg; }
+        const X = c.bx + F * c.bch + Sd * c.bsh, Z = c.bz - F * c.bsh + Sd * c.bch, nX = nf * c.bch + ns * c.bsh, nZ = -nf * c.bsh + ns * c.bch;
+        // the panel's own move in this step at that place, and the point's move against it: nothing into the panel, friction along it
+        const pcx = X - (c.ax + F * c.ach + Sd * c.ash), pcz = Z - (c.az - F * c.ash + Sd * c.ach); let wx = a.p.x - a.q.x - pcx, wy = a.p.y - a.q.y, wz = a.p.z - a.q.z - pcz;      /* (its speed as it came, not counting the push back out of the panel) */ const wn = wx * nX + wy * ny + wz * nZ;
+        if (wn < 0) { const j = -wn * (1 + CAR_REST); wx += nX * j; wy += ny * j; wz += nZ * j; const d = wx * nX + wy * ny + wz * nZ, tx = wx - d * nX, ty = wy - d * ny, tz = wz - d * nZ, tl = Math.hypot(tx, ty, tz); if (tl > 1e-9) { const k = Math.min(1, CAR_MU * j / tl); wx -= tx * k; wy -= ty * k; wz -= tz * k; } }
+        a.p.x = X; a.p.y = Y; a.p.z = Z; a.q.x = X - wx - pcx; a.q.y = Y - wy; a.q.z = Z - wz - pcz; }
+      // ---- end of CAR SHAPES block 2
       // posts and hydrants below the height of a storey, then the walls: the whole move of this step is swept (see WALLS at the top)
       if (a.p.y < 3.2) posts(a);
       walls(a);
@@ -217,15 +241,16 @@ export function install(game, opts = {}) {
   // once a drawn frame, after the game has placed everything
   let last = performance.now(), acc = 0;
   S.update = (dt) => {
-    if (!S.list.length) return; acc = Math.min(acc + dt, 0.05); const n = Math.floor(acc / SUB); acc -= n * SUB; const cam = world.camera.position;
+    if (!S.list.length) { stamp++; return; } acc = Math.min(acc + dt, 0.1); const n = Math.floor(acc / SUB); acc -= n * SUB; const cam = world.camera.position;
     for (let i = S.list.length - 1; i >= 0; i--) { const R = S.list[i]; R.t += dt;
       if (R.fig.ped) { const p = R.fig.ped; if (p.state !== 'down') { S.list.splice(i, 1); continue; } p.t = Math.min(p.t, 5); p.vx = p.vy = 0; p.fall = 0; p.x = R.P.hips.p.x; p.y = -R.P.hips.p.z; }
       if (R.t > 25 || R.P.hips.p.distanceTo(cam) > 140) { release(R); S.list.splice(i, 1); continue; }
       // a body at rest wakes when one of the player's cars comes at it: asleep, the car drove into it and stood in it (node run: the car rolled back 6 m onto the body it had thrown); awake it is pushed along or aside like any struck body, and the walls hold it
       if (R.frozen) { const hp = R.P.hips.p; for (const e of game.vehicles) if (Math.abs(e.x - hp.x) < 4.5 && Math.abs(e.y + hp.z) < 4.5 && Math.abs(e.vx) + Math.abs(e.vy) > 0.5) { R.frozen = false; R.rest = 0; for (const k of PTS) R.P[k].q.copy(R.P[k].p); break; } }
-      if (!R.frozen) { carBoxes(R.P.hips.p); let vm = 0; for (let k = 0; k < n; k++) { vm = step(R, SUB); if (S.probe) S.probe(R); }      /* S.probe: the lane's test (people-state/wall/tools/hits.mjs) looks at every step; nothing sets it in the game */ if (n) { R.rest = vm < 0.25 ? R.rest + dt : 0; if (R.rest > 0.9 && R.t > 1.5 && R.P.hips.p.y < (game.statics.onSidewalk(R.P.hips.p.x, -R.P.hips.p.z) ? 0.65 : 0.5)) R.frozen = true;      /* a body lying on a bonnet or a roof is never frozen: frozen there it stayed in the air when the car drove off (6 of 300 in the node run before the wall fix, 16 after it: more bodies now drop back onto the car that hit them) */ } }
+      if (!R.frozen) { carBoxes(R.P.hips.p, n * SUB); let vm = 0; for (let k = 0; k < n; k++) { carsAt(k, n);      /* CAR SHAPES block 3 of 3 (with keepPoses below and the 0.1 s frame caps) */ vm = step(R, SUB); if (S.probe) S.probe(R); }      /* S.probe: the lane's test (people-state/wall/tools/hits.mjs) looks at every step; nothing sets it in the game */ if (n) { R.rest = vm < 0.25 ? R.rest + dt : 0; if (R.rest > 0.9 && R.t > 1.5 && R.P.hips.p.y < (game.statics.onSidewalk(R.P.hips.p.x, -R.P.hips.p.z) ? 0.65 : 0.5)) R.frozen = true;      /* a body lying on a bonnet or a roof is never frozen: frozen there it stayed in the air when the car drove off (6 of 300 in the node run before the wall fix, 16 after it: more bodies now drop back onto the car that hit them) */ } }
       pose(R); }
+    if (n) keepPoses();
   };
-  const render = world.render.bind(world); world.render = (t, f) => { const now = performance.now(), dt = game.capture ? 1 / 60 : Math.min(0.05, (now - last) / 1000); last = now; if (!game.paused) S.update(dt); return render(t, f); };
+  const render = world.render.bind(world); world.render = (t, f) => { const now = performance.now(), dt = game.capture ? 1 / 60 : Math.min(0.1, (now - last) / 1000);      /* was 0.05: at 15 frames a second the body ran at three quarters speed beside a car at full speed */ last = now; if (!game.paused) S.update(dt); return render(t, f); };
   return S;
 }

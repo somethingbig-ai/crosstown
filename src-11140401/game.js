@@ -130,6 +130,7 @@ export class Game {
     this.cam.yaw = this.player.h; this.snapCamera();
     this.bindInput();
     this.fly = new Fly(this);
+    if (this.P.get('menu') !== '0') try { (await import('./menu/menu.js')).install(this); } catch (e) { console.log('[menu] not loaded: ' + (e && (e.stack || e.message))); }     // progress lane: pause and settings menu (src/menu/: Esc / P / Start; game.settings, game.menu); ?menu=0 off (nothing fetched, P pauses as before)
     this.streets = this.P.get('streets') === 'none' ? null : await (await import('./streets.js')).addStreets(this);
     // the people lane's crowd (hundreds of GPU-instanced walkers); with it on, the game's own heavy skinned pedestrians (about 0.3 ms each on the M2 Pro) drop to a handful near the player
     this.crowd = this.P.get('crowd') === 'none' ? null : await (await import('./crowd.js')).addCrowd(this).catch((e) => { console.log('[crowd] not loaded: ' + (e && e.message)); return null; });
@@ -152,7 +153,9 @@ export class Game {
     if (this.P.get('edgeclose') !== '0') try { (await import('./edgeclose.js')).install(this); } catch (e) { console.log('[edgeclose] not loaded: ' + (e && e.message)); }     /* lead, Nov 13 (CHIEF 23:3xZ): road-closed barricades where roads meet the invisible wall at the map's edge; ?edgeclose=0 off */
     if (this.P.get('subway') !== '0') try { await (await import('./subway/subway.js')).install(this); } catch (e) { console.log('[subway] not loaded: ' + (e && (e.stack || e.message))); }     /* subway lane: entrances, stations and trains (src/subway/); ?subway=0 off (nothing fetched) */
     try { (await import('./feedback.js')).install(this); } catch (e) { console.log('[game] feedback not loaded: ' + (e && e.message)); }     // lead: Feedback link + session trace (src/feedback.js)
+    if (this.P.get('cars') !== '0') try { (await import('./cars/cars.js')).install(this); } catch (e) { console.log('[cars] not loaded: ' + (e && (e.stack || e.message))); }     /* progress lane, Nov 14: each kind of car drives differently; damage carries through to a burnt wreck (src/cars/cars.js); ?cars=0 off */
     if (!/^(0|none|off)$/.test(this.P.get('guns') || '')) try { this.combat = await (await import('./combat/combat.js')).addCombat(this); } catch (e) { console.log('[guns] not loaded: ' + (e && (e.stack || e.message))); }     // gameplay lane: guns v1 (src/combat/, pistol and rifle); ?guns=0 off (nothing fetched)
+    if (this.P.get('gps') !== '0') try { (await import('./gps/gps.js')).install(this); } catch (e) { console.log('[gps] not loaded: ' + (e && (e.stack || e.message))); }     // progress lane: GPS (src/gps/: waypoint from the full-screen map, route line on the road and the maps); ?gps=0 off (nothing fetched)
   }
 
   setupSignals() {
@@ -207,7 +210,7 @@ export class Game {
     c.addEventListener('click', () => { this.sound.unlock(); if (!this.demo || this.fly.on) this.look.ask('click'); });
     // Matt 18:10: the mouse must be clearly free to look. It looks around whether or not the pointer is captured, and the first movement key
     // captures it (before, only a click on the picture did, so with no click the mouse did nothing).
-    addEventListener('mousemove', (e) => { const ui = document.getElementById('fbbox'); if (document.pointerLockElement === c || (!this.demo && document.hasFocus() && !(ui && ui.style.display !== 'none') && !window.__startScreen)) {     /* not while the feedback form is open: moving to Send turned the camera (public note, Nov 11) */ this.input.lookX += e.movementX; this.input.lookY += e.movementY; } });
+    addEventListener('mousemove', (e) => { const ui = document.getElementById('fbbox'); if (document.pointerLockElement === c || (!this.demo && document.hasFocus() && !(ui && ui.style.display !== 'none') && !window.__startScreen)) {     /* not while the feedback form is open: moving to Send turned the camera (public note, Nov 11) */ const s = this.lookS;     /* progress lane: mouse sensitivity and invert (src/menu/) */ this.input.lookX += e.movementX * (s ? s.x : 1); this.input.lookY += e.movementY * (s ? s.y : 1); } });
     addEventListener('keydown', (e) => { if (!e.repeat && /^(Key[WASD]|Arrow)/.test(e.code) && !this.demo && document.pointerLockElement !== c && !(e.target && e.target.closest && e.target.closest('#fbbox'))) this.look.ask('key'); });
     addEventListener('blur', () => K.clear());
   }
@@ -224,7 +227,7 @@ export class Game {
     I.throttle = clamp((K.has('KeyW') || K.has('ArrowUp') ? 1 : 0) + (gp ? gp.buttons[7].value : 0), 0, 1); I.brake = clamp((K.has('KeyS') || K.has('ArrowDown') ? 1 : 0) + (gp ? gp.buttons[6].value : 0), 0, 1);
     I.handbrake = K.has('Space') || !!(gp && gp.buttons[0].pressed); I.run = K.has('ShiftLeft') || K.has('ShiftRight');
     I.mx = I.steer; I.my = ax('KeyW', 'KeyS') + ax('ArrowUp', 'ArrowDown');
-    if (gp) { if (Math.abs(gp.axes[1]) > 0.15) I.my = clamp(I.my - gp.axes[1], -1, 1); if (Math.abs(gp.axes[2]) > 0.12) I.lookX += gp.axes[2] * 14; if (Math.abs(gp.axes[3]) > 0.15) I.lookY += gp.axes[3] * 9; I.run = I.run || gp.buttons[10].pressed; if (gp.buttons[3].pressed && !this._gpUse) I.use = true; this._gpUse = gp.buttons[3].pressed; }
+    if (gp) { if (Math.abs(gp.axes[1]) > 0.15) I.my = clamp(I.my - gp.axes[1], -1, 1); if (Math.abs(gp.axes[2]) > 0.12) I.lookX += gp.axes[2] * 14 * (this.lookS ? this.lookS.px : 1); if (Math.abs(gp.axes[3]) > 0.15) I.lookY += gp.axes[3] * 9 * (this.lookS ? this.lookS.py : 1); I.run = I.run || gp.buttons[10].pressed; if (gp.buttons[3].pressed && !this._gpUse) I.use = true; this._gpUse = gp.buttons[3].pressed; }
     // Steering (Matt, Nov 10: "steering the car is so hard"; fix from nyc-breakable). A held key asked for a lock that at 70 km/h meant several g
     // sideways, so the tyres let go and the car spun. Now the lock a full press may ask for is what the tyres hold at that speed (about 0.6 g; x1.6 with
     // the handbrake), it comes on smoothly and centres quickly, and with the mouse captured the mouse steers too (the camera follows the car by itself).
@@ -471,6 +474,7 @@ export class Game {
       requestAnimationFrame(loop); const now0 = performance.now();
       let el = Math.max(0, Math.min(0.1, (now - last) / 1000));
       { const wc = this.world && this.world.cam; if (wc && wc.taa) { const h = this.cam.mode === 'heli'; if (h !== !!wc._heli) { wc._heli = h; wc.taa.enabled = !h && !wc.isOld; if (wc._rs) this.world.resize(...wc._rs); } } }     /* lead, Nov 12: the camera lane's anti-aliasing history smears the cockpit (it moves with the camera), so in the helicopter the picture goes back to FXAA */ last = now; ft += el; fc++; if (ft > 0.5) { this.fps = fc / ft; fc = 0; ft = 0;
+        if (!this.qPin) {     /* progress lane: a fixed Quality preset (Low / Medium / High in the menu, src/menu/menu.js) pins picture size, AO and detail; everything the governor does, down to the closing brace marked qPin, runs only on Auto */
         // live play keeps its frame rate first: screen-space ambient occlusion (a second full geometry pass) steps down when the machine can't hold ~50 fps
         // audit item 12: the governor used to count the slow first seconds (shaders compiling, textures going up) and could only step down, so
         // every machine ended at the smallest picture with AO off. It now waits 10 s, and steps back up when there is room: picture size first, then
@@ -486,7 +490,8 @@ export class Game {
             else if (gg && !gg.enabled && !this._aoCeil && !this.P.has('ao')) { gg.enabled = true; this._upAt = this._govT; this._upBad = 0; this._upKind = 'ao'; this._slow = 0; console.log('[game] ambient occlusion back on'); } } }
         const g = this.world.gtao; if (g && g.enabled && !this.P.has('ao') && !(this.world.aoDepth && (this.world.liveScale || 1) > 0.8 && !this.P.has('px') && window.__fit && !(this.fly && this.fly.on))) {     /* with the cheap depth AO (audit item 2) the picture first gives up a little size, and AO only goes below 0.8 */ this._slow = this.fps < 48 ? (this._slow || 0) + 1 : 0; if (this._slow >= 4) { g.enabled = false; console.log('[game] ambient occlusion pass off to hold frame rate (' + this.fps.toFixed(0) + ' fps)'); } } 
         else if (!this.capture && !this.P.has('aa') && this.world.liveAA !== 'fxaa' && !(this.fly && this.fly.on)) { this._slowA = this.fps < 54 ? (this._slowA || 0) + 1 : 0; if (this._slowA >= 4) { this.world.setLiveAA(false); console.log('[game] multisampling off, FXAA on to hold frame rate (' + this.fps.toFixed(0) + ' fps)'); } }
-        else if (!this.capture && !this.P.has('px') && window.__fit && !(this.fly && this.fly.on)) { const w = this.world; this._slow2 = this.fps < 54 ? (this._slow2 || 0) + 1 : 0; if (this._slow2 >= 5 && (w.liveScale || 1) > 0.64) { w.liveScale = (w.liveScale || 1) * 0.87; this._slow2 = 0; window.__fit(); console.log('[game] render scale ' + w.liveScale.toFixed(2) + ' to hold frame rate (' + this.fps.toFixed(0) + ' fps)'); } } }
+        else if (!this.capture && !this.P.has('px') && window.__fit && !(this.fly && this.fly.on)) { const w = this.world; this._slow2 = this.fps < 54 ? (this._slow2 || 0) + 1 : 0; if (this._slow2 >= 5 && (w.liveScale || 1) > 0.64) { w.liveScale = (w.liveScale || 1) * 0.87; this._slow2 = 0; window.__fit(); console.log('[game] render scale ' + w.liveScale.toFixed(2) + ' to hold frame rate (' + this.fps.toFixed(0) + ' fps)'); } } } }     /* qPin */
+      if (!this.qPin) {     /* progress lane: as above, for the detail steps and the weak-card and Safari starts */
         // Nov 11, first outside report (M4 laptop, 25-30 fps while driving at the smallest picture with AO off): such a machine is held back by how much
         // is drawn, not by pixels. Below 42 fps at the floor, the game now also draws less: small street things and shadows come in nearer, the crowd
         // thins, the street mirror refreshes half as often. Steps 0.8 -> 0.64 -> 0.5; steps back up one at a time when 58 fps holds. ?detail=1 pins it.
@@ -502,7 +507,7 @@ export class Game {
           this._slowD = this.fps < 42 ? (this._slowD || 0) + 1 : 0; this._fastD = this.fps >= 58 ? (this._fastD || 0) + 1 : 0;
           if (this._slowD >= 6 && d > 0.51) { this.setDetail(d > 0.81 ? 0.8 : d > 0.65 ? 0.64 : 0.5); this._slowD = 0; console.log('[game] detail ' + w.detail + ' to hold frame rate (' + this.fps.toFixed(0) + ' fps)'); }
           else if (d <= 0.51 && d > 0.36 && (this._slowE = this.fps < 28 ? (this._slowE || 0) + 1 : 0) >= 8) { this._slowE = 0; this.setDetail(0.35); if ((w.liveScale || 1) > 0.5 && !this.P.has('px') && window.__fit) { w.liveScale = 0.5; window.__fit(); } console.log('[game] detail 0.35 and render scale ' + (w.liveScale || 1).toFixed(2) + ' to hold frame rate (' + this.fps.toFixed(0) + ' fps)'); }     /* Nov 12: one more step for machines still under 28 fps at the old floor */
-          else if (this._fastD >= 16 && d < 1) { this.setDetail(d < 0.36 ? 0.5 : d < 0.51 ? 0.64 : d < 0.65 ? 0.8 : 1); this._fastD = 0; console.log('[game] detail back up to ' + w.detail); } }
+          else if (this._fastD >= 16 && d < 1) { this.setDetail(d < 0.36 ? 0.5 : d < 0.51 ? 0.64 : d < 0.65 ? 0.8 : 1); this._fastD = 0; console.log('[game] detail back up to ' + w.detail); } } }     /* qPin */
       if (this.paused) { this.hud.draw(); return; }
       // Public feedback Nov 11 ("the update interval of objects is too low and the stuttering of animations is distracting"): the world used to
       // advance in whole 1/60 s steps, so at 28 fps one frame moved everything 2 steps and the next 3: cars and people juddered. Each frame now

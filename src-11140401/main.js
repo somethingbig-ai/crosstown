@@ -1,4 +1,6 @@
 import './feedback.js';     // first: its error, console and frame-time recorders run from the first line of the load (the Feedback form is installed by game.js)
+if (!/[?&]telemetry=0\b/.test(location.search)) import('./telemetry.js').catch(() => {});     // progress lane, Nov 14: automatic anonymous error / lost-context / frame-time reports (src/telemetry.js); ?telemetry=0 off (nothing fetched)
+if (/[?&]replay=/.test(location.search)) import('./replay.js').catch((e) => console.log('[replay] not loaded: ' + (e && e.message)));     // progress lane: private tool, plays a stored telemetry report's log back in this build (src/replay.js; not in the public build)
 // Loading progress (Matt, Nov 11: "it's not really clear that it's loading"): every same-origin download is counted as its bytes arrive, so the
 // start screen shows a real bar: percent, MB done of the build's measured total (assets/loadtotal.json, written by tools/loadmeasure.mjs) and what
 // is coming in now. After the downloads the city is built on the graphics card; the bar says so and its stripe keeps moving, so it never looks frozen.

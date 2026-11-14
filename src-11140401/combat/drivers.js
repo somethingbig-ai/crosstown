@@ -194,7 +194,7 @@ class Drivers {
       const len = taps > 1 ? secs : clamp(secs, 0.15, 2), gapS = 0.11; let te = t;
       for (let k = 0; k < taps; k++) { const t1 = t + k * (len + gapS); G.setValueAtTime(0, t1); G.linearRampToValueAtTime(vol, t1 + 0.018); G.setValueAtTime(vol, t1 + len - 0.03); G.linearRampToValueAtTime(0, t1 + len + 0.04); te = t1 + len + 0.05; }
       if (pan.pan) { const e = cam.matrixWorld.elements; pan.pan.value = clamp((dx * e[0] + dz * e[2]) / (d || 1), -0.85, 0.85); }
-      o1.connect(mix); o2.connect(mix); mix.connect(hp); hp.connect(pk); pk.connect(lp); lp.connect(gain); gain.connect(pan); pan.connect(s.out); o1.start(t); o2.start(t); o1.stop(te + 0.05); o2.stop(te + 0.05);
+      o1.connect(mix); o2.connect(mix); mix.connect(hp); hp.connect(pk); pk.connect(lp); lp.connect(gain); gain.connect(pan); pan.connect((s.bus && s.bus.sirens) || s.out);     /* progress lane: the Sirens and horns slider (settings menu) */ o1.start(t); o2.start(t); o1.stop(te + 0.05); o2.stop(te + 0.05);
       this.voices++; o1.onended = () => { this.voices--; try { pan.disconnect(); } catch (e) {} };
     } catch (e) { this.err(e); }
   }

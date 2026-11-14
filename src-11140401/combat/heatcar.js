@@ -400,7 +400,7 @@ export class CarLook {
     if (!D.sir) { if (d > 320 || this.voices >= 3) return; const a = s.ac, t = a.currentTime, S = { a, osc: [], t0: t };
       const o1 = a.createOscillator(), o2 = a.createOscillator(), mix = a.createGain(), hp = a.createBiquadFilter(), pk = a.createBiquadFilter(), pk2 = a.createBiquadFilter(), lp = a.createBiquadFilter(), gain = a.createGain(), pan = a.createStereoPanner ? a.createStereoPanner() : a.createGain();
       o1.type = 'square'; o2.type = 'sawtooth'; o2.detune.value = 9; mix.gain.value = 0.5; hp.type = 'highpass'; hp.frequency.value = 480; pk.type = 'peaking'; pk.frequency.value = 1450; pk.Q.value = 1.3; pk.gain.value = 9; pk2.type = 'peaking'; pk2.frequency.value = 2900; pk2.Q.value = 2; pk2.gain.value = 5; lp.type = 'lowpass'; lp.frequency.value = 4200; gain.gain.value = 0;
-      o1.connect(mix); o2.connect(mix); mix.connect(hp); hp.connect(pk); pk.connect(pk2); pk2.connect(lp); lp.connect(gain); gain.connect(pan); pan.connect(s.out); o1.start(t); o2.start(t);
+      o1.connect(mix); o2.connect(mix); mix.connect(hp); hp.connect(pk); pk.connect(pk2); pk2.connect(lp); lp.connect(gain); gain.connect(pan); pan.connect((s.bus && s.bus.sirens) || s.out);     /* progress lane: the Sirens and horns slider (settings menu) */ o1.start(t); o2.start(t);
       Object.assign(S, { osc: [o1, o2], lp, gain, pan }); D.sir = S; D.dPrev = d; D.hid = 0; D.hidT = 0; }
     this.voices++;
     const S = D.sir, t = S.a.currentTime, T = D.sirT + v.id * 0.71; let f;

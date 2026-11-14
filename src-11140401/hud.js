@@ -61,10 +61,10 @@ export class Hud {
     // ---- map, bottom right
     this.drawMap(W - 36 - this.mapR, H - 36 - this.mapR);
     // ---- dispatcher line, bottom centre
-    if (M.msg) { const a = clamp(Math.min(M.msg.t * 3, (7 - M.msg.t) * 2), 0, 1), lines = this.wrap(M.msg.text, 760, 22); c.globalAlpha = a; const bh = lines.length * 30 + 22; this.panel(W / 2 - 410, H - 64 - bh, 820, bh, 6); lines.forEach((l, i) => this.text(l, W / 2, H - 64 - bh + 34 + i * 30, 22, '#fff', 'center', 500)); c.globalAlpha = 1; }
+    if (M.msg && !(this.subs && !this.subs.on)) { const sk = this.subs ? this.subs.k : 1, fs = 22 * sk, lh = 30 * sk;     /* progress lane: subtitles on / off and size (settings menu sets hud.subs) */ const a = clamp(Math.min(M.msg.t * 3, (7 - M.msg.t) * 2), 0, 1), lines = this.wrap(M.msg.text, 760, fs); c.globalAlpha = a; const bh = lines.length * lh + 22; this.panel(W / 2 - 410, H - 64 - bh, 820, bh, 6); lines.forEach((l, i) => this.text(l, W / 2, H - 64 - bh + 4 + lh + i * lh, fs, '#fff', 'center', 500)); c.globalAlpha = 1; }
     // ---- prompts
     if (g.heli) g.heli.drawHud(this);     // heli lane
-    if (!v && !g.demo && !(g.heli && (g.heli.piloted || g.heli.canBoard()))) { const n = g.nearestCar(); if (n) { this.panel(W / 2 - 110, H * 0.62, 220, 44, 22); this.text('F', W / 2 - 78, H * 0.62 + 30, 20, AMBER, 'center', 800); this.text('Get in', W / 2 + 8, H * 0.62 + 30, 20, '#fff', 'center', 600); } }
+    if (!v && !g.demo && !(g.heli && (g.heli.piloted || g.heli.canBoard()))) { const n = g.nearestCar(); if (n) { this.panel(W / 2 - 110, H * 0.62, 220, 44, 22); this.text(g.menu ? g.menu.keyName('KeyF') : 'F', W / 2 - 78, H * 0.62 + 30, 20, AMBER, 'center', 800); this.text('Get in', W / 2 + 8, H * 0.62 + 30, 20, '#fff', 'center', 600); } }
     if (g.fly && g.fly.on) { this.panel(W / 2 - 560, H - 58, 1120, 40, 6); this.text('FLY   WASD  move     MOUSE  look (click first)     SPACE  up     SHIFT  down     SCROLL or [ ]  speed ' + Math.round(g.fly.speed) + ' m/s     V  back to the street', W / 2, H - 32, 15, '#fff', 'center', 600, 1); }
     else if (!g.capture && (g.t < 14 || g.demo)) { c.globalAlpha = g.demo ? 0.85 : clamp(14 - g.t, 0, 1); this.text('V  fly over the city', W / 2, H - 52, 14, '#ffb82e', 'center', 700, 1.5); c.globalAlpha = 1; }
     if (g.t < 14 && !g.demo && !g.capture && !(g.fly && g.fly.on)) { c.globalAlpha = clamp(14 - g.t, 0, 1); this.text('WASD  drive / walk     SPACE  ' + (g.player && g.player.vehicle ? 'handbrake' : 'jump') + '     F  in / out     SHIFT  run     MOUSE  look     V  fly     M  sound', W / 2, H - 28, 14, 'rgba(255,255,255,0.8)', 'center', 600, 1.5); c.globalAlpha = 1; }
@@ -73,7 +73,7 @@ export class Hud {
       this.text(b.title, W / 2, H * 0.36 + 76, 62, b.bad ? '#ff5a45' : AMBER, 'center', 800, 10); this.text(b.sub, W / 2, H * 0.36 + 120, 28, '#fff', 'center', 600, 2); c.globalAlpha = 1; }
     if (g.demo) this.text('AUTOPILOT DEMO', 36, H - (v ? 146 : 92), 12, 'rgba(255,255,255,0.55)', 'left', 700, 3);
     if (g.P.has('fps') && g.fps) this.text(g.fps.toFixed(0) + ' fps', W - 40, 112, 14, 'rgba(255,255,255,0.7)', 'right', 600);
-    if (g.paused) { c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(0, 0, W, H); this.text('PAUSED', W / 2, H / 2, 54, '#fff', 'center', 800, 12); }
+    if (g.paused && !(g.menu && g.menu.isOpen)) { c.fillStyle = 'rgba(0,0,0,0.5)'; c.fillRect(0, 0, W, H); this.text('PAUSED', W / 2, H / 2, 54, '#fff', 'center', 800, 12); }
   }
 
   drawMap(cx, cy) {
@@ -82,7 +82,7 @@ export class Hud {
     c.translate(cx, cy); c.rotate(yaw - Math.PI / 2); c.scale(zoom / S, zoom / S); c.translate(-(pl.x + this.hx) * S, -(this.hy - pl.y) * S);
     c.imageSmoothingEnabled = true; c.drawImage(this.map, 0, 0);
     const P = (x, y) => [(x + this.hx) * S, (this.hy - y) * S];
-    if (M.route && M.target) {     // the drive still to do: from the car, along the blocks ahead, to the stop
+    if (g.gps && g.gps.drawMini(c, P, 5 * S)) {}     /* progress lane, GPS: the player's waypoint line instead of the job's while one is set */ else if (M.route && M.target) {     // the drive still to do: from the car, along the blocks ahead, to the stop
       const r = M.route, last = r.segs.length - 1, q0 = P(pl.x, pl.y); c.strokeStyle = AMBER; c.lineWidth = 5 * S; c.lineJoin = 'round'; c.lineCap = 'round'; c.beginPath(); c.moveTo(q0[0], q0[1]);
       r.segs.forEach((sg, i) => { const ln = sg.dir > 0 ? sg.e.line : sg.e.rev, from = i === 0 ? r.s0 : 0, to = i === last && r.end ? r.end.s : ln.len;
         for (let j = 0; j < ln.p.length; j++) { if (ln.cum[j] <= from + 1 || ln.cum[j] >= to) continue; const q = P(ln.p[j][0], ln.p[j][1]); c.lineTo(q[0], q[1]); }
@@ -93,6 +93,7 @@ export class Hud {
     // target marker, clamped to the rim
     if (M.target) { const dx = M.target.x - pl.x, dy = M.target.y - pl.y, a = yaw - Math.PI / 2; let mx = (dx * Math.cos(a) + dy * Math.sin(a)) * zoom, my = (dx * Math.sin(a) - dy * Math.cos(a)) * zoom; const d = Math.hypot(mx, my); if (d > R - 10) { mx *= (R - 10) / d; my *= (R - 10) / d; }
       c.fillStyle = AMBER; c.strokeStyle = '#111'; c.lineWidth = 2; c.beginPath(); c.arc(cx + mx, cy + my, 7, 0, 7); c.fill(); c.stroke(); }
+    if (g.gps) g.gps.miniMarker(c, cx, cy, R, zoom, yaw);     // progress lane, GPS: the waypoint, held on the rim like the job's
     // player arrow (the map turns with the camera, the arrow shows the heading relative to it)
     c.save(); c.translate(cx, cy); c.rotate(-(pl.h - yaw)); c.fillStyle = '#fff'; c.strokeStyle = '#111'; c.lineWidth = 2; c.beginPath(); c.moveTo(0, -11); c.lineTo(7.5, 8); c.lineTo(0, 4); c.lineTo(-7.5, 8); c.closePath(); c.fill(); c.stroke(); c.restore();
     c.strokeStyle = 'rgba(255,255,255,0.85)'; c.lineWidth = 2.5; c.beginPath(); c.arc(cx, cy, R, 0, 7); c.stroke();

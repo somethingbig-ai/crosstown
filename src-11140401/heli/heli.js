@@ -206,7 +206,7 @@ class Heli {
       let pitch = ax('ArrowUp', 'ArrowDown') + ax('KeyI', 'KeyK') + ax('Numpad8', 'Numpad5'), roll = ax('ArrowRight', 'ArrowLeft') + ax('KeyL', 'KeyJ') + ax('Numpad6', 'Numpad4'), yaw = ax('KeyD', 'KeyA'), lift = ax('KeyW', 'KeyS') + ax('Space', 'ShiftLeft');
       if (gp) { pitch -= dz(gp.axes[1]); roll += dz(gp.axes[0]); yaw += (gp.buttons[5]?.value || 0) - (gp.buttons[4]?.value || 0); lift += (gp.buttons[7]?.value || 0) - (gp.buttons[6]?.value || 0);
         const b = (i) => gp.buttons[i]?.pressed, was = this.keysWere; if (b(2) && !was.has(2)) c.engine = true; if (b(11) && !was.has(11)) this.nextCamera(); if (b(3) && !was.has(3)) I.use = true; for (const i of [2, 3, 11]) b(i) ? was.add(i) : was.delete(i);
-        this.cam.yaw -= dz(gp.axes[2]) * dt * 2.6; this.cam.pitch = clamp(this.cam.pitch + dz(gp.axes[3]) * dt * 1.6, -0.6, 1.2); if (Math.abs(gp.axes[2]) > 0.12 || Math.abs(gp.axes[3]) > 0.12) this.cam.lookT = 0; }
+        { const ls = g.lookS;     /* progress lane: stick look speed and invert (settings menu) */ this.cam.yaw -= dz(gp.axes[2]) * dt * 2.6 * (ls ? ls.px : 1); this.cam.pitch = clamp(this.cam.pitch + dz(gp.axes[3]) * dt * 1.6 * (ls ? ls.py : 1), -0.6, 1.2); } if (Math.abs(gp.axes[2]) > 0.12 || Math.abs(gp.axes[3]) > 0.12) this.cam.lookT = 0; }
       // keys are switches; a hand is not: the command eases in and out (quicker to let go than to push)
       const ease = (cur, tgt, up, dn) => cur + clamp(tgt - cur, -dt * (Math.abs(tgt) < Math.abs(cur) ? dn : up), dt * (Math.abs(tgt) < Math.abs(cur) ? dn : up));
       c.pitch = ease(c.pitch, clamp(pitch, -1, 1), 3.2, 5); c.roll = ease(c.roll, clamp(roll, -1, 1), 3.6, 5.5); c.yaw = ease(c.yaw, clamp(yaw, -1, 1), 5, 7); c.lift = ease(c.lift, clamp(lift, -1, 1), 4, 6);

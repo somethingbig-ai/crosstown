@@ -357,7 +357,7 @@ class Entry {
     this.last = v; b.far = !!far; b.nodoor = !this.cars.kind(v.type) || b.far; this.me.pose.doorMax = b.doorMax = this.doorRoom(v, P);
     this.me.pose.zLim = b.zLim = this.on4 ? this.sideRoom(v, P, b.far) : undefined;
     if (kind === 'in') {
-      if (!this.on4) b.path = this.route(v, P); else { const w = way || this.wayIn(v); b.path = w ? w.pts.slice(1) : [this.toMap(v, P.xr, P.zs - 0.41, {})]; b.pp = { t: 0, n: 0, stall: 0, best: 1e9, wait: 0, dirty: false, own: Math.max(0.03, gap(carBox(v), b.path[b.path.length - 1].x, b.path[b.path.length - 1].y) - 0.08) }; } b.wp = 0;
+      if (!this.on4) b.path = this.route(v, P); else { const w = way || this.wayIn(v); b.path = w && w.pts.length > 1 ? w.pts.slice(1) : w && w.pts.length ? w.pts.slice(-1) : [this.toMap(v, P.xr, P.zs - 0.41, {})];     /* lead, Nov 13: a way of one point (he already stands on the door mark, e.g. F again right after getting out) left the path empty: begin threw and every frame after it too */ b.pp = { t: 0, n: 0, stall: 0, best: 1e9, wait: 0, dirty: false, own: Math.max(0.03, gap(carBox(v), b.path[b.path.length - 1].x, b.path[b.path.length - 1].y) - 0.08) }; } b.wp = 0;
       if (!driver && g.P.has('edriver')) driver = { id: +g.P.get('edriver') || 1 };      // QA: someone sits in the parked car too
       if (driver && this.g.kit.person) this.seatDriver(v, driver, b); else if (this.npc && this.npc.v === v && this.npc.state === 'seated') b.jack = { t: 0 };
     } else { this.cam.k = 1; this.cam.on = true; if (vis.acts.drive) { g.playerAnim('drive'); } }

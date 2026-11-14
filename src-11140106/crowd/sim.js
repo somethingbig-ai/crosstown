@@ -14,6 +14,7 @@
 // No three.js here: render.js reads the agents' public fields (x y z h scale fall char clip ph clipB phB blend tint acc).
 import { clamp, wrapPi, rng, TAU } from '../geo.js';
 import { bandAt } from './nav.js';
+import { plainSlide } from '../move/plainfall.js';
 
 const RP = 230, R_NEAR = 45, R_BACK = 95, BACK_F = 0.25, CELL = 2.5, GN = 216, TURN = 2.7, REF_WEIGHT = 2900;
 const B = { lo: 0, hi: 0 }, B2 = { lo: 0, hi: 0 }, _o = {};
@@ -572,7 +573,7 @@ export class CrowdSim {
           break; }
         case 'sit': a.onRoad = false; if (a.lead && !a.lead.gone) a.ph = a.lead.ph; break;
         case 'down':
-          a.x += a.vx * dt; a.y += a.vy * dt; { const k = Math.exp(-3.5 * dt); a.vx *= k; a.vy *= k; } a.fall = Math.min(1, a.fall + dt * 4); a.onRoad = !g.statics.onSidewalk(a.x, a.y); a.z = (a.onRoad ? 0 : 0.15) + 0.12 * a.fall; a.rate = 0; continue;
+          plainSlide(g, a, dt); { const k = Math.exp(-3.5 * dt); a.vx *= k; a.vy *= k; } a.fall = Math.min(1, a.fall + dt * 4); a.onRoad = !g.statics.onSidewalk(a.x, a.y); a.z = (a.onRoad ? 0 : 0.15) + 0.12 * a.fall; a.rate = 0; continue;
       }
       if (a.gone) continue;
       // give way to the player on foot

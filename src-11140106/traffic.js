@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { clamp, wrapPi, rng, Polyline, TAU } from './geo.js';
 import { PAINTS } from './models.js';
+import { plainSlide } from './move/plainfall.js';
 
 // What is on a Manhattan street: yellow cabs first, then black hire cars and SUVs, white vans, and everyone else.
 const TYPE_MIX = ['taxi', 'taxi', 'taxi', 'taxi', 'taxi', 'taxi', 'suv', 'suv', 'suv', 'suv', 'sedan', 'sedan', 'sedan', 'sedan', 'van', 'van', 'taxi', 'suv', 'sedan', 'sedan'];
@@ -409,7 +410,7 @@ export class Peds {
         for (const v of cars) { const sp = Math.hypot(v.vx, v.vy); if (sp < 2.2) continue; const dx = p.x - v.x, dy = p.y - v.y, fx = Math.cos(v.h), fy = Math.sin(v.h), f = dx * fx + dy * fy, s = -dx * fy + dy * fx;
           if (Math.abs(f) < v.def.len / 2 + 0.3 && Math.abs(s) < v.def.wid / 2 + 0.25) { p.state = 'down'; p.t = 0; p.vx = v.vx * 0.9 + (-fy) * Math.sign(s || 1) * 2; p.vy = v.vy * 0.9 + fx * Math.sign(s || 1) * 2; p.fall = 0; g.onPedHit(p, v); if (p.vis.mixer) p.vis.mixer.timeScale = 0; break; } }
       } else if (p.state === 'down') {
-        p.x += p.vx * dt; p.y += p.vy * dt; const k = Math.exp(-3.5 * dt); p.vx *= k; p.vy *= k; p.fall = Math.min(1, p.fall + dt * 4);
+        plainSlide(g, p, dt); const k = Math.exp(-3.5 * dt); p.vx *= k; p.vy *= k; p.fall = Math.min(1, p.fall + dt * 4);
       }
       const o = p.vis.object; const z = g.statics.onSidewalk(p.x, p.y) ? 0.15 : 0;
       o.position.set(p.x, z + (p.state === 'down' ? 0.12 * p.fall : 0), -p.y); o.rotation.set(0, p.h, 0);

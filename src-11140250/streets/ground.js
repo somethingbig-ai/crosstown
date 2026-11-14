@@ -379,9 +379,9 @@ function plazaShape(pz) {       // -> counter-clockwise outline, its triangles (
   try { tris = THREE.ShapeUtils.triangulateShape(v2, []); } catch (e) { return null; }
   return { pts, kind: PLAZA_KIND[pz.surface] || 0, tris: tris.map((t) => { let [p, q, r] = [v2[t[0]], v2[t[1]], v2[t[2]]]; if ((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x) < 0) [q, r] = [r, q]; return [p, q, r]; }) };
 }
-function fieldGeometry(C, fx, fy, plazas = []) {
+function fieldGeometry(C, fx, fy, plazas = [], cx = 0, cy = 0) {     /* tiles lane: (cx, cy) = the centre of the field's box; 0, 0 for the core */
   const main = { p: [], v: [], g: [] }, lines = { p: [], v: [], g: [] };
-  const inBox = (x, y, m) => Math.abs(x) < fx + m && Math.abs(y) < fy + m;
+  const inBox = (x, y, m) => Math.abs(x - cx) < fx + m && Math.abs(y - cy) < fy + m;
   const tent = (o, x1, y1, x2, y2, D, ch, ang, K) => {
     const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy); if (L < 1e-3) return; const nx = -dy / L * D, ny = dx / L * D;
     const V = (x, y, v) => { o.p.push(x, y, ch); o.v.push(v); o.g.push(ang); };
@@ -433,14 +433,14 @@ function fieldGeometry(C, fx, fy, plazas = []) {
   return { main: G(main), lines: G(lines) };
 }
 
-function renderField(renderer, C, fx, fy, plazas) {
-  const N = Math.min(4096, renderer.capabilities.maxTextureSize), { main, lines } = fieldGeometry(C, fx, fy, plazas);
+function renderField(renderer, C, fx, fy, plazas, cx = 0, cy = 0) {
+  const N = Math.min(4096, renderer.capabilities.maxTextureSize), { main, lines } = fieldGeometry(C, fx, fy, plazas, cx, cy);
   const rt1 = new THREE.WebGLRenderTarget(N, N, { depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false });
   const rtB = new THREE.WebGLRenderTarget(N / 2, N / 2, { depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false });
   const rt2 = new THREE.WebGLRenderTarget(N / 2, N / 2, { depthBuffer: true, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false });
-  const vs = `attribute float aV; attribute float aAng; uniform vec2 uH; varying float vV; varying float vA; varying float vC;
-    void main(){ vV = aV; vA = aAng; vC = position.z; gl_Position = vec4(position.xy / uH, clamp(aV, 0.0, 1.0) * 1.8 - 0.9, 1.0); }`;
-  const U = { uH: { value: new THREE.Vector2(fx, fy) } };
+  const vs = `attribute float aV; attribute float aAng; uniform vec2 uH; uniform vec2 uC; varying float vV; varying float vA; varying float vC;
+    void main(){ vV = aV; vA = aAng; vC = position.z; gl_Position = vec4((position.xy - uC) / uH, clamp(aV, 0.0, 1.0) * 1.8 - 0.9, 1.0); }`;
+  const U = { uH: { value: new THREE.Vector2(fx, fy) }, uC: { value: new THREE.Vector2(cx, cy) } };
   const m1 = new THREE.ShaderMaterial({ uniforms: U, vertexShader: vs, side: THREE.DoubleSide, depthTest: false, depthWrite: false,
     fragmentShader: `varying float vV; varying float vA; varying float vC; void main(){ float v = clamp(vV, 0.0, 1.0); gl_FragColor = vec4(vC < 0.5 ? v : 1.0, (vC > 0.5 && vC < 1.5) ? v : 1.0, (vC > 1.5 && vC < 2.5) ? v : 1.0, vC > 2.5 ? v : 1.0); }`,
     blending: THREE.CustomBlending, blendEquation: THREE.MinEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor, blendEquationAlpha: THREE.MinEquation, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneFactor });
@@ -458,7 +458,7 @@ function renderField(renderer, C, fx, fy, plazas) {
   main.dispose(); lines.dispose(); m1.dispose(); m2.dispose();
   // CPU copy for placement rules: [kerb distance, wall distance, junction distance] in metres at a map point
   const sample = (x, y) => {
-    const i = Math.floor((x / fx + 1) / 2 * N), j = Math.floor((y / fy + 1) / 2 * N); if (i < 0 || j < 0 || i >= N || j >= N) return [FIELD_D, FIELD_DB, FIELD_DN];
+    const i = Math.floor(((x - cx) / fx + 1) / 2 * N), j = Math.floor(((y - cy) / fy + 1) / 2 * N); if (i < 0 || j < 0 || i >= N || j >= N) return [FIELD_D, FIELD_DB, FIELD_DN];
     const k = (j * N + i) * 4; return [px[k] / 255 * FIELD_D, px[k + 2] / 255 * FIELD_DB, px[k + 3] / 255 * FIELD_DN];
   };
   return { tField: rt1.texture, tLines: rtB.texture, tAng: rt2.texture, sample, rts: [rt1, rtB, rt2] };
@@ -625,7 +625,7 @@ const SUBWAY = /^(Broadway|6th Avenue|Avenue of the Americas|7th Avenue|8th Aven
 const CELL = { mh: (i) => [i, 0, 1, 1], box: [0, 1, 2, 1], inlet: [2, 1, 2, 1], drain: [0, 2, 1, 1], tactile: [1, 2, 1, 1], grate: [2, 2, 1, 1], plate: [3, 2, 1, 1], leaves: [0, 3, 1, 1], card: [1, 3, 1, 1], clump: [2, 3, 1, 1], patch: [3, 3, 1, 1] };
 function buildDecals(C, sample, hist) {
   const acc = new Acc({ position: 3, uv: 2, aTint: 4, aP: 2 }), accUnder = new Acc({ position: 3, uv: 2, aTint: 4, aP: 2 }), grates = []; let count = 0;      // accUnder: slabs and collars, which paint goes over
-  const { city } = C, bx = city.meta.px + 40, by = city.meta.py + 40, inPlay = (x, y) => Math.abs(x) < bx && Math.abs(y) < by;
+  const { city } = C, pb = city.setPlay || [-city.meta.px, -city.meta.py, city.meta.px, city.meta.py], inPlay = (x, y) => x > pb[0] - 40 && x < pb[2] + 40 && y > pb[1] - 40 && y < pb[3] + 40;     /* tiles lane: the set's own playable box when the layer is built per set */
   // c: centre, (ux, uy): unit vector of the long axis, hl / hw: half sizes, h: height or the four corner heights, tiled cells keep the whole cell
   const decal = (x, y, ux, uy, hl, hw, cell, tint, rough, metal, h, inset = 0.012, flag = 0) => {
     const a = (flag === 2 ? accUnder : acc).get(x, y), hs = typeof h === 'number' ? [h, h, h, h] : h, cr = [[-1, -1, 0, 0], [1, -1, 1, 0], [1, 1, 1, 1], [-1, 1, 0, 1]];
@@ -823,8 +823,8 @@ float gline(float d, float hw, float fw){ fw = max(fw, 1e-5); return clamp((d + 
 // coverage of the zero isoline of a field f, drawn hwM metres wide, pxM = metres per pixel
 float giso(float f, float hwM, float pxM){ float g = length(vec2(dFdx(f), dFdy(f))) + 1e-7; float wpx = hwM / pxM; return clamp(wpx + 0.5 - abs(f) / g, 0.0, min(1.0, 2.0 * wpx)); }
 float gbox(float v, float a, float b, float fw){ return clamp((v - a) / fw + 0.5, 0.0, 1.0) * clamp((b - v) / fw + 0.5, 0.0, 1.0); }
-vec4 gfieldLod(vec2 m){ vec4 f = textureLod(tField, m / (2.0 * uField.xy) + 0.5, 0.0); float k = step(abs(m.x), uField.x - 1.0) * step(abs(m.y), uField.y - 1.0); return mix(vec4(1.0), f, k); }
-vec4 gfield(vec2 m){ vec4 f = texture2D(tField, m / (2.0 * uField.xy) + 0.5); float k = step(abs(m.x), uField.x - 1.0) * step(abs(m.y), uField.y - 1.0); return mix(vec4(1.0), f, k); }
+vec4 gfieldLod(vec2 m){ m -= uFieldC; vec4 f = textureLod(tField, m / (2.0 * uField.xy) + 0.5, 0.0); float k = step(abs(m.x), uField.x - 1.0) * step(abs(m.y), uField.y - 1.0); return mix(vec4(1.0), f, k); }
+vec4 gfield(vec2 m){ m -= uFieldC; vec4 f = texture2D(tField, m / (2.0 * uField.xy) + 0.5); float k = step(abs(m.x), uField.x - 1.0) * step(abs(m.y), uField.y - 1.0); return mix(vec4(1.0), f, k); }
 // where the tyres run (x) and where the oil drips (y) across a carriageway: t = metres right of the centre line, lanes of width lw
 vec2 glane(float t, float lw, float nl){ float hl = nl * lw * 0.5, x = t + hl; float k = step(0.0, x) * step(x, 2.0 * hl); float lx = (fract(x / lw) - 0.5) * lw;
   float q = (abs(lx) - 0.85) / 0.32; float c = lx / 0.42; return vec2(exp(-q * q), exp(-c * c)) * k; }
@@ -887,7 +887,7 @@ function mkMat(shared, U, o) {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec3 vWPos; uniform sampler2D tLight; uniform vec2 uHalf; uniform vec3 uSunColor; uniform vec3 uSunDir; uniform float uShadowFar; uniform vec3 uShadowCenter;
-        uniform sampler2D tField; uniform sampler2D tLines; uniform sampler2D tAng; uniform sampler2D tPack1; uniform sampler2D tPack2; uniform sampler2D tDecal; uniform sampler2D tMarks; uniform vec4 uField;
+        uniform vec2 uFieldC; uniform sampler2D tField; uniform sampler2D tLines; uniform sampler2D tAng; uniform sampler2D tPack1; uniform sampler2D tPack2; uniform sampler2D tDecal; uniform sampler2D tMarks; uniform vec4 uField;
         uniform sampler2D tAsC; uniform sampler2D tAsN; uniform sampler2D tPaint; uniform vec4 uHN; uniform vec4 uHC; uniform vec4 uHD; uniform vec4 uHX; uniform vec2 uHR; uniform sampler2D tNoise; uniform sampler2D tMacro; uniform sampler2D tPhoto;
         vec3 bakeV; vec3 bakeN; float gRough; float gMetal; float gSpec; vec3 gNrm; float gNs;
         #define GTONE 0.65      // f8: the level of all drawn asphalt against 0.148 (measured: the judging photographs' roads are sRGB 47-101, ours was 110-143)
@@ -916,9 +916,9 @@ const FS_SIDEWALK = /* glsl */`
   vec4 F = gfield(m);
   float dK = F.r * ${FIELD_D}.0, dB = F.b * ${FIELD_DB}.0, dN = F.a * ${FIELD_DN}.0;
   // the flags follow the nearest long kerb or wall: the street grid, or that line's own direction where it runs off the grid
-  vec2 fuv = m / (2.0 * uField.xy) + 0.5; vec4 FL = texture2D(tLines, fuv);
+  vec2 fuv = (m - uFieldC) / (2.0 * uField.xy) + 0.5; vec4 FL = texture2D(tLines, fuv);
   float aOff = radians(texture2D(tAng, fuv).r * 127.5 - 45.0);
-  float inF = step(abs(m.x), uField.x - 1.0) * step(abs(m.y), uField.y - 1.0);
+  float inF = step(abs(m.x - uFieldC.x), uField.x - 1.0) * step(abs(m.y - uFieldC.y), uField.y - 1.0);
   float ang = uField.z + ((FL.g < FL.r - 0.002 && FL.g < 0.75 && inF > 0.5) ? aOff : 0.0);
   float isBand = step(0.5, vS.z);
   vec2 g = grot(m, ang) / ${FLAG}; vec2 gsz = vec2(${FLAG});
@@ -1512,8 +1512,8 @@ const FS_GRASS = /* glsl */`
 export async function add(game, ctx) {
   if (!ctx.gNext && game.P && game.P.get('gnext')) { ctx.gNext = 1; return (await import('./ground_next.js')).add(game, ctx); }     // ?gnext=1: the version under test (drawn cleanly once before it becomes this file)
   if (!ctx.gNext && game.P && game.P.get('gexp')) { ctx.gNext = 1; return (await import('./ground_exp.js')).add(game, ctx); }     // ?gexp=1: an experiment not yet judged (never the default; reads photo/photos_exp.json)
-  const world = game.world, city = game.city || ctx.city, shared = world.shared, renderer = world.renderer;
-  const group = new THREE.Group(); group.name = 'streets_ground';
+  const world = game.world, city = ctx.city || game.city, shared = world.shared, renderer = world.renderer, set = ctx.set || null;     /* tiles lane: ctx.set = { name, play, region } when the layer is built for one map area */
+  const group = new THREE.Group(); group.name = 'streets_ground' + (set ? ':' + set.name : '');
   const L = new THREE.TextureLoader();
   const load = (f, srgb, rep) => new Promise((res, rej) => L.load(ctx.A + 'ground/' + f, (t) => {
     t.wrapS = t.wrapT = rep ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping; t.anisotropy = srgb ? 16 : 8; t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace; res(t);
@@ -1534,11 +1534,11 @@ export async function add(game, ctx) {
   const plazas = await fetch(ctx.A + 'ground/plazas.json').then((r) => (r.ok ? r.json() : [])).catch(() => []);
   const sharedWays = await fetch(ctx.A + 'ground/shared_streets.json').then((r) => (r.ok ? r.json() : [])).catch(() => []);
   const C = readCity(city); const nShared = markShared(C, sharedWays); const hist = buildHistory(C);
-  const fx = city.meta.px + 60, fy = city.meta.py + 60;
-  const field = renderField(renderer, C, fx, fy, plazas);
+  const pbx = set ? set.play : [-city.meta.px, -city.meta.py, city.meta.px, city.meta.py], fx = (pbx[2] - pbx[0]) / 2 + 60, fy = (pbx[3] - pbx[1]) / 2 + 60, fcx = (pbx[0] + pbx[2]) / 2, fcy = (pbx[1] + pbx[3]) / 2;
+  const field = renderField(renderer, C, fx, fy, plazas, fcx, fcy); field.box = [fcx, fcy, fx, fy];
   const U = { tField: { value: field.tField }, tLines: { value: field.tLines }, tAng: { value: field.tAng }, tPack1: { value: tPack1 }, tPack2: { value: tPack2 }, tDecal: { value: tDecal }, tMarks: { value: marksAtlas() },
     tAsC: { value: tAsC }, tAsN: { value: tAsN }, tPaint: { value: tPaint }, tNoise: { value: renderNoise(renderer).texture }, tMacro: { value: tMacro }, tPhoto: { value: tPack1 }, uHN: { value: new THREE.Vector4(-240.1, -353.8, -201.4, -374.4) },
-    uHC: { value: new THREE.Vector4(...hist.cap) }, uHR: { value: new THREE.Vector2(30, 36) }, uHD: { value: new THREE.Vector4(...hist.n23, 0, 0) }, uHX: { value: new THREE.Vector4(...hist.nx) }, uField: { value: new THREE.Vector4(fx, fy, C.grid * D2R, 0) } };
+    uHC: { value: new THREE.Vector4(...hist.cap) }, uHR: { value: new THREE.Vector2(30, 36) }, uHD: { value: new THREE.Vector4(...hist.n23, 0, 0) }, uHX: { value: new THREE.Vector4(...hist.nx) }, uField: { value: new THREE.Vector4(fx, fy, C.grid * D2R, 0) }, uFieldC: { value: new THREE.Vector2(fcx, fcy) } };
 
   const vary = (decl, body) => ({ vsDecl: decl.map((d) => `attribute ${d}; varying ${d.replace(' a', ' v')};`).join(' '), vsMain: body, fsDecl: decl.map((d) => `varying ${d.replace(' a', ' v')};`).join(' ') });
   const mats = {
@@ -1585,9 +1585,13 @@ export async function add(game, ctx) {
   const replaced = [];
   world.cityRoot.traverse((o) => {
     if (!o.isMesh) return; const k = /^(road|sidewalk|curb|grass|marks)(_\d+)?$/.exec(o.name); if (!k) return;
-    if (k[1] === 'road') o.material = mats.road; else if (k[1] === 'grass') o.material = mats.grass; else o.visible = false;
+    if (set && o.userData.set !== undefined && o.userData.set !== set.name) return;     /* another area's ground meshes: its own call deals with them */
+    if (k[1] === 'road') { if (set) o.visible = false; else o.material = mats.road; } else if (k[1] === 'grass') o.material = mats.grass; else o.visible = false;
     replaced.push(o.name);
   });
+  // per area the road's base is ONE quad over the area's own region (the model's road quad spans far past the seam and would lie in the neighbour's)
+  if (set) { const r = set.region, g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([r[0], 0, -r[1], r[2], 0, -r[1], r[2], 0, -r[3], r[0], 0, -r[3]], 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2)); g.setIndex([0, 1, 2, 0, 2, 3]);
+    const q = new THREE.Mesh(g, mats.road); q.name = 'road_base'; q.receiveShadow = true; q.renderOrder = -1; q.matrixAutoUpdate = false; group.add(q); }
   world.scene.add(group);
   return { group, mats, field, grates: decals.grates, report: { photos: photos.length, history: hist.count, instances: decals.count + marks.count, ktris: Math.round(tris / 1000), ramps: C.ramps.length, plazas: pz.count, shared: nShared, grates: decals.grates.length, decals: decals.count, marks: marks.count, grid: +C.grid.toFixed(2), replaced: replaced.join(',') } };
 }

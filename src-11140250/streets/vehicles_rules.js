@@ -136,7 +136,7 @@ export function buildSlots(game, opts = {}) {
   const slots = keep.slice(), t = {}; let n = 0, skippedLane = 0, offKerb = 0, overlapSkip = 0; const boxGrid = new Map();
   const boxCut = (A, B) => { for (const P of [A, B]) for (let i = 0; i < 4; i++) { const nx = P[(i + 1) % 4][1] - P[i][1], ny = -(P[(i + 1) % 4][0] - P[i][0]); let a0 = 1e9, a1 = -1e9, b0 = 1e9, b1 = -1e9; for (const q of A) { const v = q[0] * nx + q[1] * ny; if (v < a0) a0 = v; if (v > a1) a1 = v; } for (const q of B) { const v = q[0] * nx + q[1] * ny; if (v < b0) b0 = v; if (v > b1) b1 = v; } if (a1 <= b0 || b1 <= a0) return false; } return true; };
   for (const k of keep) { const d = k.def || cars[k.type]; if (!d) continue; const ch = Math.cos(k.h), sh_ = Math.sin(k.h), bx = [[1, 1], [1, -1], [-1, -1], [-1, 1]].map(([a, c]) => [k.x + ch * d.len / 2 * a - sh_ * d.wid / 2 * c, k.y + sh_ * d.len / 2 * a + ch * d.wid / 2 * c]), gk = Math.floor(k.x / 20) + ',' + Math.floor(k.y / 20); if (!boxGrid.has(gk)) boxGrid.set(gk, []); boxGrid.get(gk).push(bx); }
-  R.edges.forEach((e, ei) => {
+  const each = (e, ei) => {
     if (e.s0 === undefined || e.len < 30) return; if (opts.only && !opts.only(e, ei)) return;
     const table = e.ave ? PARK_AVE : PARK_STREET, occ = opts.occupancy ?? (e.ave ? 0.80 : 0.93);
     /* ONE-LANE STREETS LEAVE ROOM (Nov 12, public report 20261112132507-7e132b: a car turned across W 21st St could not get out between two parked rows 4.5-5.1 m
@@ -220,10 +220,15 @@ export function buildSlots(game, opts = {}) {
         s += def.len + (game._vehOx ? 0.5 + r() * 0.4 : 0.45 + r() * r() * 0.85);
       }
     }
-  });
-  P.slots = slots; P.grid = new Map();
-  for (const s of slots) { if (s.vseed === undefined) s.vseed = Math.floor(hash(Math.round(s.x * 31 + s.y * 17)) * 1e9); const k = Math.floor(s.x / 80) + ',' + Math.floor(s.y / 80); if (!P.grid.has(k)) P.grid.set(k, []); P.grid.get(k).push(s); }
-  return { slots: n, skippedLane, offKerb, plaza, shared, atTree, onCross, overlapSkip };
+  };
+  const finish = () => { const all = append ? P.slots.filter((s) => !keep.includes(s) && !s.gone).concat(slots) : slots;     /* append: slots the game made meanwhile are kept */
+    P.slots = all; P.grid = new Map();
+    for (const s of all) { if (s.vseed === undefined) s.vseed = Math.floor(hash(Math.round(s.x * 31 + s.y * 17)) * 1e9); const k = Math.floor(s.x / 80) + ',' + Math.floor(s.y / 80); if (!P.grid.has(k)) P.grid.set(k, []); P.grid.get(k).push(s); }
+    return { slots: n, skippedLane, offKerb, plaza, shared, atTree, onCross, overlapSkip }; };
+  // tiles lane: opts.slice = milliseconds of work between two turns of the page (for a pass that runs while the game is being played); the result is then a promise.
+  // The edges are taken in the same order either way, so the slots are the same.
+  if (opts.slice) return (async () => { let t = performance.now(); for (let ei = 0; ei < R.edges.length; ei++) { each(R.edges[ei], ei); if (performance.now() - t > opts.slice) { await new Promise((r) => setTimeout(r, 0)); t = performance.now(); } } return finish(); })();
+  R.edges.forEach(each); return finish();
 }
 
 // ---------------------------------------------------------------------------------------------------------------- traffic

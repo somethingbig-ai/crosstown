@@ -13,10 +13,25 @@ const pick = (a, r) => a[Math.floor(r * a.length) % a.length];
 // (gameplay lane, on the motion lane's file.) Traffic held up by one of the player's cars stops this.room metres further back (motion's 3.2), never drives
 // into its body, never slips through the queue behind it, backs away when the player's car comes at it, and gives way at SHOVE m/s when leaned on.
 const SHOVE = 1.5, LO_MAX = 1.4, REAR = 0.7;
+// A person in the lane (lead's helper h-brake, Nov 14; off: ?body=0). Before: traffic braked only for the player on foot, for a kit pedestrian whose
+// LAST STEP WALKING was on the roadway, and (crowd.js) for crowd people walking on it. Someone lying in the road was not looked for at all unless he
+// was a kit pedestrian who had been on the roadway when he went down: a crowd person struck or shot, a pedhit ragdoll of a crowd person and a
+// people.js body were driven over at full speed, and a kit pedestrian thrown off the pavement into the lane too. The one it did stop for it stood
+// behind until the body was cleared away, or slipped through after 16 s; behind the player standing in the lane it stood for good.
+// Now (bodies / gapAhead / round / sideRoom): every person down on the roadway is in this.bod; a car brakes for one in its way and stops B_BACK
+// metres further back than behind a car; B_WAIT seconds after the first car has stood for him (cars that come later only slow to a crawl) it goes
+// round: into the next lane if there is one and it is free (the lane change the file already has for a stalled car), else out to the side of its
+// lane as far as it must (c.bs: the sideways offset c.lo, grown as it rolls, back as before) where sideRoom finds the way clear of the kerb, walls,
+// posts, parked cars, the player's cars, other traffic and anyone coming the other way; if it stands too close to turn out it backs off first
+// (backOff, the file's own). With no room on either side (a one-lane street between parked rows) it waits B_GIVEUP seconds and then crawls past at
+// B_CREEP m/s with what room there is, so no street is shut by a body. The player standing in the lane is gone round the same way; with no room
+// the car waits for him as it always did (it does not push through the player).
+const B_WAIT = 3, B_RAD = 0.8, B_BACK = 1.6, B_SLOW = 2.2, B_CREEP = 1.2, B_GIVEUP = 6, B_TURN = 0.55;
 
 export class Traffic {
   constructor(game) {
     this.g = game; this.cars = []; this.rand = rng(1234); this.target = 90; this.heldT = -1e9; this._pg = 1e9; this._mb = null; this._blk = null; this.room = game.P && game.P.get('unstick') === '0' ? 0 : 3.2; this.spawnT = 0; this.busT = 0; this.near = []; this.nearT = 0;
+    this.bodyOn = !(game.P && game.P.get('body') === '0'); this.bod = []; this._dn = []; this._dnT = 0; this._bk = 0; this._be = null; this._pe = { o: null, x: 0, y: 0, ax: 0, ay: 0, t0: -1, cr: 0, k: 0 };
   }
   pickType() { const r = this.rand(); if (r < 0.035 && this.g.kit.cars.bus) return 'bus'; return TYPE_MIX[Math.floor(this.rand() * TYPE_MIX.length)]; }
   colorFor(type) {
@@ -30,7 +45,7 @@ export class Traffic {
   spawn(e, dir, li, s) {
     const R = this.g.roads, type = this.pickType(), def = this.g.kit.cars[type];
     if (type === 'bus' && !e.ave) return null;
-    const c = { type, def, e, dir, li, s, v: 0, x: 0, y: 0, h: 0, color: this.colorFor(type), spin: 0, steer: 0, junction: null, stun: 0, wait: 0, ghost: 0, v0: (e.ave ? 11.5 : 8) * (0.85 + this.rand() * 0.3), id: Math.floor(this.rand() * 1e9), honk: 0, lo: 0, lo0: 1, brake: false, held: 0, nx: undefined, plan: null, pass: null, passT: 0, heldByPlayer: 0, yield: false, dead: false, dbl: false, pt: -1e9, rev: 0, backT: 0, backV: 0, backD: 0, jamT: 0, avoid: null, mvT: -1e9, _shF: -1, _shD: 0 };
+    const c = { type, def, e, dir, li, s, v: 0, x: 0, y: 0, h: 0, color: this.colorFor(type), spin: 0, steer: 0, junction: null, stun: 0, wait: 0, ghost: 0, v0: (e.ave ? 11.5 : 8) * (0.85 + this.rand() * 0.3), id: Math.floor(this.rand() * 1e9), honk: 0, lo: 0, lo0: 1, brake: false, held: 0, nx: undefined, plan: null, pass: null, passT: 0, heldByPlayer: 0, yield: false, dead: false, dbl: false, pt: -1e9, rev: 0, backT: 0, backV: 0, backD: 0, jamT: 0, avoid: null, mvT: -1e9, _shF: -1, _shD: 0, bd: null, bs: 0, bv: 0 };
     R.lanePos(e, dir, li, s, c); c.v = c.v0 * 0.8; this.cars.push(c); return c;
   }
   // fill the streets around a point at start
@@ -127,15 +142,72 @@ export class Traffic {
     // the player's cars: their whole body, from any angle, with room left (gapMine)
     { const m = this.gapMine(c, look); if (m < gap) { gap = m; this._blk = this._mb; } }
     // the player on foot is in the way like anyone else (public feedback Nov 11: "cars can't run me over, i phase right through them")
-    { const pl = this.g.player; if (pl && !pl.vehicle) test(pl.x, pl.y, 0.5, pl); }
+    { const pl = this.g.player; if (pl && !pl.vehicle && pl !== c.pass) test(pl.x, pl.y, 0.5, pl); }
     // turning through a junction the nose points away from where the car is going: look along the arc for the player's cars
     if (c.junction) { const j = c.junction; for (const v of this.g.vehicles) { if (v === c.pass || Math.abs(v.x - c.x) > 16 || Math.abs(v.y - c.y) > 16) continue;
       for (let k = 1; k <= 5; k++) { const u = j.u + (k * 2.2) / j.len; if (u > 1.15) break; const a = (1 - u) * (1 - u), b = 2 * u * (1 - u), d = u * u, qx = a * j.p0x + b * j.cx + d * j.p1x, qy = a * j.p0y + b * j.cy + d * j.p1y;
         let hit = false; for (const o of [0.3, 0, -0.3]) if (Math.hypot(qx - v.x - Math.cos(v.h) * v.def.len * o, qy - v.y - Math.sin(v.h) * v.def.len * o) < (v.def.wid + c.def.wid) / 2 + 0.45) hit = true;
         if (hit) { const gp = k * 2.2 - half * 0.6 - this.roomFor(v); if (gp < gap) { gap = Math.max(0, gp); this._blk = v; } break; } } } }
-    const p = this.g.player; if (!p.vehicle) test(p.x, p.y, 0.5, p);
-    for (const q of this.g.peds.list) if (q.onRoad) test(q.x, q.y, 0.4, q);
+    const p = this.g.player; if (!p.vehicle && p !== c.pass) test(p.x, p.y, 0.5, p);
+    for (const q of this.g.peds.list) if (q.onRoad && !(this.bodyOn && q.state === 'down')) test(q.x, q.y, 0.4, q);
+    // people lying in the roadway (this.bod): stopped for further back than a car is, so there is room to turn out round them
+    this._be = null;
+    if (this.bodyOn) for (const B of this.bod) { if (B.o === c.pass) continue; const dx = B.x - c.x, dy = B.y - c.y, f = dx * fx + dy * fy; if (f < 0.5 || f > look + B_RAD + B_BACK + half) continue;
+      if (Math.abs(-dx * fy + dy * fx) > 1.25 + B_RAD * 0.6) continue; const gp = f - half - B_RAD - B_BACK; if (gp < gap) { gap = gp; this._blk = B.o; this._be = B; } }
     return gap;
+  }
+  // The people down on the roadway, once a step: the game's own pedestrians (struck, shot, a policeman), crowd people who are down, pedhit's ragdolls
+  // of crowd people, people.js's bodies of shot crowd people. One entry each, kept while he lies there: { o: who, x, y: his middle, ax, ay: where
+  // he lay when a car first stood for him, t0: when that was (-1: no car has yet), cr: a car has had to crawl past him }. The crowd is looked through every eighth step only.
+  bodies() {
+    const g = this.g, L = this.bod, st = g.statics, k = ++this._bk;
+    const put = (o, x, y) => { if (st.onSidewalk(x, y)) return; let B = null; for (const q of L) if (q.o === o) { B = q; break; } if (!B) L.push((B = { o, x, y, ax: x, ay: y, t0: -1, cr: 0, k }));
+      B.x = x; B.y = y; B.k = k; if (Math.abs(x - B.ax) > 1 || Math.abs(y - B.ay) > 1) { B.ax = x; B.ay = y; B.t0 = -1; B.cr = 0; } };
+    const lying = (p) => { const r = 0.85 * (p.scale || 1) * (p.fall || 0); put(p, p.x + Math.cos(p.h) * r, p.y + Math.sin(p.h) * r); };      // drawn tipped over about his feet, head towards h (a ragdoll or a doll keeps fall at 0 and x, y at the hips)
+    for (const p of g.peds.list) if (p.state === 'down') lying(p);
+    const S = g.crowd && g.crowd.sim; if (S && S.agents) { const D = this._dn; if (--this._dnT <= 0) { this._dnT = 8; D.length = 0; for (const a of S.agents) if (a && !a.gone && a.state === 'down') D.push(a); } for (const a of D) if (!a.gone && a.state === 'down') lying(a); }
+    const PH = g.__pedhit; if (PH && PH.list) for (const R of PH.list) if (R.fig && R.fig.crowd && R.P && R.P.hips.p.y < 1.1) put(R, R.P.hips.p.x, -R.P.hips.p.z);      // (one lying on a bonnet or a roof is not in the road)
+    const BD = g.combat && g.combat.bodies; if (BD && BD.live) for (const b of BD.live) if (b.doll && b.blob && b.blob.visible) put(b, b.blob.position.x, -b.blob.position.z);
+    for (let i = L.length - 1; i >= 0; i--) if (L[i].k !== k) L.splice(i, 1);
+  }
+  // Is there room for car c to run with its lane offset at `lo` (metres to the right of its lane; negative: left) from here to past the person
+  // B, fB metres ahead of its middle? Not onto the pavement, not into a wall, a post or a parked car, not where one of the player's cars or another
+  // car in traffic is or will be (a car coming the other way is given six seconds), not over the player or another person lying there.
+  sideRoom(c, lo, fB, B) {
+    const g = this.g, st = g.statics, fx = Math.cos(c.h), fy = Math.sin(c.h), half = c.def.len / 2, hw = c.def.wid / 2, d = lo - c.lo, sg = d < 0 ? -1 : 1, far = Math.max(fB, 0) + half + 2.5;
+    const cx = c.x + fy * d, cy = c.y - fx * d, ex = fy * sg * (hw + 0.2), ey = -fx * sg * (hw + 0.2);
+    for (let a = 0; a <= far + half; a += 1.5) { const px = cx + fx * a, py = cy + fy * a; if (st.onSidewalk(px + ex, py + ey) || st.resolve(px, py, hw + 0.05, tmp2) > 0) return false; }
+    for (const o of this.cars) { if (o === c) continue; const dx = o.x - c.x, dy = o.y - c.y; if (dx > 90 || dx < -90 || dy > 90 || dy < -90) continue; const f = dx * fx + dy * fy, r = dx * fy - dy * fx;
+      if (Math.abs(r) < 0.9 || Math.abs(r - d) > hw + o.def.wid / 2 + 0.35) continue;      // in this car's own line (the queue), or clear of the way out
+      const ol = o.def.len / 2, al = Math.cos(o.h - c.h);
+      if (al < -0.3) { if (f > -half && f < far + ol + 6 + o.v * 6) return false; }
+      else if (f > -(half + ol + 2 + (al > 0.3 ? o.v * 2 : 0)) && f < far + ol + 1) return false; }
+    for (const v of g.vehicles) { const dx = v.x - c.x, dy = v.y - c.y; if (dx > 60 || dx < -60 || dy > 60 || dy < -60) continue; const f = dx * fx + dy * fy, r = dx * fy - dy * fx, m = v.def.len / 2 + 1 + Math.hypot(v.vx, v.vy) * 2.5;
+      if (Math.abs(r - d) < hw + v.def.len / 2 + 0.35 && f > -(half + m) && f < far + m) return false; }
+    const who = (x, y) => { const dx = x - c.x, dy = y - c.y, f = dx * fx + dy * fy; return f > -half && f < far && Math.abs(dx * fy - dy * fx - d) < hw + 0.65; };
+    const pl = g.player; if (pl !== B.o && !pl.vehicle && who(pl.x, pl.y)) return false;
+    for (const q of this.bod) if (q !== B && who(q.x, q.y)) return false;
+    return true;
+  }
+  // Car c has the person B (an entry of this.bod, or this._pe for the player on foot) in its way and nothing nearer holds it. n: the lanes its way
+  // on this block (0 in a junction). See the note at B_WAIT.
+  round(c, B, n, t, dt) {
+    if (c.v < 0.3) { if (B.t0 < 0) B.t0 = t; c.held += dt; } else if (c.v > 2.5) return;
+    const g = this.g, R = g.roads;
+    if (B.t0 < 0 || t - B.t0 < B_WAIT || c.bd || c.dbl || c.stun > 0 || ((g.frame | 0) + c.id) % 4) return;      // (looked at every fourth step: sideRoom is not free)
+    // the next lane, as round a stalled car
+    if (n > 1 && Math.abs(c.lo) < 0.1) for (const l2 of [c.li - 1, c.li + 1]) { if (l2 < 0 || l2 >= n || !this.laneFree(c, l2)) continue; c.lo = c.lo0 = R.laneOffset(c.e, c.dir, c.li) - R.laneOffset(c.e, c.dir, l2); c.li = l2; c.pass = B.o; c.passT = 6; c.held = 0; c.plan = null; if (c.nx) c.nx = undefined; return; }
+    // out to the side of its lane, the side that needs less first
+    const fx = Math.cos(c.h), fy = Math.sin(c.h), dx = B.x - c.x, dy = B.y - c.y, f = dx * fx + dy * fy, s = -dx * fy + dy * fx, half = c.def.len / 2, rb = B.o === g.player ? 0.5 : 0.45, need = c.def.wid / 2 + rb + 0.15;
+    const aR = Math.max(0, need - s), aL = Math.max(0, need + s), room = f - half - rb;
+    for (const a of aR <= aL ? [aR, -aL] : [-aL, aR]) { if (Math.abs(c.lo + a) > 3.4 || !this.sideRoom(c, c.lo + a, f, B)) continue;
+      if (room < Math.abs(a) / B_TURN + 0.3 && c.held < B_GIVEUP && this.room) { c.backT = 0.2; c.backV = 1.2; return; }      // too close to turn out: back off first (while there is room behind)
+      c.bd = B; c.bs = c.lo + a || 1e-4; c.bv = B_SLOW; c.pass = B.o; c.passT = 12; c.held = 0; return; }
+    // no room on either side: the player is waited for; past anyone lying there the car crawls after B_GIVEUP seconds, as far over as it can get
+    if (B.o === g.player || (c.held < B_GIVEUP && !B.cr)) return;      // (the cars behind the first that crawled past do not each wait again)
+    let bs = 0, far = Math.abs(s) + 0.05; for (const k of [0.75, 0.5, 0.25]) for (const a of [aR * k, -aL * k]) { const d = Math.abs(s + a); if (d > far && this.sideRoom(c, c.lo + a, f, B)) { far = d; bs = c.lo + a; } }      // the offset that leaves him furthest from the car's middle
+    if (!bs && c.held < B_GIVEUP) return;      // nothing to be gained to either side just now (the car ahead is still on its way round): not straight over him yet
+    c.bd = B; c.bs = bs; c.bv = B_CREEP; c.pass = B.o; c.passT = 18; c.held = 0; B.cr = 1;
   }
   // The player's cars in this car's way. Each is a row of circles down its length (so a car standing ACROSS the lane is seen for what it is: the
   // old test was one circle at its middle and missed a nose or a tail in the lane), swept along this car's nose. Sets _pg to the bare distance
@@ -226,6 +298,7 @@ export class Traffic {
   step(dt, t) {
     const g = this.g, R = g.roads, px = g.focus.x, py = g.focus.y, pv = g.demo ? null : g.player.vehicle;
     this.spawnT -= dt; if (this.spawnT <= 0 && this.cars.length < this.target) { this.spawnT = 0.25; this.trySpawn(px, py); }
+    if (this.bodyOn) this.bodies();
     for (let i = this.cars.length - 1; i >= 0; i--) {
       const c = this.cars[i];
       if (Math.hypot(c.x - px, c.y - py) > 420 || c.dead) { this.cars.splice(i, 1); continue; }
@@ -233,6 +306,10 @@ export class Traffic {
       let limit = c.v0; const look = 8 + c.v * 2.2, v0 = c.v;
       // a car slipping through a jam (ghost) still stops for the player's cars: it used to drive through the car in front of it AND into the player's car
       let gap, blk; if (c.ghost > 0) { gap = this.gapMine(c, look); blk = this._mb; if (!blk) gap = 1e9; } else { gap = this.gapAhead(c, look); blk = this._blk; } const pg = this._pg;
+      // a person in the way (B_WAIT): someone lying in the road, or the player standing in it (he counts as standing while he stays within a metre)
+      let B = null; const gapB = gap; if (this.bodyOn && blk && c.ghost <= 0) { if (blk === g.player) { B = this._pe; const q = g.player; if (B.o !== q || Math.abs(q.x - B.ax) > 1 || Math.abs(q.y - B.ay) > 1) { B.o = q; B.ax = q.x; B.ay = q.y; B.t0 = -1; } B.x = q.x; B.y = q.y; } else if (this._be && this._be.o === blk) B = this._be; }
+      // going round one: slowly, until the tail is a metre past him; then the offset eases back as after a lane change
+      if (c.bd) { const D = c.bd, f = (D.x - c.x) * Math.cos(c.h) + (D.y - c.y) * Math.sin(c.h); if (f < -(c.def.len / 2 + 1) || c.pass !== D.o || c.passT <= dt) { c.bd = null; c.bs = 0; c.bv = 0; if (c.pass === D.o) { c.pass = null; c.passT = 0; } if (c.lo) c.lo0 = c.lo; } else limit = Math.min(limit, c.bv); }
       // held up by one of the player's cars or by the player, or by a car that is (the queue behind): c.pt is when the car at the head of the queue last
       // saw the player's car in its way, handed back from car to car, so a ring of cars with no such head forgets it within 1.5 s
       // (the queue is the cars behind it on the same block, and a car in the junction waiting to get onto that block: cross traffic is not part of it)
@@ -266,11 +343,12 @@ export class Traffic {
         if (c.plan && c.plan.big && !atLight) { const dEnt = c.plan.sEnt - c.s; if (dEnt < 10 + c.v * 1.6 && c.wait < 14 && this.mustYield(c)) { gap = Math.min(gap, Math.max(0, dEnt) + 1.6); c.yield = true; } else c.yield = false; }
         // stuck behind something that is not going anywhere (a stopped player, a stalled car): move over if there is a lane to move into
         const n = R.laneCount(c.e, c.dir);
-        if (blk && c.v < 0.6 && gap < 4 && !atLight && n > 1 && Math.abs(c.lo) < 0.1 && (blk.def ? (blk.vx !== undefined ? Math.hypot(blk.vx, blk.vy) < 0.3 : blk.stun > 0 || (blk.held > 2.5 && blk.pass === null && blk.e === c.e)) : false)) {
+        if (B && gap >= gapB - 0.01) this.round(c, B, n, t, dt);
+        else if (blk && c.v < 0.6 && gap < 4 && !atLight && n > 1 && Math.abs(c.lo) < 0.1 && (blk.def ? (blk.vx !== undefined ? Math.hypot(blk.vx, blk.vy) < 0.3 : blk.stun > 0 || (blk.held > 2.5 && blk.pass === null && blk.e === c.e)) : false)) {
           c.held += dt;
           if (c.held > 1.6) { for (const l2 of [c.li - 1, c.li + 1]) { if (l2 < 0 || l2 >= n || !this.laneFree(c, l2)) continue; c.lo = c.lo0 = R.laneOffset(c.e, c.dir, c.li) - R.laneOffset(c.e, c.dir, l2); c.li = l2; c.pass = blk; c.passT = 6; c.held = 0; c.plan = null; if (c.nx) c.nx = undefined; break; } }
         } else if (c.v < 0.3 && !atLight && blk) c.held += dt; else c.held = 0;
-      } else limit = Math.min(limit, c.junction.vmax);
+      } else { limit = Math.min(limit, c.junction.vmax); if (B) this.round(c, B, 0, t, dt); }
       // follow: speed that can still stop inside the gap
       const safe = Math.sqrt(Math.max(0, 2 * 4.5 * (gap - 1.8)));
       const want = Math.min(limit, safe);
@@ -289,17 +367,20 @@ export class Traffic {
       const ph = c.h;
       if (c.junction) {
         const j = c.junction; j.u += ds / j.len;
-        if (j.u >= 1) { c.avoid = null; c.e = j.next.e; c.dir = j.next.dir; c.li = j.next.li; c.s = j.s1 + (j.u - 1) * j.len; c.junction = null; c.plan = null; c.nx = undefined; c.v0 = (c.e.ave ? 11.5 : 8) * (0.85 + this.rand() * 0.3); R.lanePos(c.e, c.dir, c.li, c.s, c); }
+        if (j.u >= 1) { c.avoid = null; c.e = j.next.e; c.dir = j.next.dir; c.li = j.next.li; c.s = j.s1 + (j.u - 1) * j.len; c.junction = null; c.plan = null; c.nx = undefined; c.v0 = (c.e.ave ? 11.5 : 8) * (0.85 + this.rand() * 0.3); R.lanePos(c.e, c.dir, c.li, c.s, c); if (c.lo) { c.x += Math.sin(c.h) * c.lo; c.y -= Math.cos(c.h) * c.lo; } }
         else { const u = j.u, a = (1 - u) * (1 - u), b = 2 * u * (1 - u), d = u * u; c.x = a * j.p0x + b * j.cx + d * j.p1x; c.y = a * j.p0y + b * j.cy + d * j.p1y;
-          const tx = 2 * (1 - u) * (j.cx - j.p0x) + 2 * u * (j.p1x - j.cx), ty = 2 * (1 - u) * (j.cy - j.p0y) + 2 * u * (j.p1y - j.cy); c.h = Math.atan2(ty, tx); }
+          const tx = 2 * (1 - u) * (j.cx - j.p0x) + 2 * u * (j.p1x - j.cx), ty = 2 * (1 - u) * (j.cy - j.p0y) + 2 * u * (j.p1y - j.cy); c.h = Math.atan2(ty, tx);
+          if (c.lo || c.bs) { c.lo += c.bs ? clamp(c.bs - c.lo, -ds * B_TURN, ds * B_TURN) : -Math.sign(c.lo) * Math.min(Math.abs(c.lo), ds * 0.55); if (!c.bs && Math.abs(c.lo) < 0.02) c.lo = 0; c.x += Math.sin(c.h) * c.lo; c.y -= Math.cos(c.h) * c.lo; } }      // (only a car going round a person in the junction has an offset here)
       } else {
         c.s += ds; const L = c.e.len;
         if (!c.plan && c.s >= L - 12) c.plan = this.planFor(c);
         if (c.s >= L - 0.5 && !c.plan) { c.dead = true; continue; }
-        if (c.plan && c.s >= c.plan.sEnt) { c.junction = c.plan; c.junction.u = (c.s - c.plan.sEnt) / c.plan.len; c.lo = 0; }
+        if (c.plan && c.s >= c.plan.sEnt) { c.junction = c.plan; c.junction.u = (c.s - c.plan.sEnt) / c.plan.len; if (!c.bd) c.lo = 0; }
         else {
           R.lanePos(c.e, c.dir, c.li, c.s, c);
-          if (c.lo) {   // sliding across from the lane it left
+          if (c.bs) {   // easing out round a person in the lane
+            const d = clamp(c.bs - c.lo, -ds * B_TURN, ds * B_TURN); c.lo += d; c.x += Math.sin(c.h) * c.lo; c.y -= Math.cos(c.h) * c.lo; c.h -= Math.sign(c.bs) * 0.42 * Math.sin(Math.PI * clamp(c.lo / c.bs, 0, 1));
+          } else if (c.lo) {   // sliding across from the lane it left
             const k = Math.abs(c.lo) / Math.abs(c.lo0 || 1), sgn = Math.sign(c.lo); c.x += Math.sin(c.h) * c.lo; c.y -= Math.cos(c.h) * c.lo; c.h += sgn * 0.42 * Math.sin(Math.PI * clamp(1 - k, 0, 1));
             c.lo -= sgn * Math.min(Math.abs(c.lo), ds * 0.55); if (Math.abs(c.lo) < 0.02) c.lo = 0;
           }

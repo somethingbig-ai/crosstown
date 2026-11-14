@@ -88,6 +88,7 @@ export class Game {
     // blocks that run along or beyond the edge of the playable map (there is an invisible wall there) are not for routes
     for (const e of this.roads.edges) e.out = e.pts.some((p) => !this.bounds.in(p[0], p[1], -9));
     const st = (this.statics = new StaticWorld(16));
+    { const i = city.buildings.findIndex((b) => b.id === 100079 && b.kind === 'train_station'); if (i >= 0) city.buildings.splice(i, 1); }      /* gameplay/north, Nov 14, stop-gap: the outline of the underground Times Square subway station came in as an 80 m building across 7th Ave, 8th Ave, Broadway and W 40th-42nd St (lanes/gameplay/north-state/STATE.md); tiles to take it out of the data */
     for (const b of city.buildings) if (b.minh < 2.5) { st.addPoly(b.poly, 0, 'building'); for (const h of b.holes || []) st.addPoly(h, 0, 'building'); }
     for (const b of city.blocks) st.addBlock(b);
     // the edge of the map: an invisible wall
@@ -140,6 +141,7 @@ export class Game {
     try { (await import('./props.js')).install(this); } catch (e) { console.log('[game] props not loaded: ' + (e && e.message)); }     // loose street props from nyc-breakable; ?props=0 off
     if (this.P.get('unstick') !== '0') try { (await import('./motion/unstick.js')).install(this); } catch (e) { console.warn('[motion] unstick not loaded', e); }     /* motion lane, Nov 12: a parked car the player's car touches comes loose and can be pushed (public report: stuck across a one-lane street) */
     try { (await import('./crash.js')).install(this); } catch (e) { console.log('[game] crash not loaded: ' + (e && e.message)); }     // car crash deformation v2 from nyc-breakable (crash.js 4d945bfd); ?crash=0 off
+    try { (await import('./ram.js')).install(this); } catch (e) { console.log('[game] ram not loaded: ' + (e && e.message)); }     // rammed cars are thrown (breakable ram.js; ?ram=0)
     if (this.P.get('overhead') !== '0') try { (await import('./overhead.js')).install(this); } catch (e) { console.log('[overhead] not loaded: ' + (e && e.message)); }     /* lead/h-jump, Nov 14: game.statics.overhead, the list of what is over the sidewalk with underside heights (built on first use); ?overhead=0 off */
     if (this.P.get('jump') !== '0') try { (await import('./move/jump.js')).install(this); } catch (e) { console.log('[jump] not loaded: ' + (e && (e.stack || e.message))); }     // gameplay lane: jump on foot, Space / controller A (src/move/jump.js, jumpcore.js); ?jump=0 off (nothing fetched)
     if (this.P.get('entry') !== '0') try { await (await import('./entry/entry.js')).addEntry(this); } catch (e) { console.log('[entry] not loaded: ' + (e && (e.stack || e.message))); }     // gameplay lane: real car entry and exit (door, seat, camera); ?entry=0 off

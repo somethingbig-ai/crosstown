@@ -36,7 +36,9 @@ const _o = {}, _t = {}, _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3
 const F = new THREE.Vector3(), R = new THREE.Vector3(), U = new THREE.Vector3();
 const sm = (u) => { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); };
 const REAL = (() => { try { return !!document.createElement('canvas').getContext('2d').createImageData(1, 1).data; } catch (e) { return false; } })();
-const CLINICS = [['Mercy Walk-In', -196, -214], ['Eastside Urgent Care', 260, 280], ['St. Odile Clinic', -340, 240], ['Fifth Ward Medical', 300, -300], ['Midtown Walk-In', 20, 10]];
+const CLINICS = [['Mercy Walk-In', -196, -214], ['Eastside Urgent Care', 260, 280], ['St. Odile Clinic', -340, 240], ['Fifth Ward Medical', 300, -300], ['Midtown Walk-In', 30, 32] /* gameplay/north, Nov 14: was 20, 10, which is inside building 3744: he woke shut in behind its walls */,
+  /* gameplay/north, Nov 14: the map runs to y 1711 now and every clinic stood south of y 280: a man who went down at W 47th St woke 1.4 km away. Four in the north area (invented names; each point is on a sidewalk, outside every footprint) */
+  ['Garment Row Walk-In', -308, 784], ['Sixth Avenue Urgent Care', 240, 930], ['Midtown North Clinic', -82, 1374], ['Forty-Seventh Street Medical', 290, 1530]];
 
 export async function addHeat(game, combat) {
   if (game.P.get('heat') === 'none' || game.P.get('heat') === '0') return null;
@@ -666,7 +668,7 @@ export class Heat {
     }
     if (D.woke && this.fade <= 0) this.dead = null;
   }
-  sidewalkNear(x, y) { const st = this.g.statics; for (let r = 0; r < 90; r += 3) for (let a = 0; a < 6.28; a += 0.5) { const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r; if (st.onSidewalk(px, py) && !(st.resolve(px, py, 0.6, _o) > 0)) { const ne = this.g.roads.nearestEdge(px, py, 60); return { x: px, y: py, h: ne ? Math.atan2(ne.y - py, ne.x - px) : 0 }; } } return { x, y, h: 0 }; }
+  sidewalkNear(x, y) { const st = this.g.statics; for (let r = 0; r < 90; r += 3) for (let a = 0; a < 6.28; a += 0.5) { const px = x + Math.cos(a) * r, py = y + Math.sin(a) * r; if (st.onSidewalk(px, py) && !(st.resolve(px, py, 0.6, _o) > 0)) { const ne = this.g.roads.nearestEdge(px, py, 60); if (ne && this.wall && this.wall !== st && this.wall.raycast(px, py, ne.x, ne.y) < 1) continue;      /* gameplay/north, Nov 14: a block's inside counts as sidewalk, so a point inside a building passed; now a building wall between the point and the nearest street rules it out */ return { x: px, y: py, h: ne ? Math.atan2(ne.y - py, ne.x - px) : 0 }; } } return { x, y, h: 0 }; }
   deathCam() {
     const g = this.g, D = this.dead, cam = g.world.camera, pl = g.player, u = sm(D.t / 3.6), a = D.yaw + Math.PI + u * 0.5, d = 3.2 + u * 5.5, hz = 1.6 + u * 8.5;
     cam.position.set(pl.x + Math.cos(a) * d, hz, -(pl.y + Math.sin(a) * d)); cam.lookAt(pl.x, 0.5, -pl.y); if (Math.abs(cam.fov - 50) > 0.01) { cam.fov = 50; cam.updateProjectionMatrix(); } cam.updateMatrixWorld();

@@ -1880,7 +1880,7 @@ export async function add(game, ctx) {
     const mm = M.clone(); mm.pit = [t.R, back, r(6), guard ? sizes[si][0] / 2 - 0.06 : 0]; mm.kerb = Math.min(9, t.kerb + back); mm.kh = t.kh; mm.si = si; if (TSHADOW && t.sc) tsh.push([mm, t]); if (t.hero && V2) sunk[si].push(mm); else if (PITALL && V2 && r(3) < 0.55) { let sc = sunkCity.get(k); if (!sc) sunkCity.set(k, sc = sizes.map(() => [])); sc[si].push(mm); } else { tile.p[si][v].push(mm); flat.push([mm, si]); tile.a[si].push(mm); } if (guard) tile.g[si][r(5) < 0.5 ? 0 : 1].push(M.clone());
     if (guard && game.statics && game.statics.addSeg && !/[?&]guardsolid=0/.test(location.search)) {   // round 28 (ITEM12 'Added 18:30'): a guard is a low iron fence on three sides (open to the kerb): nobody walks through it
       const gx = sizes[si][0] / 2 - 0.06, gz = sizes[si][1] / 2 - 0.06, e = M.elements, W = (lx, lz) => [e[0] * lx + e[8] * lz + e[12], -(e[2] * lx + e[10] * lz + e[14])];
-      const a0 = W(-gx, gz), a1 = W(-gx, -gz), a2 = W(gx, -gz), a3 = W(gx, gz); game.statics.addSeg(a0[0], a0[1], a1[0], a1[1]); game.statics.addSeg(a1[0], a1[1], a2[0], a2[1]); game.statics.addSeg(a2[0], a2[1], a3[0], a3[1]); }
+      const a0 = W(-gx, gz), a1 = W(-gx, -gz), a2 = W(gx, -gz), a3 = W(gx, gz); game.statics.addSeg(a0[0], a0[1], a1[0], a1[1], 0.52, 'guard'); game.statics.addSeg(a1[0], a1[1], a2[0], a2[1], 0.52, 'guard'); game.statics.addSeg(a2[0], a2[1], a3[0], a3[1], 0.52, 'guard'); }     /* 0.52: the guard's top rail over the pit (guardGeometry: y0 0.06 + H 0.46), so a jump clears it */
   }
   const apronG = sizes.map((s, i) => apronGeometry(s[0], s[1], 91 + i)), apronMat = apronMaterial(shared);
   for (const [, tile] of tiles) for (let si = 0; si < 3; si++) {

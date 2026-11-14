@@ -215,7 +215,7 @@ function buildEdges(pk, mask, gy, R, NX) {
         post(e[0], e[1], gy + 0.03, gy + hh, 0, 0, FR * 0.75);
         box(F, mx, my, gy + hh - 0.03, gy + hh, ex, ey, GL / 2, 0.011, true); box(F, mx, my, gy + 0.05, gy + 0.075, ex, ey, GL / 2, 0.011, true);
         { const o = Wm.pos.length / 3; for (const [px, py, z, uu, vv] of [[prev[0], prev[1], gy + 0.06, 0, 0], [e[0], e[1], gy + 0.06, GL / TU, 0], [e[0], e[1], gy + hh, GL / TU, (hh - 0.06) / TV], [prev[0], prev[1], gy + hh, 0, (hh - 0.06) / TV]]) { Wm.pos.push(px, z, -py); Wm.nrm.push(-ey, 0, -ex); Wm.uv.push(uu, vv); } Wm.idx.push(o, o + 1, o + 2, o, o + 2, o + 3); } }
-      if (prev && (++panel % 11) !== 5) { const dx = a[0] - prev[0], dy = a[1] - prev[1], L = Math.hypot(dx, dy); segs.push([prev[0], prev[1], a[0], a[1]]); const tx = dx / L, ty = dy / L, n = [-ty, tx], NS = 4, sag = 0.008 + 0.02 * R(), Q0 = prev.post;
+      if (prev && (++panel % 11) !== 5) { const dx = a[0] - prev[0], dy = a[1] - prev[1], L = Math.hypot(dx, dy); segs.push([prev[0], prev[1], a[0], a[1], FH]); const tx = dx / L, ty = dy / L, n = [-ty, tx], NS = 4, sag = 0.008 + 0.02 * R(), Q0 = prev.post;
         for (let k = 0; k < NS; k++) { const u0 = k / NS, u1 = (k + 1) / NS, o = Wm.pos.length / 3;
           const at = (u, top) => { const hh = Q0.h + (P.h - Q0.h) * u - 0.03 - sag * 4 * u * (1 - u), lean = top ? 1 : 0; return [prev[0] + dx * u + (Q0.lx + (P.lx - Q0.lx) * u) * lean, prev[1] + dy * u + (Q0.ly + (P.ly - Q0.ly) * u) * lean, top ? gy + hh : gy + RB, u * L / TU, top ? (hh - RB) / TV : 0]; };
           for (const [px, py, z, uu, vv] of [at(u0, 0), at(u1, 0), at(u1, 1), at(u0, 1)]) { Wm.pos.push(px, z, -py); Wm.nrm.push(n[0], 0, -n[1]); Wm.uv.push(uu, vv); }
@@ -861,7 +861,7 @@ export async function add(game, ctx) {
     throw new Error('bench med(q1-q3): lead ' + out[0] + ' gnd ' + out[1] + ' +edge ' + out[2] + ' +near ' + out[3] + ' +far ' + out[4] + ' c' + cells);
   }
   // the lawn fence is solid (players reported walking through fences); gates stay open; the 4 cm edging is stepped over
-  if (game.statics && game.statics.addSeg && !(Q && Q.get('gsolid') === '0')) for (const q of fenceSegs) game.statics.addSeg(q[0], q[1], q[2], q[3]);
+  if (game.statics && game.statics.addSeg && !(Q && Q.get('gsolid') === '0')) for (const q of fenceSegs) game.statics.addSeg(q[0], q[1], q[2], q[3], q[4], 'lawn');     /* q[4]: the lawn fence's own height (FH in buildEdges), tagged for the jump */
   return { group, parks, rings, fenceSegs, paths: lay.parks, uniforms: { common, gU },
     report: { sward_ms: swMs, parks: parks.length, lawn_m2: Math.round(lawnM2), fence_m: Math.round(fenceM), kerb_m: Math.round(kerbM), ktris: Math.round(tris / 1000), sky: rings.length ? (rings[0].U.uSky.ok ? rings[0].U.uSky.value.toArray().map((v) => +v.toFixed(3)).join('/') : 'in shader') : '-', blade_ktris_max: Math.round(rings.reduce((a, r) => a + r.n * (r.S < 20 ? 3 : 1), 0) / 1000), blades: rings.reduce((a, r) => a + r.n, 0), hid: hidden.length, y: +gy.toFixed(3) } };
 }

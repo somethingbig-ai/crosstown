@@ -1,3 +1,4 @@
+// lanes/shops patch (tools/patch_storefronts.py): shops.json drives each slot's kind and name; both areas dressed. ?shops=0 = before.
 // storefronts.js (lanes/streets): the street floor as real geometry. By rule from city.json, every street-facing ground-floor wall of the
 // playable city gets piers, an entablature, a sign fascia and, bay by bay, a shopfront (bulkhead, mullions, transom, door with rails,
 // kick plate, pull and step, some set back between projecting showcases), a lobby, a residential entry, a closed gate, a service bay
@@ -108,7 +109,38 @@ const T = {
   jewelry: { g: 14, back: 15, floor: 14, fr: 0, mr: 2, cl: 0.25, lit: 1.2, sg: [2, 3, 3, 2, 2] }, barber: { g: 15, back: 7, floor: 0, fr: 3, mr: 3, cl: 0.2, lit: 1.1, sg: [4, 1, 1, 2, 3] },
   lobby: { g: -1, back: 10, floor: 12, fr: 4, mr: 4, cl: 0, lit: 0.9 }, vacant: { g: -1, back: 12, floor: 3, fr: 0, mr: 0, cl: 0, lit: 0.12 },
 };
-Object.keys(T).forEach((k, i) => { T[k].name = k; T[k].id = i; });
+// lanes/shops: the kinds the survey finds that the mixes above never made (shops.json types). tag / blade = cells of the extra rows of the atlas
+Object.assign(T, {
+  market: { g: 0, back: 0, floor: 0, fr: 2, mr: 2, cl: 0.75, lit: 1.2, sg: [2, 2, 4, 0, 1], out: 'produce', tag: 400, blade: 500 },
+  shoes: { g: 3, back: 3, floor: 11, fr: 0, mr: 0, cl: 0.05, lit: 1.1, sg: [2, 5, 0, 3, 0], tag: 401, blade: 501 },
+  restaurant: { g: 4, back: 6, floor: 11, fr: 1, mr: 1, cl: 0.1, lit: 0.7, sg: [3, 3, 0, 2, 5], tag: 402, blade: 104 },
+  fastfood: { g: 5, back: 5, floor: 10, fr: 1, mr: 1, cl: 0.35, lit: 1.35, sg: [1, 1, 7, 0, 1], tag: 403, blade: 104 },
+  bakery: { g: 12, back: 13, floor: 11, fr: 1, mr: 1, cl: 0.2, lit: 0.95, sg: [3, 2, 0, 2, 4], tag: 404, blade: 502 },
+  beauty: { g: 7, back: 7, floor: 3, fr: 3, mr: 3, cl: 0.3, lit: 1.2, sg: [3, 3, 1, 1, 2], tag: 405, blade: 503 },
+  variety: { g: 10, back: 11, floor: 3, fr: 2, mr: 2, cl: 0.8, lit: 1.15, sg: [2, 0, 5, 0, 2], tag: 406, blade: 103 },
+  phone: { g: 14, back: 1, floor: 3, fr: 4, mr: 4, cl: 0.3, lit: 1.45, sg: [1, 1, 7, 0, 0], tag: 407, blade: 504 },
+  gift: { g: 10, back: 11, floor: 3, fr: 2, mr: 2, cl: 0.9, lit: 1.3, sg: [1, 0, 6, 0, 1], tag: 408, blade: 505 },
+  smoke: { g: 2, back: 2, floor: 11, fr: 2, mr: 2, cl: 0.5, lit: 0.95, sg: [0, 1, 8, 0, 0], tag: 409, blade: 506 },
+  optician: { g: 14, back: 15, floor: 14, fr: 0, mr: 0, cl: 0.1, lit: 1.3, sg: [1, 5, 0, 2, 0], tag: 410, blade: 507 },
+  gym: { g: 11, back: 12, floor: 3, fr: 0, mr: 0, cl: 0, lit: 1.25, sg: [1, 5, 1, 1, 0], tag: 411, blade: 508 },
+  clinic: { g: 1, back: 1, floor: 3, fr: 0, mr: 0, cl: 0.03, lit: 1.1, sg: [1, 4, 1, 3, 0], tag: 412, blade: 509 },
+  office: { g: 9, back: 9, floor: 2, fr: 4, mr: 4, cl: 0, lit: 0.95, sg: [1, 4, 1, 3, 0], tag: 413, blade: -1 },
+  gallery: { g: 11, back: 12, floor: 12, fr: 0, mr: 0, cl: 0, lit: 1.35, sg: [0, 2, 0, 5, 0], tag: -1, blade: -1 },
+  wholesale: { g: 14, back: 3, floor: 3, fr: 0, mr: 2, cl: 0.85, lit: 1.1, sg: [2, 1, 4, 0, 1], tag: 414, blade: 103 },
+  hotel: { g: -1, back: 10, floor: 12, fr: 4, mr: 4, cl: 0, lit: 1.0 }, theatre: { g: -1, back: 10, floor: 12, fr: 4, mr: 4, cl: 0, lit: 1.1 },
+  church: { g: -1, back: 10, floor: 12, fr: 4, mr: 4, cl: 0, lit: 0.5 }, school: { g: -1, back: 10, floor: 12, fr: 4, mr: 4, cl: 0, lit: 0.8 }, civic: { g: -1, back: 10, floor: 12, fr: 4, mr: 4, cl: 0, lit: 0.8 },
+});
+T.pharmacy.sg = [1, 1, 6, 0, 0];      /* lanes/shops: a pharmacy reads as a bright lightbox from across the street */
+Object.keys(T).forEach((k, i) => { T[k].name = k; T[k].id = i; if (T[k].tag === undefined) T[k].tag = T[k].g >= 0 && T[k].g < 16 ? 200 + T[k].g : -1; if (T[k].blade === undefined) T[k].blade = T[k].g >= 0 && T[k].g < 16 ? 100 + T[k].g : -1; });
+// shops.json type -> the game role the bay is built as
+const SHOP_ROLE = { hotel: 'lobby', theatre: 'lobby', church: 'lobby', school: 'lobby', civic: 'lobby', lobby: 'lobby', residential: 'infill', blank: 'infill', vacant: 'vacant', parking: 'dock', auto: 'service' };
+const nameCell = (n) => (n < 80 ? n : 300 + (n - 80));
+// sign colours that read as the type from across the street (indices into SIGNPAL / LIGHTBOX); a type not listed keeps the full palette
+const TPAL = { pharmacy: [[2, 9, 12, 6], [2, 6, 7]], bank: [[0, 9, 14, 6, 2], [2, 7]], deli: [[1, 5, 12, 13, 15], [0, 1, 3, 4, 6]], market: [[13, 3, 12, 17], [3, 0]], fastfood: [[12, 5, 15, 1, 16], [0, 1, 4, 6]],
+  pizza: [[1, 12, 13, 8, 5], [0, 1, 6]], smoke: [[10, 14, 4], [5, 4, 7]], jewelry: [[4, 14, 0, 2], [4, 1]], restaurant: [[3, 7, 8, 0, 14, 17, 10], [0, 3]], bar: [[4, 14, 3, 7, 10], [6, 4]],
+  cafe: [[3, 7, 17, 2, 14], [3, 0]], bakery: [[8, 17, 7, 2], [0, 6]], phone: [[9, 16, 6, 12], [7, 2, 4]], gift: [[5, 12, 16, 15], [1, 4, 6, 7]], clinic: [[2, 9, 6], [2, 7]], optician: [[14, 2, 9], [2]],
+  nails: [[10, 11, 2, 8], [5, 2]], beauty: [[10, 2, 14, 11], [5, 2]], liquor: [[1, 3, 4, 14], [6, 4]], laundry: [[9, 16, 13], [2, 7]], hotel: [[0, 3, 14], [2]], clothes: [[14, 2, 6, 0], [2]], shoes: [[14, 2, 6], [2]] };
+const tpick = (TY, arr, k, x) => { const L = TPAL[TY.name]; if (!L) return arr[Math.floor(x * arr.length)]; const l = L[k]; return arr[l[Math.floor(x * l.length)]]; };
 const MIXES = [
   'deli deli deli pizza pizza nails nails laundry laundry barber barber bar bar diner liquor liquor cafe cafe hardware florist clothes pharmacy',
   'bank bank pharmacy pharmacy clothes clothes clothes cafe cafe jewelry jewelry deli deli diner home liquor florist',
@@ -130,6 +162,8 @@ export const BOX_STRIDE = 17, GLASS_STRIDE = 27;
 // ------------------------------------------------------------------------------------------------ layout: city.json -> instance records
 export function layout(C, opts = {}) {
   const B = C.buildings, px = C.meta.px, py = C.meta.py;
+  const PB = opts.core || !C.meta.play ? [-px, -py, px, py] : C.meta.play;     /* lanes/shops: the whole playable box (both areas); was core only */
+  const SH = opts.shops || null, shT = SH ? SH.types : null; let shHit = 0;
   const bgrid = new SegGrid(), kgrid = new SegGrid(), egrid = new SegGrid(30), cells = new Map();
   B.forEach((b, bi) => {
     if (b.minh > 3) return; bgrid.ring(b.poly, bi);
@@ -163,7 +197,7 @@ export function layout(C, opts = {}) {
     if (b.far || b.minh >= 0.5) return;
     let ext = b.poly; if (area2(ext) < 0) ext = ext.slice().reverse();
     let cx = 0, cy = 0; for (const p of ext) { cx += p[0]; cy += p[1]; } cx /= ext.length; cy /= ext.length;
-    if (!(Math.abs(cx) < px + 40 && Math.abs(cy) < py + 40)) return;
+    if (!(cx > PB[0] - 40 && cx < PB[2] + 40 && cy > PB[1] - 40 && cy < PB[3] + 40)) return;
     const L = lay(bi), style = b.style, bid = b.id ?? bi, h = b.h;
     if (h < 3.2) return;
     const gh = Math.min(L.gh, h - 0.05), Hh = gh - SW, sLo = Hh - 1.25, sHi = Hh - 0.35;
@@ -228,6 +262,13 @@ export function layout(C, opts = {}) {
       }
       if (P.role === 'shop' || P.role === 'gate') { let t = mixl[Math.floor(r(4) * mixl.length)]; if (t === prev) t = mixl[Math.floor(r(5) * mixl.length)]; if (t === prev) t = mixl[(mixl.indexOf(t) + 3) % mixl.length]; P.type = T[t]; prev = t; }
       else if (P.role === 'lobby') P.type = T.lobby; else P.type = T.vacant;
+    }
+    if (SH) for (const P of pieces) {                     // lanes/shops: what really stands here today (shops.json), and its invented name
+      if (!(P.role === 'shop' || P.role === 'gate' || P.role === 'vacant' || P.role === 'lobby')) continue;
+      const row = SH.rows[bid + ':' + P.key]; if (!row) continue;
+      const tn = shT[row[0]]; P.sh = tn; shHit++;
+      let role = SHOP_ROLE[tn] || 'shop'; if (role === 'dock' && !(P.Lp >= 4.4 && P.kd < 9)) role = 'service';
+      P.role = role; P.type = T[tn] || (role === 'lobby' ? T.lobby : T.vacant); P.nameCell = row[1] >= 0 ? nameCell(row[1]) : -1;
     }
 
     // ---- emit
@@ -321,7 +362,7 @@ export function layout(C, opts = {}) {
         if (rec) { so(x0, dl, dl - x0 > 0.12 ? zF + 0.085 : zd + 0.07); so(dl, dr, zd + 0.07); so(dr, x1, x1 - dr > 0.12 ? zF + 0.085 : zd + 0.07); } else so(x0, x1, zF + 0.085);     // the glass line; a set-back door stays a closed door at the back of its recess
         if (isLobby) for (const s of [-1, 1]) so(s * (dw / 2 + 0.2) - 0.2, s * (dw / 2 + 0.2) + 0.2, pproud + 0.08);
         if (P.role === 'vacant') { flagsAll = r(25) < 0.6 ? 2 : 0; clutter = 0; tagCell = r(26) < 0.7 ? 131 : 0; }
-        else if (!isLobby && r(27) < 0.6) tagCell = 200 + TY.g;
+        else if (!isLobby && r(27) < 0.6 && TY.tag >= 0) tagCell = TY.tag;
         const bkKind = r(28), bkCol = bkKind < 0.3 ? mul(fc[0], 1.0) : (bkKind < 0.55 ? [0.07 + 0.3 * r(29), 0.07 + 0.25 * r(29), 0.07 + 0.2 * r(29)] : (bkKind < 0.8 ? mul(baseCol, 0.9) : [0.5, 0.5, 0.48]));
         for (const [sa, sb] of [[x0, dl], [dr, x1]]) {
           if (sb - sa < 0.12) continue;
@@ -350,22 +391,23 @@ export function layout(C, opts = {}) {
             for (const s of [-1, 1]) bc(0, s * (mw - 0.2), 2.94 + (sLo - 2.94) / 2, out * 0.45, 0.025, Math.hypot(sLo - 2.94, out * 0.9), 0.025, 0, -Math.atan2(out * 0.9, sLo - 2.94), K.PLAIN, STEEL, 0.4, 0.9, 0, seed); }
         }
         stats.shops++;
-        if (P.role === 'shop') shops.push({ x: +P.x.toFixed(2), y: +P.y.toFixed(2), h: +rot.toFixed(4), nx: +P.nx.toFixed(4), ny: +P.ny.toFixed(4), w: +W.toFixed(2), kerb: +P.kd.toFixed(2), out: +Math.max(zF + 0.1, pproud).toFixed(2), door: +dxc.toFixed(2), type: TY.name, food: ['deli', 'diner', 'pizza', 'bar', 'cafe'].includes(TY.name), stand: !!(TY.out && P.kd - zF > 3.3 && r(59) < 0.75), shed });
+        if (P.role === 'shop') shops.push({ x: +P.x.toFixed(2), y: +P.y.toFixed(2), h: +rot.toFixed(4), nx: +P.nx.toFixed(4), ny: +P.ny.toFixed(4), w: +W.toFixed(2), kerb: +P.kd.toFixed(2), out: +Math.max(zF + 0.1, pproud).toFixed(2), door: +dxc.toFixed(2), type: TY.name, food: ['deli', 'diner', 'pizza', 'bar', 'cafe', 'restaurant', 'fastfood', 'bakery'].includes(TY.name), stand: !!(TY.out && P.kd - zF > 3.3 && r(59) < 0.75), shed });
       }
       // ---- sign fascia
       const zs = zF > 0.2 ? zF + 0.04 : pproud + 0.02, sx0 = x0, sx1 = x1;
+      if (isLobby && P.nameCell >= 0) { const dk = style === 2 || r(40) < 0.4; bx(1, x0, x1, sLo, sHi, 0, zs, dk ? K.PLAIN : K.MAS, dk ? [0.03, 0.03, 0.033] : baseCol, ...(dk ? [0.5, 0.2, 1, seed] : masP)); bx(1, x0 + 0.2, x1 - 0.2, sLo + 0.1, sHi - 0.08, zs, zs + 0.03, K.SIGN, dk ? [0.03, 0.03, 0.033] : baseCol, P.nameCell, 1, pack(P.sh === 'theatre' ? [0.95, 0.85, 0.55] : BRASS), seed); continue; }
       if (isLobby) { bx(1, x0, x1, sLo, sHi, 0, zs, K.MAS, baseCol, ...masP); bx(1, -0.5, 0.5, sLo + 0.12, sHi - 0.1, zs, zs + 0.02, K.SIGN, style === 2 ? [0.05, 0.05, 0.055] : mul(baseCol, 0.9), 120 + Math.floor(r(40) * 8), 3, 0, seed); continue; }
       let sgn = 5;
       if (P.role !== 'vacant') { const w = TY.sg, tot = w[0] + w[1] + w[2] + w[3] + w[4]; let q = r(41) * tot; for (sgn = 0; sgn < 4 && q >= w[sgn]; sgn++) q -= w[sgn]; }
       const canAwn = !shed && P.kd - zs > 2.5 && style !== 2;
       if (sgn === 4 && !canAwn) sgn = r(42) < 0.5 ? 0 : 1;
-      const cell = TY.g >= 0 ? TY.g * 5 + Math.floor(r(43) * 5) : 0;
-      const pal = SIGNPAL[Math.floor(r(44) * SIGNPAL.length)], fasc = r(45) < 0.45 ? mul(fc[0], 1.0) : (r(45) < 0.7 ? [0.03, 0.03, 0.033] : mul(baseCol, 0.9));
+      const cell = P.nameCell >= 0 ? P.nameCell : (TY.g >= 0 && TY.g < 16 ? TY.g * 5 + Math.floor(r(43) * 5) : 0);
+      const pal = tpick(TY, SIGNPAL, 0, r(44)), fasc = r(45) < 0.45 ? mul(fc[0], 1.0) : (r(45) < 0.7 ? [0.03, 0.03, 0.033] : mul(baseCol, 0.9));
       stats.signs[sgn] = (stats.signs[sgn] || 0) + 1;
       if (sgn === 0) { bx(1, sx0, sx1, sLo, sHi, 0, zs, K.PLAIN, mul(pal[0], 0.8), 0.6, 0, 1, seed); bx(1, sx0 + 0.04, sx1 - 0.04, sLo + 0.05, sHi - 0.05, zs, zs + 0.035, K.SIGN, pal[0], cell, 0, pack(pal[1]), seed); }
       else if (sgn === 1) { const lc = r(46) < 0.5 ? [0.78, 0.78, 0.76] : (r(46) < 0.75 ? pal[0] : [0.75, 0.05, 0.04]); const fb = (lc[0] + lc[1] + lc[2]) > 1.2 && (fasc[0] + fasc[1] + fasc[2]) > 0.9 ? [0.04, 0.04, 0.045] : fasc;
         bx(1, sx0, sx1, sLo, sHi, 0, zs, K.PLAIN, fb, 0.6, 0.1, 1, seed); bx(1, sx0 + 0.15, sx1 - 0.15, sLo + 0.1, sHi - 0.1, zs, zs + 0.03, K.SIGN, fb, cell, 1, pack(lc), seed); }
-      else if (sgn === 2) { const lb = LIGHTBOX[Math.floor(r(47) * LIGHTBOX.length)]; bx(1, sx0, sx1, sLo, sHi, 0, zs, K.PLAIN, fasc, 0.6, 0, 1, seed); bx(1, sx0 + 0.05, sx1 - 0.05, sLo + 0.02, sHi - 0.03, zs, zs + 0.2, K.SIGN, lb[0], cell, 2, pack(lb[1]), seed); }
+      else if (sgn === 2) { const lb = tpick(TY, LIGHTBOX, 1, r(47)); bx(1, sx0, sx1, sLo, sHi, 0, zs, K.PLAIN, fasc, 0.6, 0, 1, seed); bx(1, sx0 + 0.05, sx1 - 0.05, sLo + 0.02, sHi - 0.03, zs, zs + 0.2, K.SIGN, lb[0], cell, 2, pack(lb[1]), seed); }
       else if (sgn === 3) { const stone = r(48) < 0.5 && mas !== 3; bx(1, sx0, sx1, sLo, sHi, 0, zs, stone ? K.MAS : K.PLAIN, stone ? mul(baseCol, 1.05) : [0.025, 0.025, 0.03], stone ? 2 : 0.5, 0, 1, seed); bx(1, sx0 + 0.3, sx1 - 0.3, sLo + 0.16, sHi - 0.16, zs, zs + 0.012, K.SIGN, stone ? mul(baseCol, 1.05) : [0.025, 0.025, 0.03], cell, 3, 0, seed); }
       else bx(1, sx0, sx1, sLo, sHi, 0, zs, K.PLAIN, sgn === 5 ? mul(fasc, 0.8) : fasc, 0.7, 0, 1, seed);
       // awning: the sign itself (lettered valance), or a plain one under the sign
@@ -377,8 +419,8 @@ export function layout(C, opts = {}) {
           for (const s of [-1, 1]) bc(0, s * (W / 2 - 0.03), ya - drop * 0.7, zs + proj / 2, 0.022, 0.022, proj, 0, 0, K.PLAIN, STEEL, 0.4, 0.9, 0, seed); }
       }
       // blade sign on the pier
-      if (!shed && P.role === 'shop' && r(55) < 0.4 && P.kd > 3) { const bp = SIGNPAL[Math.floor(r(56) * SIGNPAL.length)], yb = Math.min(sHi - 0.35, 3.3), xb2 = r(57) < 0.5 ? x0 - 0.05 : x1 + 0.05, lb = r(58) < 0.3;
-        bc(1, xb2, yb, pproud + 0.5, 0.72, 0.62, 0.07, Math.PI / 2, 0, K.SIGN, bp[0], 100 + TY.g, lb ? 2 : 0, pack(bp[1]), seed); bc(0, xb2, yb + 0.36, pproud + 0.45, 0.025, 0.025, 0.95, 0, 0, K.PLAIN, DARK, 0.5, 0.6, 0, seed); }
+      if (!shed && P.role === 'shop' && TY.blade >= 0 && r(55) < 0.4 && P.kd > 3) { const bp = SIGNPAL[Math.floor(r(56) * SIGNPAL.length)], yb = Math.min(sHi - 0.35, 3.3), xb2 = r(57) < 0.5 ? x0 - 0.05 : x1 + 0.05, lb = r(58) < 0.3;
+        bc(1, xb2, yb, pproud + 0.5, 0.72, 0.62, 0.07, Math.PI / 2, 0, K.SIGN, bp[0], TY.blade, lb ? 2 : 0, pack(bp[1]), seed); bc(0, xb2, yb + 0.36, pproud + 0.45, 0.025, 0.025, 0.95, 0, 0, K.PLAIN, DARK, 0.5, 0.6, 0, seed); }
       // goods on the sidewalk
       if (TY.out && P.role === 'shop' && P.kd - zF > 3.3 && r(59) < 0.75) {
         const left = r(60) < 0.5; let sa = left ? x0 + 0.1 : Math.max(x0 + 0.1, x1 - 3.4), sb = Math.min(sa + 3.3, x1 - 0.1);
@@ -399,6 +441,7 @@ export function layout(C, opts = {}) {
       if (cut.length) out(cut[cut.length - 1]);
     }
   });
+  stats.shopsJson = shHit;
   return { tiles, frames, stats, shops, solid };
 }
 
@@ -461,8 +504,10 @@ function glassMaterial(shared, tex, tune) {
 export async function add(game, ctx) {
   const w = game.world, shared = w.shared, C = game.city;
   const hasDressing = !!(game.dressing && game.dressing.meshes && game.dressing.meshes.length);
-  const { tiles, frames, stats, shops, solid } = layout(C, { noDressing: !hasDressing });
-  const tex = { mask: makeMask(THREE), rooms: makeRooms(THREE), props: makeProps(THREE) };
+  let shopsJ = null;                                    // lanes/shops: the survey (real kind of business per slot, invented names). ?shops=0: the old random mixes
+  if (new URLSearchParams(location.search).get('shops') !== '0') { try { const r = await fetch(ctx.A + 'storefronts/shops.json'); if (r.ok) shopsJ = await r.json(); } catch (err) { console.warn('[storefronts] no shops.json', err); } }
+  const { tiles, frames, stats, shops, solid } = layout(C, { noDressing: !hasDressing, shops: shopsJ, core: new URLSearchParams(location.search).get('sfcore') === '1' });
+  const tex = { mask: makeMask(THREE, shopsJ && shopsJ.names), rooms: makeRooms(THREE), props: makeProps(THREE) };
   const tune = { value: new THREE.Vector4(0.15, 2.8, 0.55, 0.6) };
   const det = await detailArrays(ctx.A); const mSolid = solidMaterial(shared, tex.mask, false, det), mAwn = solidMaterial(shared, tex.mask, true, det), mGlass = glassMaterial(shared, tex, tune);
   const gBox = new THREE.BoxGeometry(1, 1, 1), gAwn = awningGeometry(), gBq = bouquetGeometry(), gPlane = new THREE.PlaneGeometry(1, 1);
@@ -516,9 +561,9 @@ export async function add(game, ctx) {
       for (let k = 0; k < n; k++) { const ax = solid[i] + (solid[i + 2] - solid[i]) * k / n, ay = solid[i + 1] + (solid[i + 3] - solid[i + 1]) * k / n, bx2 = solid[i] + (solid[i + 2] - solid[i]) * (k + 1) / n, by2 = solid[i + 1] + (solid[i + 3] - solid[i + 1]) * (k + 1) / n;
         if (onHero((ax + bx2) / 2, (ay + by2) / 2)) { sol.hero++; continue; }
         if (inLane(ax, ay) || inLane(bx2, by2) || inLane((ax + bx2) / 2, (ay + by2) / 2)) { sol.lane++; continue; }
-        game.statics.addSeg(ax, ay, bx2, by2); solidSegs.push(ax, ay, bx2, by2); sol.segs++; sol.metres += L / n; }
+        game.statics.addSeg(ax, ay, bx2, by2, 0, 'shopfront'); solidSegs.push(ax, ay, bx2, by2); sol.segs++; sol.metres += L / n; }
     }
     sol.metres = Math.round(sol.metres);
   }
-  return { group, meshes, tune, stats, shops, solidSegs, report: { instances: inst, ktris: Math.round(tris / 1000), bays: stats.bays, shops: stats.shops, kinds: stats.kinds, signs: stats.signs, hid, solid: Object.assign(sol, { cornersHeldBack: stats.solidCut }) } };
+  return { group, meshes, tune, stats, shops, solidSegs, report: { instances: inst, ktris: Math.round(tris / 1000), shopsJson: stats.shopsJson || 0, bays: stats.bays, shops: stats.shops, kinds: stats.kinds, signs: stats.signs, hid, solid: Object.assign(sol, { cornersHeldBack: stats.solidCut }) } };
 }

@@ -1,19 +1,25 @@
 // storefronts.glsl.js: shader text of the storefront layer (two patched MeshStandardMaterials: solid pieces, shop glass).
 export const SF_COMMON = /* glsl */`
+#ifndef SF_MASK_H
+#define SF_MASK_H 4096.0
+#endif
 float sfH1(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
 vec3 sfH3(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * vec3(.1031, .1030, .0973)); p3 += dot(p3, p3.yxz + 33.33); return fract((p3.xxy + p3.yzz) * p3.zyx); }
 float sfN(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f); return mix(mix(sfH1(i), sfH1(i+vec2(1,0)), f.x), mix(sfH1(i+vec2(0,1)), sfH1(i+vec2(1,1)), f.x), f.y); }
 float sfFbm(vec2 p){ float a = .5, s = 0.; for(int i=0;i<4;i++){ s += a*sfN(p); p = p*2.03+17.1; a *= .5; } return s; }
 vec3 sfUnpack(float f){ vec3 v = vec3(mod(f, 256.0), mod(floor(f / 256.0), 256.0), floor(f / 65536.0)) / 255.0; return v * v; }
 // lettering atlas: cells 0..79 signs (512x80), 100..131 small squares (128x128 from y 1760), 200..215 tag lines (512x40 from y 1600)
-float sfAspect(float c){ return c < 99.5 ? 6.4 : (c < 199.5 ? 1.0 : 12.8); }
+float sfAspect(float c){ return c < 99.5 ? 6.4 : (c < 199.5 ? 1.0 : (c < 299.5 ? 12.8 : (c < 399.5 ? 6.4 : (c < 499.5 ? 12.8 : 1.0)))); }
 vec3 sfMask(float c, vec2 q){
   if (q.x < 0.0 || q.x > 1.0 || q.y < 0.0 || q.y > 1.0) return vec3(0.0);
   q = clamp(q, vec2(0.004, 0.03), vec2(0.996, 0.97)); vec2 px;
   if (c < 99.5) px = vec2((mod(c, 4.0) + q.x) * 512.0, (floor(c / 4.0) + 1.0 - q.y) * 80.0);
   else if (c < 199.5) { c -= 100.0; px = vec2((mod(c, 16.0) + q.x) * 128.0, 1760.0 + (floor(c / 16.0) + 1.0 - q.y) * 128.0); }
-  else { c -= 200.0; px = vec2((mod(c, 4.0) + q.x) * 512.0, 1600.0 + (floor(c / 4.0) + 1.0 - q.y) * 40.0); }
-  return texture2D(tMask, vec2(px.x, 2048.0 - px.y) / 2048.0, -0.8).rgb;
+  else if (c < 299.5) { c -= 200.0; px = vec2((mod(c, 4.0) + q.x) * 512.0, 1600.0 + (floor(c / 4.0) + 1.0 - q.y) * 40.0); }
+  else if (c < 399.5) { c -= 300.0; px = vec2((mod(c, 4.0) + q.x) * 512.0, 2048.0 + (floor(c / 4.0) + 1.0 - q.y) * 80.0); }
+  else if (c < 499.5) { c -= 400.0; px = vec2((mod(c, 4.0) + q.x) * 512.0, 3648.0 + (floor(c / 4.0) + 1.0 - q.y) * 40.0); }
+  else { c -= 500.0; px = vec2((mod(c, 16.0) + q.x) * 128.0, 3968.0 + (floor(c / 16.0) + 1.0 - q.y) * 128.0); }
+  return texture2D(tMask, vec2(px.x / 2048.0, 1.0 - px.y / SF_MASK_H), -0.8).rgb;     /* lanes/shops: atlas 2048 wide, SF_MASK_H tall (2048 or 4096) */
 }
 vec3 sfBake(vec2 xz){ return texture2D(tLight, vec2(xz.x / (2.0 * uHalf.x) + 0.5, -xz.y / (2.0 * uHalf.y) + 0.5)).rgb; }
 `;

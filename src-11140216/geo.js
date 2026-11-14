@@ -49,12 +49,15 @@ export class StaticWorld {
   // (no caller changes); removeSet(name) takes them all out again. Things added with no owner set stay for good, as before.
   removeSet(name) { let n = 0; for (const m of [this.segs, this.circ, this.blocks]) for (const [k, a] of m) { const b = a.filter((o) => o.set !== name); if (b.length !== a.length) { n += a.length - b.length; if (b.length) m.set(k, b); else m.delete(k); } } return n; }
   key(i, j) { return i * 100003 + j; }
-  addSeg(ax, ay, bx, by) {
-    const c = this.cell, s = [ax, ay, bx, by]; if (this.owner) s.set = this.owner;
+  // TAGS (lead/h-jump, Nov 14; lanes/lead/h-jump/handover/TAGS.md): low = metres from the wall's own ground to its top, given only for a wall with a known
+  // height (tree guard, lawn fence, park fence panel); a segment without it is a wall at every height. kind = what made it ('building', 'edge',
+  // 'shopfront', 'guard', 'lawn', 'fence'). Read by the jump (src/move/); to everything else a segment is the same wall as before.
+  addSeg(ax, ay, bx, by, low, kind) {
+    const c = this.cell, s = [ax, ay, bx, by]; if (this.owner) s.set = this.owner; if (low > 0) s.low = low; if (kind) s.kind = kind;
     const i0 = Math.floor(Math.min(ax, bx) / c), i1 = Math.floor(Math.max(ax, bx) / c), j0 = Math.floor(Math.min(ay, by) / c), j1 = Math.floor(Math.max(ay, by) / c);
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) { const k = this.key(i, j); let a = this.segs.get(k); if (!a) this.segs.set(k, (a = [])); a.push(s); }
   }
-  addPoly(poly) { for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length]; this.addSeg(a[0], a[1], b[0], b[1]); } }
+  addPoly(poly, low, kind) { for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length]; this.addSeg(a[0], a[1], b[0], b[1], low, kind); } }
   addCircle(x, y, r, tag) { const k = this.key(Math.floor(x / this.cell), Math.floor(y / this.cell)); let a = this.circ.get(k); if (!a) this.circ.set(k, (a = [])); const o = { x, y, r, tag, on: true }; if (this.owner) o.set = this.owner; a.push(o); return o; }
   addBlock(poly) {   // sidewalk polygons, for "am I on the kerb"
     let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const p of poly.ext) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); }

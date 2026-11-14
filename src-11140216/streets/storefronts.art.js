@@ -43,18 +43,24 @@ function tex(THREE, c, srgb, pm) {
   t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.premultiplyAlpha = !!pm; return t;
 }
 
-export function makeMask(THREE) {
-  const c = document.createElement('canvas'); c.width = c.height = 2048; const g = c.getContext('2d'); const R = rng(77);
-  g.fillStyle = '#000'; g.fillRect(0, 0, 2048, 2048); g.textAlign = 'center'; g.textBaseline = 'middle'; g.globalCompositeOperation = 'lighter';
-  NAMES.forEach((grp, gi) => grp.forEach((nm, ni) => {
-    const i = gi * 5 + ni, x = (i % 4) * 512, y = Math.floor(i / 4) * 80, [a, b] = nm.split('|'); const f = FONTS[Math.floor(R() * FONTS.length)], script = f.includes('Brush');
+// lanes/shops: rows 2048..4095 of the atlas: name cells 300..379 (512x80 from y 2048), tag lines 400..431 (512x40 from y 3648), blades 500..515 (128x128 from y 3968)
+const TAGS2 = ['FRESH PRODUCE · BAKERY · DELI · ORGANIC', 'NEW ARRIVALS · SNEAKERS · BOOTS', 'LUNCH · DINNER · RESERVATIONS · BAR', 'ORDER HERE · DELIVERY · OPEN LATE', 'BREAD · PASTRY · CAKES · COFFEE',
+  'HAIR · COLOR · BLOWOUTS · WAXING', 'GIFTS · TOYS · HOUSEWARES · AND MORE', 'PHONES · CASES · CHARGERS · REPAIRS', 'SOUVENIRS · T-SHIRTS · HATS · LUGGAGE', 'SMOKE SHOP · VAPE · GLASS · ACCESSORIES',
+  'EYE EXAMS · FRAMES · CONTACT LENSES', 'CLASSES · PERSONAL TRAINING · FREE TRIAL', 'WALK-INS WELCOME · MOST INSURANCE ACCEPTED', 'SALES · RENTALS · NOTARY · COPIES', 'WHOLESALE · IMPORT · EXPORT · TO THE TRADE'];
+const BLADE2 = ['MARKET', 'SHOES', 'BAKERY', 'SALON', 'REPAIR', 'GIFTS', 'SMOKE', 'EYES', 'GYM', 'CARE'];
+export function makeMask(THREE, names) {
+  const c = document.createElement('canvas'); c.width = 2048; c.height = names ? 4096 : 2048; const g = c.getContext('2d'); const R = rng(77);
+  g.fillStyle = '#000'; g.fillRect(0, 0, 2048, c.height); g.textAlign = 'center'; g.textBaseline = 'middle'; g.globalCompositeOperation = 'lighter';
+  const LIST = names ? names.slice(0, 160).map((nm, k) => [k < 80 ? k : 1000 + k - 80, nm]) : NAMES.flatMap((grp, gi) => grp.map((nm, ni) => [gi * 5 + ni, nm]));
+  LIST.forEach(([i0, nm]) => {
+    const i = i0 % 1000, x = (i % 4) * 512, y = (i0 >= 1000 ? 2048 : 0) + Math.floor(i / 4) * 80, [a, b] = nm.split('|'); const f = FONTS[Math.floor(R() * FONTS.length)], script = f.includes('Brush');
     g.save(); g.beginPath(); g.rect(x + 4, y + 3, 504, 74); g.clip();
     g.fillStyle = '#f00'; const sp = R() < 0.4 && !script ? 3 : 0;
     const w = fit(g, script ? a.replace(/[A-Z]+/g, (s) => s[0] + s.slice(1).toLowerCase()) : a, f, b ? 46 : 56, 470, x + 256, y + (b ? 30 : 41), sp);
     if (b) { g.fillStyle = '#0f0'; fit(g, b, FONTS[R() < 0.5 ? 0 : 6], 15, 440, x + 256, y + 66, 2); }
     else if (R() < 0.5) { g.fillStyle = '#00f'; g.fillRect(x + 256 - w / 2, y + 73, w, 2); g.fillRect(x + 256 - w / 2, y + 6, w, 2); }
     g.restore();
-  }));
+  });
   TAGS.forEach((t, i) => { g.fillStyle = '#f00'; fit(g, t, FONTS[i % 2 ? 0 : 6], 24, 490, (i % 4) * 512 + 256, 1600 + Math.floor(i / 4) * 40 + 21, 1); });
   const sm = (i, fn) => { const x = (i % 16) * 128, y = 1760 + Math.floor(i / 16) * 128; g.save(); g.translate(x, y); g.beginPath(); g.rect(3, 3, 122, 122); g.clip(); fn(); g.restore(); };
   BLADE.forEach((t, i) => sm(i, () => { g.fillStyle = '#f00'; fit(g, t, FONTS[[0, 2, 3, 4, 6][i % 5]], t.length > 5 ? 30 : 40, 104, 64, 66, 0); g.strokeStyle = '#00f'; g.lineWidth = 4; g.strokeRect(9, 9, 110, 110); }));
@@ -66,7 +72,11 @@ export function makeMask(THREE) {
   sm(29, () => { g.fillStyle = '#f00'; fit(g, 'SALE', FONTS[3], 54, 108, 64, 52, 2); fit(g, 'UP TO 50% OFF', FONTS[0], 14, 108, 64, 98, 0); });
   sm(30, () => { g.fillStyle = '#f00'; fit(g, 'LOADING', FONTS[1], 30, 110, 64, 34, 0); fit(g, 'ZONE', FONTS[1], 30, 110, 64, 66, 0); fit(g, 'NO PARKING', FONTS[0], 14, 110, 64, 100, 0); g.strokeStyle = '#00f'; g.lineWidth = 3; g.strokeRect(7, 7, 114, 114); });
   sm(31, () => { g.fillStyle = '#f00'; fit(g, 'FOR', FONTS[1], 30, 110, 64, 26, 0); fit(g, 'LEASE', FONTS[1], 36, 110, 64, 60, 0); fit(g, '212 555 0142', FONTS[0], 15, 110, 64, 100, 0); });
-  return tex(THREE, c, false);
+  if (names) {
+    TAGS2.forEach((t, i) => { g.fillStyle = '#f00'; fit(g, t, FONTS[i % 2 ? 0 : 6], 24, 490, (i % 4) * 512 + 256, 3648 + Math.floor(i / 4) * 40 + 21, 1); });
+    BLADE2.forEach((t, i) => { const x = (i % 16) * 128, y = 3968; g.save(); g.translate(x, y); g.beginPath(); g.rect(3, 3, 122, 122); g.clip(); g.fillStyle = '#f00'; fit(g, t, FONTS[[0, 2, 3, 4, 6][i % 5]], t.length > 5 ? 28 : 40, 104, 64, 66, 0); g.strokeStyle = '#00f'; g.lineWidth = 4; g.strokeRect(9, 9, 110, 110); g.restore(); });
+  }
+  const T0 = tex(THREE, c, false); T0.userData = { h: c.height }; return T0;
 }
 
 // ---------------------------------------------------------------------------------------------------------------- goods

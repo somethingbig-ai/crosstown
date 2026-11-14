@@ -1188,7 +1188,7 @@ export async function add(game, ctx) {
   // Nov 11 (public game; a player: "npcs can drive through this area but i cant"): nothing of this file is solid inside a lane traffic uses (lane width + the circle + 0.25 m)
   const laneClear = (x, y, r) => !laneNear(x, y, r + 0.25) && !(Math.hypot(x + 231.6, y + 483.9) < 1 || Math.hypot(x + 126.1, y - 369.5) < 1);      /* lead, Nov 12: two pieces stand in Broadway's carriageway where two edges join (inLane misses the joint): not solid until the item moves them */
   const take = (x, y, r, solid) => { occ.add(x, y, r); if (solid && SOLID && laneClear(x, y, solid)) statics.addCircle(x, y, solid, 'furniture'); };
-  const circles = { n: 0, lane: 0 }; const solid = (x, y, r) => { if (!SOLID) return; if (!laneClear(x, y, r)) { circles.lane++; return; } statics.addCircle(x, y, r, 'furniture'); circles.n++; };
+  const circles = { n: 0, lane: 0 }; const solid = (x, y, r) => { if (!SOLID) return; if (!laneClear(x, y, r)) { circles.lane++; return; } const o = statics.addCircle(x, y, r, 'furniture'); circles.n++; return o; };
   // a heavy piece (planter, urn, granite block) is never drawn where it cannot be solid: it moves to the nearest point clear of the lanes (up to 3 m off, 16 directions), or is not placed
   const seated = { moved: 0, dropped: 0 }; const bikeSeat = { n: 0, moved: 0, dropped: 0 };
   const seat = (x, y, r, okAt) => { if (laneClear(x, y, r)) return [x, y]; for (let d = 0.25; d <= 3.01; d += 0.25) for (let k = 0; k < 16; k++) { const a = k * PI / 8, px = x + Math.cos(a) * d, py = y + Math.sin(a) * d; if (laneClear(px, py, r) && (!okAt || okAt(px, py))) { seated.moved++; return [px, py]; } } seated.dropped++; return null; };
@@ -1454,8 +1454,8 @@ export async function add(game, ctx) {
         if (gate) { if ((run - m) % 52 < m) { for (let q = 0; q < 3; q++) { const bx = x + tx * (-0.7 - q * 0.62) + nx * 0.7, by = y + ty * (-0.7 - q * 0.62) + ny * 0.7; if (!occ.hit(bx, by, 0.3)) { put('pbin', bx, by, 0.18, h, { tint: TINTS.pbin[q] }); take(bx, by, 0.3, 0.28); } } } continue; }
         if (!playable(x, y)) continue;
         put('fence', x, y, SW, h, { s: [m / 2, 1, 1] }); fenceM += m;
-        if (SOLID) statics.addSeg(x, y, x + tx * m, y + ty * m);     /* lead, Nov 11 (Matt: "I can like literally walk through the fence"): each panel is a wall to the player and to cars; the gates stay open */
-        if (k % 6 === 3 && SL > 14) { const bx = x + nx * 1.5, by = y + ny * 1.5; if (!occ.hit(bx, by, 1.0)) { put('bench', bx, by, 0.18, h + PI); put('benchP', bx, by, 0.18, h + PI); take(bx, by, 1.0, 0); solid(bx - tx * 0.5, by - ty * 0.5, 0.35); solid(bx + tx * 0.5, by + ty * 0.5, 0.35); } }
+        if (SOLID) statics.addSeg(x, y, x + tx * m, y + ty * m, 1.4, 'fence');     /* tags for the jump: posts 1.32 m + ball, pickets to 1.2 m (P.fence) */     /* lead, Nov 11 (Matt: "I can like literally walk through the fence"): each panel is a wall to the player and to cars; the gates stay open */
+        if (k % 6 === 3 && SL > 14) { const bx = x + nx * 1.5, by = y + ny * 1.5; if (!occ.hit(bx, by, 1.0)) { put('bench', bx, by, 0.18, h + PI); put('benchP', bx, by, 0.18, h + PI); take(bx, by, 1.0, 0); for (const o of [solid(bx - tx * 0.5, by - ty * 0.5, 0.35), solid(bx + tx * 0.5, by + ty * 0.5, 0.35)]) if (o) { o.seat = 0.645; o.top = 1.05; o.kind = 'bench'; }     /* tags for the jump, metres above the map's zero: the bench stands at 0.18, slats 0.465 up, back 0.87 up (P.benchP) */ } }
       }
     }
   }

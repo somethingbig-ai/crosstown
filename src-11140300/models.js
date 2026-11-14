@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
-const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1), _c = new THREE.Color();
+const _m = new THREE.Matrix4(), _m2 = new THREE.Matrix4(), _mf = new THREE.Matrix4(), _q = new THREE.Quaternion(), _e = new THREE.Euler(), _v = new THREE.Vector3(), _s = new THREE.Vector3(1, 1, 1), _c = new THREE.Color();
 
 export const CAR_TYPES = ['sedan', 'taxi', 'suv', 'van', 'sport', 'bus'];
 export const PAINTS = [0x0d0d0f, 0x1a1c20, 0xd8d9d6, 0xeeeeea, 0x8f9499, 0x5b6068, 0x2a3442, 0x13294b, 0x6b1414, 0x7a1f1f, 0x2e3d2f, 0xb8b2a2, 0x3b2a1e, 0x9aa3ad, 0xc9ccd1, 0x202428];
@@ -176,11 +176,14 @@ export class CarBatch {
       else if (im.userData.tail) { const k = brake ? 2 : 1; im.instanceColor.setXYZ(i, k, k, k); }
     }
     _e.set(0, h, 0); _q.setFromEuler(_e); _v.set(x, z + 0.035, -y); _m2.compose(_v, _q, _s); this.under.setMatrixAt(i, _m2);
+    /* feedback lane, Nov 14 (player e82443: "wheels are clipping into asphalt when turning"): the wheels stood on the body's rolled and pitched frame, so the
+       inside pair sank into the road. They stand on a level frame now (heading only): the body leans over them, as on springs. */
+    _v.set(x, z, -y); _mf.compose(_v, _q, _s);
     const ws = this.def.wheels, w0 = ws[0];
     for (let k = 0; k < ws.length; k++) {
       const w = ws[k]; const flip = w.left !== w0.left;
       _e.set(0, (w.front ? steer : 0) + (flip ? Math.PI : 0), flip ? spin : -spin, 'YZX'); _q.setFromEuler(_e);
-      _m2.compose(w.pos, _q, _s); _m2.premultiply(_m);
+      _m2.compose(w.pos, _q, _s); _m2.premultiply(_mf);
       for (const im of this.wheelMeshes) { const mm = new THREE.Matrix4().multiplyMatrices(_m2, im.userData.local); im.setMatrixAt(i * 4 + k, mm); }
     }
   }

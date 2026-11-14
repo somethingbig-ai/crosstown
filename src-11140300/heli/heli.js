@@ -218,7 +218,16 @@ class Heli {
     c.engine = false;
     for (const h of f.hits) { if (h.speed > 2 && this.hasCamera) this.cam.shake = Math.min(1, this.cam.shake + h.speed * 0.08); this.call('sound', 'hit', h); this.call('wash', 'hit', h); }
     // the edge of the world: a wall of air turns it back
-    const lim = g.city.meta.hx + 1200, px = f.pos.x, pz = f.pos.z; if (Math.abs(px) > lim) f.vel.x -= Math.sign(px) * (Math.abs(px) - lim) * 0.6 * dt; if (Math.abs(pz) > lim) f.vel.z -= Math.sign(pz) * (Math.abs(pz) - lim) * 0.6 * dt; if (f.pos.y > CEILING) { f.vel.y -= (f.pos.y - CEILING) * 0.6 * dt; if (f.vel.y > 0) f.vel.y *= 1 - Math.min(1, dt * 1.5); }     // the service ceiling: above it the district is an island in the haze (the world ends 1 km out), so the air goes thin here
+    /* h-north, Nov 14: the wall stands round the PLAYABLE BOX (which is no longer centred on the origin), a margin out that keeps the aircraft over the drawn city and on the GPS picture,
+       and it is damped, so the aircraft stops against it instead of sailing on and bouncing. Before: 1200 m past the old map's half size, about the origin: flown north it went 570 m past the
+       north wall, off the end of the drawn ground and off the GPS picture. ?heliedge=0 = the old wall. */
+    const px = f.pos.x, pz = f.pos.z;
+    if (g.P.get('heliedge') === '0') { const lim = g.city.meta.hx + 1200; if (Math.abs(px) > lim) f.vel.x -= Math.sign(px) * (Math.abs(px) - lim) * 0.6 * dt; if (Math.abs(pz) > lim) f.vel.z -= Math.sign(pz) * (Math.abs(pz) - lim) * 0.6 * dt; }
+    else { const m = g.city.meta, B = g.bounds, k = Math.max(120, Math.min(m.hx - m.px, m.hy - m.py) - 90), py = -pz, ex = px > B.cx + B.x + k ? px - (B.cx + B.x + k) : px < B.cx - B.x - k ? px - (B.cx - B.x - k) : 0, ey = py > B.cy + B.y + k ? py - (B.cy + B.y + k) : py < B.cy - B.y - k ? py - (B.cy - B.y - k) : 0;
+      const dk = (e) => Math.min(1.2, Math.abs(e) / 40);     /* the push grows with depth and the brake comes in over the first 40 m: a firm stop, not a slap */
+      if (ex) f.vel.x -= (ex * 0.25 + (ex * f.vel.x > 0 ? f.vel.x * dk(ex) : 0)) * dt; if (ey) f.vel.z += (ey * 0.25 + (ey * -f.vel.z > 0 ? -f.vel.z * dk(ey) : 0)) * dt;
+      if ((ex || ey) && this.piloted && !this.note) this.note = { t: 0, text: 'END OF THE MAP · TURN BACK' }; }
+    if (f.pos.y > CEILING) { f.vel.y -= (f.pos.y - CEILING) * 0.6 * dt; if (f.vel.y > 0) f.vel.y *= 1 - Math.min(1, dt * 1.5); }     // the service ceiling: above it the district is an island in the haze (the world ends 1 km out), so the air goes thin here
     if (this.piloted) { pl.x = clamp(this.mapX, g.bounds.cx - g.bounds.x, g.bounds.cx + g.bounds.x); pl.y = clamp(this.mapY, g.bounds.cy - g.bounds.y, g.bounds.cy + g.bounds.y); pl.h = f.heading; pl.speed = 0; }
     else if (pl.roof && !pl.vehicle) {     // on a roof on foot: the parapet keeps you on it
       const t = this.heights.top(pl.x, pl.y, 1e4); if (Math.abs(t - pl.alt) > 0.7) { pl.x = this._rx; pl.y = this._ry; } else { pl.alt = t; this._rx = pl.x; this._ry = pl.y; }

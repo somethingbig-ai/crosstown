@@ -10,6 +10,10 @@
 // kind, read from the openx-assets source models the streets lane's cars are made from.
 // Motion: the game's own skinned people. The clips are the people lane's (CMU mocap: Idle, walks, Drive); CMU has no take of anyone getting into
 // a car, so the entry itself is posed here on top of them: hips path, feet (two-bone IK), hands on handle / door pull / wheel rim, trunk and head.
+// h-door, Nov 14: the passenger's door. When the driver's door is shut in (a wall, a car alongside) or there is no way round to it, or the passenger's
+//   door is clearly nearer and the walk round is long, he gets in on the passenger's side: that door swings open, he sits, pulls it shut and slides
+//   across behind the wheel. Getting out on the passenger's side (driver's side shut in) is the same backwards, door drawn. ?epass=0 off, ?epass=block
+//   only when the driver's door cannot be used. A car with someone at the wheel is still taken at the driver's door only.
 // QA (URL): escript=park|jack|loop  eat=x,y,h  eview=side|front|roof|rear|in  edist=  espeed=  edoor=0 (no door drawing)  eseat=0 (lane's seats)  edbg=1
 import * as THREE from 'three';
 import { clamp, lerp, wrapPi } from '../geo.js';
@@ -26,6 +30,8 @@ const TAXI_YELLOW = 0xf2b90c;       // streets/vehicles_rules.js
 const FAR_K = 1.9;
 const T_IN = 3.1;
 const ND_A = 0.30, ND_B = 2.95;         // no door to open: from the hand on the handle straight to seated (and back)                   // seconds (at pace 1) from taking the handle to both hands on the wheel
+const SLIDE = 1.15;                 // seconds (at pace 1) across the seats, passenger's to driver's
+const PASS_LONG = 7, PASS_NEARER = 4;      // metres: the passenger's door is used when the way to the driver's is longer than PASS_LONG and PASS_NEARER longer than the way to the passenger's
 const OPEN = 1.0;                   // door's full swing, radians (57 degrees)
 
 // ---------------------------------------------------------------------------------------------------------------- per car kind
@@ -57,7 +63,7 @@ const T_RAW = 3.75, WARP = [[0, 0], [0.34, 0.30], [0.60, 0.85], [0.84, 1.19], [1
 function warp(u) { if (u <= 0) return 0; for (let i = 1; i < WARP.length; i++) if (u <= WARP[i][0]) { const a = WARP[i - 1], b = WARP[i]; return a[1] + (b[1] - a[1]) * (u - a[0]) / (b[0] - a[0]); } return T_RAW; }
 function entryPose(u, P, S, R, gy, out) { const x = clamp((u - 0.30) / 0.62, 0, 1); return entryPoseRaw(warp(u), P, S, R, gy, out, u < 1.6 ? 1 - Math.pow(1 - x, 2.4) - (u > 0.92 ? 0.05 * Math.exp(-7 * (u - 0.92)) * Math.sin(13 * (u - 0.92)) : 0) : -1); }
 function entryPoseRaw(u, P, S, R, gy, out, doorOpen = -1) {
-  const zs = P.zs, xr = P.xr, o = out || {};
+  const zs = P.zs, xr = P.xr, o = out || {}; o.uRaw = u;
   const P0 = _p0.set(xr + 0.0, 0, zs - 0.41), Pb = _pb.set(S.x - 0.02, 0, zs - 0.33), psi0 = -Math.PI / 2 + 0.4, psi1 = 0.32;
   const tall = S.y > 0.85;
   const hyH = Math.min(P.belt - 0.07, 1.10), bendK = clamp((1.3 - hyH) / 0.42, 0.15, 1); const a1 = ss(u, 0.85, 1.35), a2 = ss(u, 1.28, 2.12), fk = clamp((u - 1.19) / 0.70, 0, 1), sit = fk < 0.72 ? 0.80 * Math.pow(fk / 0.72, 1.9) : 0.80 + 0.20 * ss(fk, 0.72, 1), give = bump(u, 0.35, 0.75, 1.3);
@@ -124,8 +130,26 @@ function entryPoseRaw(u, P, S, R, gy, out, doorOpen = -1) {
 }
 const _p0 = V3(), _pb = V3(), _l0 = V3(), _r0 = V3(), _l1 = V3(), _l3 = V3(), _r2 = V3();
 function limZ(o) { const z = o.zLim; if (z === undefined) return; if (o.hip.z < z) o.hip.z = z; if (o.fL.z < z - 0.06) o.fL.z = z - 0.06; if (o.fR.z < z - 0.06) o.fR.z = z - 0.06; }
-// board/car 4: the same pose on the passenger's side (getting out there when the driver's side is shut in). No door is drawn moving for it.
-function mirrorPose(o) { o.hip.z = -o.hip.z; _mv.copy(o.fL); o.fL.set(o.fR.x, o.fR.y, -o.fR.z); o.fR.set(_mv.x, _mv.y, -_mv.z); o.yaw = -o.yaw; const a = o.yawL; o.yawL = -o.yawR; o.yawR = -a; const p = o.pitL; o.pitL = o.pitR; o.pitR = p; o.roll = -o.roll; o.hL.w = 0; o.hR.w = 0; o.look.z = -o.look.z; o.door = 0; return o; }
+// the same pose on the passenger's side (h-door): everything across the car's middle; the hand that works the door is now the right one, and
+// there is no wheel on this side for the other to take. (The rig's hand normal is the palm of the left hand and the back of the right.)
+function mirrorPose(o) { o.hip.z = -o.hip.z; _mv.copy(o.fL); o.fL.set(o.fR.x, o.fR.y, -o.fR.z); o.fR.set(_mv.x, _mv.y, -_mv.z); o.yaw = -o.yaw; const a = o.yawL; o.yawL = -o.yawR; o.yawR = -a; const p = o.pitL; o.pitL = o.pitR; o.pitR = p; o.roll = -o.roll; o.look.z = -o.look.z;
+  const dh = o.hL, wh = o.hR; for (const h of [dh, wh]) { h.p.z = -h.p.z; h.f.z = -h.f.z; h.n.set(-h.n.x, -h.n.y, h.n.z); }
+  o.hR = dh; o.hL = wh; wh.w = 0; wh.curl = 0; const k = 1 - ss(o.uRaw, 3.3, 3.7); dh.w *= k; dh.curl *= k; return o; }
+// across the seats (h-door): k = 0 seated on the passenger's side as the mirrored entry leaves him, k = 1 seated at the wheel exactly as the driver's-door
+// entry ends. The hips lift over the middle, the left foot goes first, the left hand reaches the rim and he pulls himself over, the right follows.
+function slidePose(k, P, S, R, gy, o) {
+  const A = entryPoseRaw(T_RAW, P, S, R, gy, _sA), B = mirrorPose(entryPoseRaw(T_RAW, P, S, R, gy, _sB));
+  const kh = ss(k, 0.1, 0.9), kl = ss(k, 0.0, 0.6), kr = ss(k, 0.38, 1.0), arc = Math.sin(Math.PI * kh);
+  (o.hip ||= V3()).lerpVectors(B.hip, A.hip, kh); o.hip.y += 0.06 * arc; o.hip.x -= 0.03 * arc; o.rootY = A.rootY;
+  (o.fL ||= V3()).lerpVectors(B.fL, A.fL, kl); o.fL.y += 0.07 * Math.sin(Math.PI * kl); (o.fR ||= V3()).lerpVectors(B.fR, A.fR, kr); o.fR.y += 0.07 * Math.sin(Math.PI * kr);
+  o.yaw = 0; o.pitch = lerp(B.pitch, A.pitch, kh) + 0.20 * arc; o.roll = lerp(B.roll, A.roll, kh) - 0.20 * arc; o.sit = 1; o.settle = 1; o.lean = A.lean;
+  o.yawL = lerp(B.yawL, A.yawL, kl); o.yawR = lerp(B.yawR, A.yawR, kr); o.pitL = lerp(B.pitL, A.pitL, kl); o.pitR = lerp(B.pitR, A.pitR, kr);
+  const hL = (o.hL ||= { p: V3(), f: V3(), n: V3(), w: 0, curl: 0 }), hR = (o.hR ||= { p: V3(), f: V3(), n: V3(), w: 0, curl: 0 });
+  hL.p.copy(A.hL.p); hL.f.copy(A.hL.f); hL.n.copy(A.hL.n); hL.w = A.hL.w * ss(k, 0.15, 0.55); hL.curl = A.hL.curl * ss(k, 0.45, 0.6);
+  hR.p.copy(A.hR.p); hR.f.copy(A.hR.f); hR.n.copy(A.hR.n); hR.w = A.hR.w * ss(k, 0.55, 0.95); hR.curl = A.hR.curl * ss(k, 0.85, 1);
+  (o.look ||= V3()).copy(B.look).lerp(A.look, kh).addScaledVector(_v.set(0.3, -0.25, -0.8), 0.7 * arc).normalize(); o.lookW = A.lookW; o.door = 0; o.uRaw = T_RAW; return o;
+}
+const _sA = {}, _sB = {};
 const _mv = V3();
 // a hand on the steering wheel's rim: side -1 left (about ten to), +1 right (ten past); p = wrist, f = wrist-to-knuckles, n = the rig's hand normal
 function wheelHand(P, S, side, p, f, n) {
@@ -199,7 +223,7 @@ function doorCard(d) {
 // that for the frame and drawn here as two sets of one-instance meshes over index subsets of the SAME vertex buffers and materials: body less
 // door, and door (turned about the hinge). Shadows, depth and AO passes all see the real open door.
 class DoorCar {
-  constructor(game, D, bin) { this.g = game; this.D = D; this.bin = bin; this.kinds = {}; this.cur = null; this.angle = 0; this.off = game.P.get('edoor') === '0'; this.sink = game.P.get('vb_sink') === '0' ? 0 : 0.012; }
+  constructor(game, D, bin) { this.g = game; this.D = D; this.bin = bin; this.kinds = {}; this.cur = null; this.angle = 0; this.off = game.P.get('edoor') === '0'; this.pass = game.P.get('epass') !== '0'; this.far = false; this.sink = game.P.get('vb_sink') === '0' ? 0 : 0.012; }
   sv() { return this.g.streetVehicles; }
   // build (once per kind) the split meshes
   kind(type) {
@@ -209,14 +233,15 @@ class DoorCar {
       const sv = this.sv(), T = sv && sv.types[type], L = T && T.lods[0], d = this.D[type]; if (sv && d && !L && !this.off) return null;      /* board/car: its model is not there yet: ask again at the next F, do not mark the kind doorless for good */ if (!L || !d || (d.gen ? !splitGen : !this.bin) || this.off) return (this.kinds[type] = null);
       const t0 = performance.now(), field = d.gen ? null : new DoorField(this.bin.subarray(d.tris[0], d.tris[0] + d.tris[1]));
       const attr = (n, size) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(n * size), size); a.setUsage(THREE.DynamicDrawUsage); return a; };
-      K = { type, L, meta: T.meta, body: attr(1, 16), doorM: attr(1, 16), va: attr(1, 4), col: attr(1, 3), meshes: [], doorTris: 0, group: new THREE.Group() };
+      K = { type, L, meta: T.meta, body: attr(1, 16), doorM: attr(1, 16), doorP: attr(1, 16), doorTrisP: 0, hasP: false, va: attr(1, 4), col: attr(1, 3), meshes: [], doorTris: 0, group: new THREE.Group() };
       const two = new Map(), both = (m) => { if (m.transparent) return m; let d = two.get(m); if (!d) { d = m.clone(); d.onBeforeCompile = m.onBeforeCompile; d.customProgramCacheKey = m.customProgramCacheKey; d.side = THREE.DoubleSide; d.shadowSide = THREE.DoubleSide; two.set(m, d); } return d; };      /* an open door is seen from behind: its skin must not be see-through from there */
       const mk = (src, geo, mat4, va, col, door) => { const g = new THREE.BufferGeometry(); for (const k in src.geometry.attributes) if (k !== 'aVar') g.setAttribute(k, src.geometry.attributes[k]); g.setAttribute('aVar', va); g.setIndex(geo); g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 8);
         const im = new THREE.InstancedMesh(g, door ? both(src.material) : src.material, 1); im.instanceMatrix = mat4; if (src.instanceColor && col) im.instanceColor = col; im.frustumCulled = false; im.castShadow = src.castShadow; im.receiveShadow = src.receiveShadow; im.renderOrder = src.renderOrder; im.matrixAutoUpdate = false; im.count = 1; K.group.add(im); return im; };
       const split = (set, va, col) => { if (!set) return; for (const src of set.meshes) { const geo = src.geometry, pos = geo.attributes.position.array, idx = geo.index ? geo.index.array : null, r = d.gen ? splitGen(pos, idx, d) : splitDoor(pos, idx, field, d.world);
-        const nt = r.tri.length, A = new (pos.length / 3 > 65535 ? Uint32Array : Uint16Array)((nt - r.n) * 3), Bd = new (pos.length / 3 > 65535 ? Uint32Array : Uint16Array)(r.n * 3); let ia = 0, ib = 0;
-        for (let t = 0; t < nt; t++) { const a = idx ? idx[t * 3] : t * 3, b = idx ? idx[t * 3 + 1] : t * 3 + 1, c = idx ? idx[t * 3 + 2] : t * 3 + 2; if (r.tri[t]) { Bd[ib++] = a; Bd[ib++] = b; Bd[ib++] = c; } else { A[ia++] = a; A[ia++] = b; A[ia++] = c; } }
-        if (A.length) mk(src, new THREE.BufferAttribute(A, 1), K.body, va, col); if (Bd.length) mk(src, new THREE.BufferAttribute(Bd, 1), K.doorM, va, col, true); K.doorTris += r.n; } };
+        let r2 = null, n2 = 0; if (this.pass) { const mp = new Float32Array(pos.length); for (let i = 0; i < pos.length; i += 3) { mp[i] = pos[i]; mp[i + 1] = pos[i + 1]; mp[i + 2] = -pos[i + 2]; } r2 = d.gen ? splitGen(mp, idx, d) : splitDoor(mp, idx, field, d.world); for (let t = 0; t < r2.tri.length; t++) { if (r.tri[t]) r2.tri[t] = 0; else if (r2.tri[t]) n2++; } }      /* h-door: the passenger's door */
+        const nt = r.tri.length, IA = pos.length / 3 > 65535 ? Uint32Array : Uint16Array, A = new IA((nt - r.n - n2) * 3), Bd = new IA(r.n * 3), Bp = new IA(n2 * 3); let ia = 0, ib = 0, ip = 0;
+        for (let t = 0; t < nt; t++) { const a = idx ? idx[t * 3] : t * 3, b = idx ? idx[t * 3 + 1] : t * 3 + 1, c = idx ? idx[t * 3 + 2] : t * 3 + 2; if (r.tri[t]) { Bd[ib++] = a; Bd[ib++] = b; Bd[ib++] = c; } else if (r2 && r2.tri[t]) { Bp[ip++] = a; Bp[ip++] = b; Bp[ip++] = c; } else { A[ia++] = a; A[ia++] = b; A[ia++] = c; } }
+        if (A.length) mk(src, new THREE.BufferAttribute(A, 1), K.body, va, col); if (Bd.length) mk(src, new THREE.BufferAttribute(Bd, 1), K.doorM, va, col, true); if (Bp.length) mk(src, new THREE.BufferAttribute(Bp, 1), K.doorP, va, col, true); K.doorTris += r.n; K.doorTrisP += n2; } };
       split(L.main, K.va, K.col);
       if (L.livery) { K.lva = attr(1, 4); K.lcol = attr(1, 3); K.nLiv0 = K.group.children.length; split(L.livery, K.lva, K.lcol); K.liv = K.group.children.slice(K.nLiv0); }
       if (L.rack) { K.rva = attr(1, 4); const n0 = K.group.children.length; split(L.rack, K.rva, null); K.rack = K.group.children.slice(n0); }
@@ -227,14 +252,15 @@ class DoorCar {
       if (blobs[0]) { K.blob = new THREE.InstancedMesh(blobs[0].geometry, blobs[0].material, 1); K.blob.frustumCulled = false; K.blob.renderOrder = blobs[0].renderOrder; K.blob.matrixAutoUpdate = false; K.group.add(K.blob); }
       if (blobs[1]) { K.tblob = new THREE.InstancedMesh(blobs[1].geometry, blobs[1].material, 4); K.tblob.frustumCulled = false; K.tblob.renderOrder = blobs[1].renderOrder; K.tblob.matrixAutoUpdate = false; K.group.add(K.tblob); }
       if (d.gen && d.outline && d.side && this.g.P.get('ecard') !== '0') { try { K.card = doorCard(d); K.group.add(K.card); } catch (e) { console.log('[entry] no door card for ' + type + ': ' + (e && e.message)); } }
+      K.hasP = K.doorTrisP >= 200 && K.doorTrisP > K.doorTris * 0.6; if (K.card && K.hasP) { try { K.cardP = doorCard(d); K.cardP.name = 'entry_door_card_p'; K.group.add(K.cardP); } catch (e) {} }
       K.group.visible = false; K.group.name = 'entry_door_' + type; sv.group.add(K.group);
       if (K.doorTris < 200) { console.log('[entry] ' + type + ': no door found in the model (' + K.doorTris + ' triangles)'); sv.group.remove(K.group); K = null; }
-      else { console.log('[entry] door of ' + type + ': ' + K.doorTris + ' triangles, ' + Math.round(performance.now() - t0) + ' ms'); (this.warmQ ||= []).push(K); }
+      else { console.log('[entry] door of ' + type + ': ' + K.doorTris + ' triangles, passenger\u2019s ' + K.doorTrisP + (K.hasP ? '' : ' (not used)') + ', ' + Math.round(performance.now() - t0) + ' ms'); (this.warmQ ||= []).push(K); }
     } catch (e) { console.log('[entry] door of ' + type + ' failed: ' + (e && (e.stack || e.message))); K = null; }
     return (this.kinds[type] = K);
   }
   // this car's door stands at `angle` (radians) from now until clear()
-  set(v, angle) { const K = this.kind(v.type); if (!K) { this.cur = null; return false; } if (this.cur && this.cur.K !== K) this.cur.K.group.visible = false; this.cur = { v, K }; this.angle = angle; return true; }
+  set(v, angle, far) { const K = this.kind(v.type); this.far = !!far; if (!K) { this.cur = null; return false; } if (this.cur && this.cur.K !== K) this.cur.K.group.visible = false; this.cur = { v, K }; this.angle = angle; return true; }
   clear() { if (this.cur) this.cur.K.group.visible = false; this.cur = null; }
   // board/car: one frame with a freshly cut kind in the picture's own passes (1 cm big, 40 m under the camera), so its materials are compiled and its
   // index buffers uploaded before the door is first opened. Returns the kind to hide again after the frame.
@@ -245,16 +271,18 @@ class DoorCar {
       if (m0) m0.onBeforeRender = (r, sc, camera) => { K.wseen |= camera === w.camera ? 1 : camera.parent && camera.parent === w.streetCam ? 2 : 0; }; }
     if (K.wn++ >= 14 || K.wseen === 3 || (K.wseen === 1 && (this.g.world.streetOff || this.g.P.get('ewarm') === '1')) || !K.group.parent) { this.warmK = null; const m0 = K.group.children[0]; if (m0) delete m0.onBeforeRender; (this.warmLog ||= []).push([K.type, K.wn - 1, K.wseen]); return this.warmQ && this.warmQ.length ? this.warmOne(cam) : null; }
     try { _mr.makeScale(0.01, 0.01, 0.01).setPosition(cam.position.x, cam.position.y - 40, cam.position.z);
-      for (const a of [K.body, K.doorM, K.wm, K.tm]) if (a) { for (let i = 0; i < a.count; i++) _mr.toArray(a.array, i * 16); a.needsUpdate = true; }
+      for (const a of [K.body, K.doorM, K.doorP, K.wm, K.tm]) if (a) { for (let i = 0; i < a.count; i++) _mr.toArray(a.array, i * 16); a.needsUpdate = true; }
       if (K.blob) { K.blob.setMatrixAt(0, _mr); K.blob.instanceMatrix.needsUpdate = true; } if (K.tblob) { for (let i = 0; i < 4; i++) K.tblob.setMatrixAt(i, _mr); K.tblob.instanceMatrix.needsUpdate = true; }
-      if (K.card) { K.card.matrix.copy(_mr); K.card.matrixWorldNeedsUpdate = true; } K.group.visible = true; return K; } catch (e) { return null; } }
+      for (const cd of [K.card, K.cardP]) if (cd) { cd.matrix.copy(_mr); cd.matrixWorldNeedsUpdate = true; } K.group.visible = true; return K; } catch (e) { return null; } }
   // the car's body matrix as the streets layer places it (ride height and sink included)
   matrix(v, out, q) { const vv = v._vv || { ride: 0 }; _e.set(v.roll || 0, v.h, v.pitch || 0, 'YZX'); q.setFromEuler(_e); return out.compose(_v.set(v.x, (v.z || 0) + (this.sv() ? (vv.ride || 0) - this.sink : 0), -v.y), q, _one); }
   // called just before the world is drawn: place our copy
   place() {
     const c = this.cur; if (!c) return; const v = c.v, K = c.K, vv = v._vv; if (!vv) { K.group.visible = false; return; }
     const M = this.matrix(v, _m, _q); M.toArray(K.body.array); K.body.needsUpdate = true;
-    const H = this.D[v.type].hinge; _m2.makeTranslation(H[0], 0, H[2]).multiply(_mr.makeRotationY(-this.angle)).multiply(_mt.makeTranslation(-H[0], 0, -H[2])).premultiply(M).toArray(K.doorM.array); K.doorM.needsUpdate = true; if (K.card) { K.card.matrix.copy(_m2); K.card.matrixWorldNeedsUpdate = true; }
+    const H = this.D[v.type].hinge, far = this.far && K.hasP, hm = (m, ang) => _m2.makeTranslation(H[0], 0, H[2] * m).multiply(_mr.makeRotationY(-ang * m)).multiply(_mt.makeTranslation(-H[0], 0, -H[2] * m)).premultiply(M);
+    hm(1, far ? 0 : this.angle).toArray(K.doorM.array); K.doorM.needsUpdate = true; if (K.card) { K.card.matrix.copy(_m2); K.card.matrixWorldNeedsUpdate = true; }
+    hm(-1, far ? this.angle : 0).toArray(K.doorP.array); K.doorP.needsUpdate = true; if (K.cardP) { K.cardP.matrix.copy(_m2).multiply(_mt.makeScale(1, 1, -1)); K.cardP.matrixWorldNeedsUpdate = true; }      /* h-door: the passenger's door on its own hinge */
     const dirt = v.type === 'ox_cab' ? Math.max(vv.dirt, 0.42) : vv.dirt; K.va.array.set([dirt, vv.seed01, v.color === TAXI_YELLOW ? 1 : 0, v.braking ? 1 : 0]); K.va.needsUpdate = true;
     _c.set(v.color); K.col.array.set([_c.r, _c.g, _c.b]); K.col.needsUpdate = true;
     if (K.liv) { const on = vv.livery >= 0; for (const m of K.liv) m.visible = on; if (on) { K.lva.array.set([vv.dirt, vv.seed01, vv.livery, 0]); K.lva.needsUpdate = true; _c.set(vv.ink); K.lcol.array.set([_c.r, _c.g, _c.b]); K.lcol.needsUpdate = true; } }
@@ -275,7 +303,10 @@ const _mr = new THREE.Matrix4(), _mt = new THREE.Matrix4(), _c = new THREE.Color
 
 // ---------------------------------------------------------------------------------------------------------------- the feature
 class Entry {
-  constructor(game) { this.g = game; this.P = {}; this.fig = {}; this.D = null; this.cars = null; this.cam = { k: 0, on: false }; this.npc = null; this.speed = +(game.P.get('espeed') || 1.35); this.stats = { enters: 0, exits: 0, jacks: 0, cancels: 0, noway: 0, noroom: 0 }; this.last = null; this.on4 = game.P.get('eround') !== '0'; }      /* ?eround=0: the walk straight to the door as before board/car 4 */
+  constructor(game) { this.g = game; this.P = {}; this.fig = {}; this.D = null; this.cars = null; this.cam = { k: 0, on: false }; this.npc = null; this.speed = +(game.P.get('espeed') || 1.35); this.stats = { enters: 0, exits: 0, jacks: 0, cancels: 0, noway: 0, noroom: 0 }; this.last = null; this.on4 = game.P.get('eround') !== '0'; this.pass = !this.on4 || game.P.get('epass') === '0' ? 0 : game.P.get('epass') === 'block' ? 2 : 1; this.fast = game.P.get('efast') !== '0'; this.rush = +game.P.get('efast') > 1 ? +game.P.get('efast') : null; }
+  // h-door: how hurried this get-in or get-out is, 1 = calm. ONE factor: he runs to the door instead of walking, and the open / sit / slide / shut clock runs that much faster.
+  // game.entry.rush = a number or a function returning one (the gameplay lane's hook) wins; else heat level 1-2 gives 1.6, 3 and up 1.85. ?efast=0 always calm, ?efast=1.8 forces (QA).
+  urgency() { const r = this.rush; try { if (typeof r === 'function') return clamp(+r() || 1, 1, 2.5); if (typeof r === 'number') return clamp(r, 1, 2.5); if (!this.fast) return 1; const c = this.g.combat, h = c && c.heat, l = h ? h.level | 0 : 0; return l >= 3 ? 1.85 : l > 0 ? 1.6 : 1; } catch (e) { return 1; } }      /* ?eround=0: the walk straight to the door as before board/car 4 */
   async init() {
     const g = this.g; let bin = null;
     try { const [j, b] = await Promise.all([fetch('assets/entry/doors.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)), fetch('assets/entry/doors.bin', { cache: 'no-store' }).then((r) => (r.ok ? r.arrayBuffer() : null))]); this.D = j; if (b) bin = new Int16Array(b); } catch (e) { console.log('[entry] door data not loaded: ' + (e && e.message)); }
@@ -325,7 +356,7 @@ class Entry {
     { const near0 = g.nearestCar.bind(g); g.nearestCar = function (d) { const b = g.player.busy; return b && b.entry ? null : near0(d); }; }      // no 'F Get in' prompt while he is getting in or out
     g.tryEnter = function () {
       if (g.player.busy) return false; const n = g.nearestCar(), driver = n && n.kind === 'traffic' ? n.c : null, vis = g.player.vis;
-      let way = null; if (n && E.on4 && vis.acts && vis.acts.getin && !g.P.has('noanim')) { way = E.wayIn(n.v || n.s || n.c); if (!way) { E.stats.noway++; say(E.sideShut ? 'No room at the driver\u2019s door' : 'No way round to the driver\u2019s door'); return false; } }      /* board/car 4 */
+      let way = null; if (n && E.on4 && vis.acts && vis.acts.getin && !g.P.has('noanim')) { way = E.wayIn(n.v || n.s || n.c, !!driver); if (!way) { E.stats.noway++; say(E.bothShut ? 'No way to either door of this car' : E.sideShut ? 'No room at the driver\u2019s door' : 'No way round to the driver\u2019s door'); return false; } }      /* board/car 4 */
       const door0 = g.sound.door, anim0 = g.playerAnim; g.sound.door = () => {}; g.playerAnim = () => {}; let r; try { r = tryEnter0(); } finally { g.sound.door = door0; g.playerAnim = anim0; }
       const b = g.player.busy; if (!r || !b || b.kind !== 'in' || !b.v) { if (b && b.kind === 'in' && !b.entry) g.playerAnim('getin'); else if (r && g.player.vehicle) g.playerAnim('drive'); return r; }       // no animated figure (or ?noanim): the game's own instant entry stands
       E.begin(b.v, 'in', driver, way); return r;
@@ -352,14 +383,15 @@ class Entry {
   // ------------------------------------------------------------------ state
   begin(v, kind, driver, way, far) {
     const g = this.g, pl = g.player, vis = pl.vis, P = this.params(v);
-    const b = (pl.busy = { entry: true, kind, v, t: 0, dur: 99, z: 0, x: pl.x, y: pl.y, h: pl.h, phase: kind === 'in' ? 'walk' : 'act', u: kind === 'in' ? 0 : T_IN, w: kind === 'in' ? 0 : 1, moved: false, still: false, path: null, jack: null });
+    if (kind === 'in' && this.on4) { way = way || this.wayIn(v, !!driver); far = !!(way && way.far); }
+    const b = (pl.busy = { sl: 0, pace: this.urgency(), entry: true, kind, v, t: 0, dur: 99, z: 0, x: pl.x, y: pl.y, h: pl.h, phase: kind === 'in' ? 'walk' : 'act', u: kind === 'in' ? 0 : T_IN, w: kind === 'in' ? 0 : 1, moved: false, still: false, path: null, jack: null });
     if (kind === 'in') { b.z = g.statics.onSidewalk(pl.x, pl.y) ? 0.15 : 0; this.handOver(); }      /* board/car: on the pavement he stays on it; the camera eases from whatever view was up (the guns lane's shoulder view cut to the game's in one frame: 0.55 m) */
-    this.last = v; b.far = !!far; b.nodoor = !this.cars.kind(v.type) || b.far; this.me.pose.doorMax = b.doorMax = this.doorRoom(v, P);
+    this.last = v; b.far = !!far; { const K = this.cars.kind(v.type); b.nodoor = !K || (b.far && !K.hasP); } this.me.pose.doorMax = b.doorMax = this.doorRoom(v, P, b.far); if (b.far) this.stats[kind === 'in' ? 'passIn' : 'passOut'] = (this.stats[kind === 'in' ? 'passIn' : 'passOut'] || 0) + 1;
     this.me.pose.zLim = b.zLim = this.on4 ? this.sideRoom(v, P, b.far) : undefined;
     if (kind === 'in') {
-      if (!this.on4) b.path = this.route(v, P); else { const w = way || this.wayIn(v); b.path = w && w.pts.length > 1 ? w.pts.slice(1) : w && w.pts.length ? w.pts.slice(-1) : [this.toMap(v, P.xr, P.zs - 0.41, {})];     /* lead, Nov 13: a way of one point (he already stands on the door mark, e.g. F again right after getting out) left the path empty: begin threw and every frame after it too */ b.pp = { t: 0, n: 0, stall: 0, best: 1e9, wait: 0, dirty: false, own: Math.max(0.03, gap(carBox(v), b.path[b.path.length - 1].x, b.path[b.path.length - 1].y) - 0.08) }; } b.wp = 0;
+      if (!this.on4) b.path = this.route(v, P); else { const w = way; b.path = w && w.pts.length > 1 ? w.pts.slice(1) : w && w.pts.length ? w.pts.slice(-1) : [this.toMap(v, P.xr, (P.zs - 0.41) * (b.far ? -1 : 1), {})];     /* lead, Nov 13: a way of one point (he already stands on the door mark, e.g. F again right after getting out) left the path empty: begin threw and every frame after it too */ b.pp = { t: 0, n: 0, stall: 0, best: 1e9, wait: 0, dirty: false, own: Math.max(0.03, gap(carBox(v), b.path[b.path.length - 1].x, b.path[b.path.length - 1].y) - 0.08) }; } b.wp = 0;
       if (!driver && g.P.has('edriver')) driver = { id: +g.P.get('edriver') || 1 };      // QA: someone sits in the parked car too
-      if (driver && this.g.kit.person) this.seatDriver(v, driver, b); else if (this.npc && this.npc.v === v && this.npc.state === 'seated') b.jack = { t: 0 };
+      if (b.far) { /* nobody at the wheel: wayIn offers the passenger's door only then */ } else if (driver && this.g.kit.person) this.seatDriver(v, driver, b); else if (this.npc && this.npc.v === v && this.npc.state === 'seated') b.jack = { t: 0 };
     } else { this.cam.k = 1; this.cam.on = true; if (vis.acts.drive) { g.playerAnim('drive'); } }
     if (vis.mixer) vis.mixer.timeScale = 1; if (vis.acts && vis.acts.drive) vis.acts.drive.setEffectiveTimeScale(1);
     if (b.nodoor && kind === 'out') { b.u = ND_A; g.playerAnim('idle'); g.sound.door(); }      // no door to open: he is on his feet at the handle at once
@@ -383,8 +415,16 @@ class Entry {
   // ---- board/car 4: never through a car. Matt, Nov 13: "the guy literally walked through it to get to the door... He should have walked around it."
   // The way on foot from where he stands to the spot by the driver's door of `o` (a parked slot, a car in traffic or one of the player's): outside
   // this car's body and every other car's, clear of walls; between two bumpers if a body fits, round the neighbour if not. null = no way.
-  wayIn(o) {
-    const g = this.g, pl = g.player, P = this.params(o), T = this.toMap(o, P.xr, P.zs - 0.41, {}), boxes = carsNear(g, o.x, o.y, 17, (this.poolW ||= { boxes: [], pk: [] }));
+  // h-door: which door. The driver's whenever the way to it is short; the passenger's when the driver's is shut in or cannot be walked to, or when it is
+  // clearly nearer and the walk round is long. Never the passenger's when someone sits at the wheel (noFar). null = neither (bothShut says both were tried).
+  wayIn(o, noFar) {
+    this.bothShut = false; const d = this.wayTo(o, 1), shut = this.sideShut; if (!this.pass || noFar || (this.npc && this.npc.v === o && this.npc.state === 'seated') || (d && (this.pass === 2 || d.len <= PASS_LONG))) return d;
+    const K = this.cars.kind(o.type); if (!K || !K.hasP) return d;
+    const p = this.wayTo(o, -1); this.sideShut = shut; if (p && (!d || d.len - p.len > PASS_NEARER)) { p.far = true; return p; }
+    if (!d) this.bothShut = true; return d;
+  }
+  wayTo(o, m = 1) {
+    const g = this.g, pl = g.player, P = this.params(o), T = this.toMap(o, P.xr, (P.zs - 0.41) * m, {}), boxes = carsNear(g, o.x, o.y, 17, (this.poolW ||= { boxes: [], pk: [] }));
     let own = boxes.find((B) => B.o === o); if (!own) boxes.push((own = carBox(o)));
     const ownTight = Math.max(0.05, Math.min(TIGHT, gap(own, T.x, T.y) - 0.06)), st = g.statics, off = []; this.sideShut = false;
     if (o.circles) for (const c of o.circles) if (c.on) { c.on = false; off.push(c); }      // this car's own collision circles reach past the spot by its door on some kinds
@@ -425,14 +465,14 @@ class Entry {
     if (boxes.length && pushOut(boxes, pl, FOOT)) { this.stats.pushes = (this.stats.pushes || 0) + 1; g.statics.resolve(pl.x, pl.y, 0.34, _o2, true); if (!boxes.some((B) => depth(B, _o2.x, _o2.y, 0) > 0)) { pl.x = _o2.x; pl.y = _o2.y; } }
   }
   // how far this car's door can swing (0..1 of OPEN) before its edge meets a wall or a car standing beside it
-  doorRoom(v, P) {
-    const g = this.g, H = P.hinge, L = P.L, a = this.toMap(v, H.x - L * 0.5, P.zs - 0.12, {}), e = {}, others = [];
+  doorRoom(v, P, far) {
+    const g = this.g, H = P.hinge, L = P.L, m = far ? -1 : 1, a = this.toMap(v, H.x - L * 0.5, (P.zs - 0.12) * m, {}), e = {}, others = [];
     const see = (o) => { if (o && o !== v && !o.gone && Math.hypot(o.x - v.x, o.y - v.y) < 12 && !(Math.abs(o.v || 0) > 0.5)) others.push(o); };
     try { for (const o of g.parked.near(v.x, v.y, 12)) see(o); for (const o of g.vehicles) see(o); for (const o of g.traffic.cars) see(o); } catch (err) {}
     let ok = 1;
     for (let k = 0.3; k <= 1.001; k += 0.1) {
       let hit = false;
-      for (const f of [0.55, 1]) { const th = k * OPEN; this.toMap(v, H.x - L * f * Math.cos(th), H.z - L * f * Math.sin(th), e);
+      for (const f of [0.55, 1]) { const th = k * OPEN; this.toMap(v, H.x - L * f * Math.cos(th), (H.z - L * f * Math.sin(th)) * m, e);
         if (g.statics.raycast(a.x, a.y, e.x, e.y) < 1) hit = true;
         for (const o of others) { const c = Math.cos(o.h), sn = Math.sin(o.h), dx = (e.x - o.x) * c + (e.y - o.y) * sn, dz = (e.x - o.x) * sn - (e.y - o.y) * c, d = o.def || {}; if (Math.abs(dx) < (d.len || 4.6) / 2 + 0.04 && Math.abs(dz) < (d.wid || 1.85) / 2 + 0.04) hit = true; } }
       if (hit) { ok = Math.max(0.3, k - 0.1); break; }
@@ -451,7 +491,7 @@ class Entry {
   cancel() { const g = this.g, pl = g.player; pl.busy = null; this.me.release(); this.stats.cancels++; if (this.npc && this.npc.state === 'seated') { /* the driver stays in the car, which is now a loose vehicle: leave them seated */ } }
 
   step(dt) {
-    const g = this.g, pl = g.player, b = pl.busy, v = b.v, I = g.input, vis = pl.vis, P = this.params(v); b.t += dt; dt *= this.speed * (b.kind === 'out' ? 1.2 : 1);
+    const g = this.g, pl = g.player, b = pl.busy, v = b.v, I = g.input, vis = pl.vis, P = this.params(v); b.t += dt; dt *= this.speed * (b.phase === 'walk' ? 1 : b.pace || 1) * (b.kind === 'out' ? 1.2 : 1);
     if (b.phase === 'walk') {
       const moving = Math.hypot(I.mx, I.my) > 0.3; if (!moving) b.still = true; else if (b.still && !g.demo) { this.cancel(); return; }
       if (b.t > 12) { this.cancel(); return; }
@@ -459,7 +499,7 @@ class Entry {
       if (this.on4) { this.walk4(dt, b, v, pl, vis); return; }
       const wp = b.path[b.wp], dx = wp.x - pl.x, dy = wp.y - pl.y, d = Math.hypot(dx, dy), last = b.wp === b.path.length - 1;
       let rest = d; for (let i = b.wp; i < b.path.length - 1; i++) rest += Math.hypot(b.path[i + 1].x - b.path[i].x, b.path[i + 1].y - b.path[i].y);
-      const sp = Math.min(rest > 4.5 ? 3.4 : 1.9, Math.max(0.7, rest * 3.2)), stepLen = sp * dt;
+      const sp = Math.min(rest > (b.pace > 1 ? 1.2 : 4.5) ? 3.4 : 1.9, Math.max(0.7, rest * 3.2)), stepLen = sp * dt;
       if (d <= Math.max(stepLen, last ? 0.03 : 0.25)) { if (last) { pl.x = wp.x; pl.y = wp.y; b.phase = 'act'; b.u = 0; b.w = 0; b.h0 = pl.h; g.playerAnim('idle'); if (vis.mixer) vis.mixer.timeScale = 1; pl.speed = 0; return; } b.wp++; return; }
       const want = Math.atan2(dy, dx); pl.h += wrapPi(want - pl.h) * Math.min(1, dt * 11); pl.x += Math.cos(pl.h) * stepLen * Math.max(0.3, Math.cos(wrapPi(want - pl.h))); pl.y += Math.sin(pl.h) * stepLen * Math.max(0.3, Math.cos(wrapPi(want - pl.h)));
       const wk = (vis.walks || []).find((w) => w.name === 'walkbrisk') || (vis.walks || [])[0] || { name: 'walk', speed: 1.45 };
@@ -468,20 +508,22 @@ class Entry {
     }
     pl.speed = 0; b.w = Math.min(1, b.w + dt / 0.28);
     if (this.on4 && this.npc && this.npc.pup) this.npc.pup.pose.zLim = b.zLim;
-    if (b.kind === 'in') {
+    if (b.kind === 'in' && b.far && !b.nodoor && b.u >= T_IN) { b.sl += dt / SLIDE; if (b.sl >= 1) { b.sl = 1; this.finish(b); return; } }      /* h-door: seated on the passenger's side with the door shut: across to the wheel */
+    else if (b.kind === 'in') {
       const j = b.jack, n = this.npc;
       if (j && n && n.state !== 'gone' && b.u >= 1.0 && j.t < 1) { j.t += dt / 1.7; this.stepJack(dt, b, j, n); if (j.t >= 1) { this.stats.jacks++; } }      // door open: the driver comes out before the player goes on
       else { const u0 = b.u; b.u += dt; if (b.nodoor && b.u >= ND_A && b.u < T_IN) { b.u = T_IN; this.skipJack(b); this.me.release(); this.hardDrive(); g.sound.door(); this.finish(b); return; } this.cues(u0, b.u, v, 1); }
-      if (b.u >= T_IN) { this.finish(b); return; }
-    } else {
+      if (b.u >= T_IN) { if (b.far && !b.nodoor) { b.u = T_IN; b.sl = 0; } else { this.finish(b); return; } }
+    } else if (b.far && !b.nodoor && b.sl < 1) { b.sl = Math.min(1, b.sl + dt / SLIDE); }      /* h-door: out on the passenger's side: across the seats first */
+    else {
       const u0 = b.u; b.u -= b.nodoor && b.u <= ND_A ? dt * 0.35 : dt; if (b.nodoor && b.u < ND_B && b.u > ND_A) b.u = ND_A; this.cues(b.u, u0, v, -1);
       if (b.u <= 0) { b.u = 0; this.finish(b); return; }
     }
     // the game's idea of where the player is follows the hips
-    const S = this.seat(v), pose = entryPose(b.u, P, S, this.sizes(), this.ground(v, b.far), this.me.pose); if (b.far) mirrorPose(pose); this.toMap(v, pose.hip.x, pose.hip.z, _o); pl.x = lerp(pl.x, _o.x, b.w); pl.y = lerp(pl.y, _o.y, b.w); pl.h = b.w < 1 && b.h0 !== undefined && b.kind === 'in' ? b.h0 + wrapPi(v.h + pose.yaw - b.h0) * b.w : v.h + pose.yaw; b.z = 0;
+    const pose = this.poseNow(b, v, this.sizes()); this.toMap(v, pose.hip.x, pose.hip.z, _o); pl.x = lerp(pl.x, _o.x, b.w); pl.y = lerp(pl.y, _o.y, b.w); pl.h = b.w < 1 && b.h0 !== undefined && b.kind === 'in' ? b.h0 + wrapPi(v.h + pose.yaw - b.h0) * b.w : v.h + pose.yaw; b.z = 0;
     // the car takes the weight: it leans to the door side as he sits (and bobs once), and shivers when the door slams
-    { const wu = warp(b.u), tau = Math.max(0, wu - 1.85), sl = Math.max(0, wu - 3.34), want = -0.020 * (ss(wu, 1.62, 1.9) + 0.55 * Math.exp(-5 * tau) * Math.sin(17 * tau) * (tau > 0 ? 1 : 0)) + 0.004 * Math.exp(-9 * sl) * Math.sin(40 * sl) * (sl > 0 && b.kind === 'in' ? 1 : 0); v.roll += (want * (v.def.len > 5.5 ? 0.5 : 1) - v.roll) * 0.6; }
-    if (b.far) this.cars.clear(); else { this.cars.set(v, pose.door * OPEN); if (pose.door <= 0.0005 && (b.kind === 'out' ? b.u < 0.28 : b.u > 2.68)) this.cars.clear(); }
+    { const wu = warp(b.u), tau = Math.max(0, wu - 1.85), sl = Math.max(0, wu - 3.34), want = -0.020 * (ss(wu, 1.62, 1.9) + 0.55 * Math.exp(-5 * tau) * Math.sin(17 * tau) * (tau > 0 ? 1 : 0)) + 0.004 * Math.exp(-9 * sl) * Math.sin(40 * sl) * (sl > 0 && b.kind === 'in' ? 1 : 0), ks = b.far && !b.nodoor ? (b.kind === 'in' ? (b.u >= T_IN ? b.sl : 0) : 1 - b.sl) : 0, rs = b.far ? 2 * ks - 1 : 1; v.roll += (want * rs * (v.def.len > 5.5 ? 0.5 : 1) - v.roll) * 0.6; }
+    if (b.far && b.nodoor) this.cars.clear(); else { this.cars.set(v, pose.door * OPEN, b.far); if (pose.door <= 0.0005 && (b.kind === 'out' ? b.u < 0.28 : b.u > 2.68)) this.cars.clear(); }
   }
   // board/car 4: along the planned way, straight from mark to mark (the marks were tested against every body; steering by the heading alone cut corners).
   // Each step he is also kept out of walls and out of every car as it stands this frame; if a car has driven into the way, a new way; if there is none, he stops.
@@ -489,13 +531,13 @@ class Entry {
     const g = this.g, pp = b.pp, near = () => { const a = carsNear(g, pl.x, pl.y, 9.5, (this.poolF ||= { boxes: [], pk: [] })); for (const B of a) if (B.o === v) B.pad = pp.own; return a; };      // the spot by the door is nearer this car's side than the margin kept from the others
     let boxes = near(); pp.t += dt;
     if (pp.dirty || pp.t > 0.3) { pp.t = 0;
-      if (pp.dirty || !this.wayClear(b, boxes)) { const w = this.wayIn(v); pp.dirty = false; pp.n++;
-        if (w) { b.path = w.pts.slice(1); b.wp = 0; pp.wait = 0; pp.best = 1e9; pp.stall = 0; } else { pp.wait += 0.3; if (pp.wait > 2.4 || pp.n > 12) { say('No way round to the driver\u2019s door'); this.cancel(); g.playerAnim('idle'); return; } }
+      if (pp.dirty || !this.wayClear(b, boxes)) { const w = this.wayTo(v, b.far ? -1 : 1); pp.dirty = false; pp.n++;
+        if (w && w.pts.length > 1) { b.path = w.pts.slice(1); b.wp = 0; pp.wait = 0; pp.best = 1e9; pp.stall = 0; } else { pp.wait += 0.3; if (pp.wait > 2.4 || pp.n > 12) { say(b.far ? 'No way round to the passenger\u2019s door' : 'No way round to the driver\u2019s door'); this.cancel(); g.playerAnim('idle'); return; } }
         boxes = near(); } }
     if (pp.wait > 0) { pl.speed = 0; g.playerAnim('idle'); if (vis.mixer) vis.mixer.timeScale = 1; return; }      // something has driven across his way: he waits for it
     const wp = b.path[b.wp], dx = wp.x - pl.x, dy = wp.y - pl.y, d = Math.hypot(dx, dy), last = b.wp === b.path.length - 1;
     let rest = d; for (let i = b.wp; i < b.path.length - 1; i++) rest += Math.hypot(b.path[i + 1].x - b.path[i].x, b.path[i + 1].y - b.path[i].y);
-    const sp = Math.min(rest > 4.5 ? 3.4 : 1.9, Math.max(0.7, rest * 3.2)), stepLen = sp * dt;
+    const sp = Math.min(rest > (b.pace > 1 ? 1.2 : 4.5) ? 3.4 : 1.9, Math.max(0.7, rest * 3.2)), stepLen = sp * dt;
     const arrive = () => { b.phase = 'act'; b.u = 0; b.w = 0; b.h0 = pl.h; g.playerAnim('idle'); if (vis.mixer) vis.mixer.timeScale = 1; pl.speed = 0; };
     if (d <= Math.max(stepLen, last ? 0.03 : 0.1)) { if (last) { pl.x = wp.x; pl.y = wp.y; arrive(); return; } b.wp++; return; }
     const want = Math.atan2(dy, dx); pl.h += wrapPi(want - pl.h) * Math.min(1, dt * 11);
@@ -507,6 +549,10 @@ class Entry {
     pl.speed = sp; g.playerAnim(sp > 3 ? (vis.acts.jog ? 'jog' : 'run') : wk.name); if (vis.mixer) vis.mixer.timeScale = sp > 3 ? sp / (vis.acts.jog ? (g.kit.clipSpeed.jog || 2.6) * ((g.kit.tall && g.kit.tall.player) || 1) : vis.runSpeed || 5) : sp / wk.speed;
   }
   sizes() { const r = this.me.rig; return r || FALLBACK; }
+  // the pose this frame: the driver's door, or on the passenger's side the mirrored one and the slide across the seats (h-door)
+  poseNow(b, v, R) { const P = this.params(v), S = this.seat(v), gy = this.ground(v, b.far), o = this.me.pose; if (!b.far) return entryPose(b.u, P, S, R, gy, o);
+    if (!b.nodoor && (b.kind === 'in' ? b.u >= T_IN : b.sl < 1)) return slidePose(b.kind === 'in' ? b.sl : 1 - b.sl, P, S, R, gy, o);
+    mirrorPose(entryPose(b.u, P, S, R, gy, o)); if (b.nodoor) { o.hL.w = 0; o.hR.w = 0; o.door = 0; } return o; }
   // things that happen once as the time passes a mark (either direction)
   cues(a, b, v, dir) {
     const g = this.g, vis = g.player.vis, hit = (t) => a < t && b >= t;
@@ -560,7 +606,7 @@ class Entry {
         if (n.state === 'out') npcOutPose(pose, n.u);
         n.pup.apply(pose, CM, _cq2, 1); } }
     if (b && b.entry && b.phase !== 'walk') {
-      if (!me.rig) return; const v = b.v, CM = this.cars.matrix(v, _cm, _cq), pose = entryPose(b.u, this.params(v), this.seat(v), me.rig, this.ground(v, b.far), me.pose); if (b.far) mirrorPose(pose);
+      if (!me.rig) return; const v = b.v, CM = this.cars.matrix(v, _cm, _cq), pose = this.poseNow(b, v, me.rig);
       if (n && b.jack && b.jack.t > 0 && b.jack.t < 1 && n.pup.rig) playerJackPose(pose, b.jack.t, n.pup.rig, _m2.copy(CM).invert(), this.params(v), this.seat(v));
       if (b.w < 1 && b.h0 !== undefined && b.kind === 'in') pose.yaw = wrapPi(b.h0 - v.h) + wrapPi(pose.yaw - wrapPi(b.h0 - v.h)) * b.w;
       me.apply(pose, CM, _cq, b.w);
@@ -578,7 +624,7 @@ class Entry {
   camStep(dt) {
     const g = this.g, pl = g.player, b = pl.busy, C = g.cam, c = this.cam;
     if (g.fly && g.fly.on) return false; if (g.heli && g.heli.hasCamera) return false;
-    let v = null, want = 0;
+    let v = null, want = 0; const fm = b && b.far ? -1 : 1;      /* h-door: the passenger's side */
     if (b && b.entry && (b.phase !== 'walk' || b.v.def.hgt > 1.9)) { v = b.v; want = b.phase === 'walk' ? 0 : b.kind === 'in' ? ss(b.u, 1.5, T_IN + 0.5) : ss(b.u, 1.3, T_IN - 0.2); c.on = true; }
     else if (c.on && pl.vehicle) { v = pl.vehicle; want = 1; }
     else { c.on = false; c.k = 0; return false; }
@@ -589,8 +635,8 @@ class Entry {
     const car = { x: v.x, y: v.y, z: v.z + 1.15 * big, dist: (5.6 + sp * 0.045) * big, height: 1.25 * big, fov: 56 + clamp(sp / 45, 0, 1) * 16 };
     const t = { x: lerp(foot.x, car.x, k), y: lerp(foot.y, car.y, k), z: lerp(foot.z, car.z, k), dist: lerp(foot.dist, car.dist, k), height: lerp(foot.height, car.height, k), fov: lerp(foot.fov, car.fov, k) };
     // if the car is between the camera and the door, come round to the door's side (only while the mouse is left alone)
-    if (C.lookT > 1.0 && b) { { const a = v.h - 0.62, hq = g.statics.raycast(t.x, t.y, t.x - Math.cos(a) * (t.dist + 0.6), t.y - Math.sin(a) * (t.dist + 0.6)); c.qo = (c.qo === undefined ? 1 : c.qo) + ((hq < 0.85 ? 0 : 1) - (c.qo === undefined ? 1 : c.qo)) * Math.min(1, dt * 5); }
-      const rel = wrapPi(C.yaw - v.h), off = c.qo > 0.5 && g.P.get('ecamold') !== '1' ? wrapPi(v.h + clamp(rel, -1.2, -0.35) - C.yaw) : wrapPi(v.h - ((0.62) - 0.47 * (1 - c.qo)) - C.yaw); if (Math.abs(off) > (c.qo > 0.5 ? 0.02 : 0.03 + 0.27 * c.qo)) C.yaw += off * Math.min(1, dt * 2.4); }      // to the rear quarter on the door's side, where the door does not hide him
+    if (C.lookT > 1.0 && b) { { const a = v.h - 0.62 * fm, hq = g.statics.raycast(t.x, t.y, t.x - Math.cos(a) * (t.dist + 0.6), t.y - Math.sin(a) * (t.dist + 0.6)); c.qo = (c.qo === undefined ? 1 : c.qo) + ((hq < 0.85 ? 0 : 1) - (c.qo === undefined ? 1 : c.qo)) * Math.min(1, dt * 5); }
+      const rel = wrapPi(C.yaw - v.h), off = c.qo > 0.5 && g.P.get('ecamold') !== '1' ? wrapPi(v.h + (fm < 0 ? clamp(rel, 0.35, 1.2) : clamp(rel, -1.2, -0.35)) - C.yaw) : wrapPi(v.h - fm * ((0.62) - 0.47 * (1 - c.qo)) - C.yaw); if (Math.abs(off) > (c.qo > 0.5 ? 0.02 : 0.03 + 0.27 * c.qo)) C.yaw += off * Math.min(1, dt * 2.4); }      // to the rear quarter on the door's side, where the door does not hide him
     else if (C.lookT > 1.5 && !b && pl.vehicle) C.yaw += wrapPi(v.h - C.yaw) * Math.min(1, dt * 3.2 * k);
     const kk = Math.min(1, dt * 14); C.tx += (t.x - C.tx) * kk; C.ty += (t.y - C.ty) * kk; C.tz += (t.z - C.tz) * Math.min(1, dt * 8);
     C.dist += (t.dist - C.dist) * Math.min(1, dt * 5); C.fov += (t.fov - C.fov) * Math.min(1, dt * 5); C.h += (t.height - C.h) * Math.min(1, dt * 5);
@@ -623,7 +669,7 @@ class Entry {
         m = clamp(Math.min((hl + 0.6 - Math.abs(ox)) / 0.3, (hw + 0.6 - Math.abs(oz)) / 0.3, (top + 0.5 - cz) / 0.3), 0, 1);
         if (pb && pb.entry) m = Math.max(m, clamp((0.7 - d / Math.max(1, C.dist)) / 0.15, 0, 1));
         if (this.me && this.me.rig && g.player.vis.object.visible) { const hp = this.me.rig.pos('head', _v2); m = Math.max(m, clamp((0.6 - Math.hypot(hp.x - cx, hp.y - cz, hp.z + cy)) / 0.2, 0, 1)); }
-        if (m > 0 && !(c.fb > 0)) { let best = -1; for (const [dx, dz] of [[-0.81, -0.58], [-0.98, -0.2], [-1, 0], [-0.98, 0.2]]) { const mx = co * dx + si * dz, my = si * dx - co * dz, L = Math.min(4.4, g.statics.raycast(C.tx, C.ty, C.tx + mx * 5, C.ty + my * 5) * 5 - 0.35); if (L > best) { best = L; c.fbx = mx; c.fby = my; c.fbL = L; } if (L >= 3) break; } }
+        if (m > 0 && !(c.fb > 0)) { let best = -1; for (const [dx, dz] of [[-0.81, -0.58], [-0.98, -0.2], [-1, 0], [-0.98, 0.2]]) { const dzz = pb && pb.far ? -dz : dz, mx = co * dx + si * dzz, my = si * dx - co * dzz, L = Math.min(4.4, g.statics.raycast(C.tx, C.ty, C.tx + mx * 5, C.ty + my * 5) * 5 - 0.35); if (L > best) { best = L; c.fbx = mx; c.fby = my; c.fbL = L; } if (L >= 3) break; } }
         c.fb = Math.max(m, (c.fb || 0) - (dt || 0) * 1.6);
         if (c.fb > 0) { const L = Math.max(1.2, c.fbL || 0); cx = lerp(cx, C.tx + c.fbx * L, c.fb); cy = lerp(cy, C.ty + c.fby * L, c.fb); cz = lerp(cz, Math.max(cz, top + 0.35), c.fb); } } else c.fb = 0; }
     const sh = C.shake * C.shake * 0.25, n = g.frame; cam.position.set(cx + Math.sin(n * 1.7) * sh, cz + Math.sin(n * 2.3) * sh, -cy + Math.cos(n * 1.3) * sh);

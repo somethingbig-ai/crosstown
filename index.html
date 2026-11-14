@@ -8,7 +8,7 @@
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="CROSSTOWN: drive, fly and walk a photoreal Manhattan in your browser"><meta name="twitter:description" content="An open-world Manhattan around the Flatiron, built with Blender and three.js. Drive, fly a helicopter, walk the streets. Runs in Chrome on a laptop: no install."><meta name="twitter:image" content="https://nyc.somethingbig.ai/og.jpg"><meta name="twitter:image:alt" content="The game's Manhattan skyline from the air, with the Empire State Building.">
 <link rel="canonical" href="https://nyc.somethingbig.ai/">
 <script>window.__CFG = { public: true, bin: true, feedbackUrl: 'https://crosstown-feedback.onrender.com/api/feedback' };</script>
-<link rel="stylesheet" href="src-11140250/hud.css">
+<link rel="stylesheet" href="src-11140300/hud.css">
 <script type="importmap">{"imports":{"three":"./node_modules/three/build/three.module.js","three/addons/":"./node_modules/three/examples/jsm/"}}</script>
 <link rel="icon" href="data:,">
 </head><body>
@@ -21,7 +21,8 @@
 <style>@keyframes ldstripe{from{background-position:0 0}to{background-position:28px 0}}</style>
 <div id="loadwrap" style="margin:0 auto 14px;max-width:26em;transition:opacity .5s"><div style="height:8px;border-radius:5px;background:#2a2e36;overflow:hidden"><div id="loadbar" style="height:100%;width:2%;border-radius:5px;background:repeating-linear-gradient(45deg,#ffd27a 0 10px,#f0b84e 10px 20px);background-size:28px 100%;animation:ldstripe .7s linear infinite;transition:width .2s"></div></div><div id="loadtxt" style="margin-top:6px;font-size:12px;opacity:.85;font-variant-numeric:tabular-nums">Starting…</div></div>
 <button id="playbtn" disabled style="font:700 16px system-ui,sans-serif;letter-spacing:.12em;padding:11px 44px;border-radius:8px;border:0;background:#ffd27a;color:#111;cursor:pointer;opacity:.45">LOADING</button>
-<p style="margin:14px 0 6px;font-size:12px;opacity:.7">WASD move and drive · SPACE jump on foot, handbrake in a car · mouse look · F get in or out · left click fire · V fly · M sound · <a id="fslink" href="#" style="color:#ffd27a">full screen</a><br>Controller: press any button to wake it, then A or Start to play</p>
+<p style="margin:14px 0 6px;font-size:12px;opacity:.7">WASD move and drive · SHIFT run · SPACE jump on foot, handbrake in a car · mouse look · F get in or out · left click fire, right click aim · R reload · 1 2 Q guns · V fly · M sound · <a id="fslink" href="#" style="color:#ffd27a">full screen</a><br>Controller: press any button to wake it, then A or Start to play</p>
+<details id="whatsnew" style="margin:0 auto 10px;max-width:30em;font-size:12px;line-height:1.5;opacity:.9"></details>
 <p style="margin:0 0 8px;font-size:11px;line-height:1.45;opacity:.6">A free, non-commercial tech demo. Nothing is sold and there are no ads. Not affiliated with or endorsed by the City of New York or any building, brand or company you see. Provided as is.</p>
 <a href="credits/" target="_blank" rel="noopener" style="font-size:11px;color:#bbb;opacity:.8">credits</a>
 </div>
@@ -32,5 +33,6 @@
   var l = document.getElementById('fslink'); if (l) l.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); go(); });
   addEventListener('keydown', function (e) { if (e.code === 'Backslash' && !e.repeat && !(e.target && e.target.closest && e.target.closest('#fbbox'))) go(); }); })();
 </script>
-<script type="module" src="src-11140250/main.js"></script>
+<script type="module">/* What's new on the start screen (player 6b805c); a failure here must never stop the game */ import('./src/whatsnew.js').then((m) => { const d = document.getElementById('whatsnew'); if (d) { d.innerHTML = m.html(); for (const ev of ['click', 'mousedown', 'keydown', 'wheel']) d.addEventListener(ev, (e) => e.stopPropagation()); } }).catch(() => {});</script>
+<script type="module" src="src-11140300/main.js"></script>
 </body></html>

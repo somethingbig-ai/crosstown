@@ -64,8 +64,11 @@ export class Vehicle {
     this.spin += (vf * dt) / this.def.radius;
     const tz = onWalk ? 0.15 : 0; this.z += (tz - this.z) * Math.min(1, dt * 14);
     const latA = vf * this.yawV;
-    this.roll += (clamp(-latA * 0.0065, -0.07, 0.07) - this.roll) * Math.min(1, dt * 6);
-    this.pitch += (clamp(-acc * 0.0042, -0.045, 0.045) - this.pitch) * Math.min(1, dt * 6);
+    /* feedback lane, Nov 14 (players cedbe0 "car leans the wrong way during turns", e8e67b "tilts forward when the gas is pressed and backward when braking; it should be the
+       other way around. Lateral tilt during turns is also reversed", 46a7a2, 82d27a "feels like a motorbike"): both signs were swapped. In the model's frame (x forward,
+       y up, z right; Euler YZX) a positive roll tips the roof to the RIGHT and a positive pitch lifts the NOSE: a left turn (yawV > 0) must roll right, power must lift the nose. */
+    this.roll += (clamp(latA * 0.0065, -0.07, 0.07) - this.roll) * Math.min(1, dt * 6);
+    this.pitch += (clamp(acc * 0.0042, -0.045, 0.045) - this.pitch) * Math.min(1, dt * 6);
   }
 }
 

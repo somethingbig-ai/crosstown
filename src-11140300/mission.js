@@ -13,6 +13,7 @@ const LINES = {
 
 // the first job's drop: [avenue, street, {li: lane}]
 const FIRST_DROP = ['Madison Ave', '28th', { li: 0 }];   // the left-hand lane: where the turn off 23rd Street leaves the car
+export const FOOT_R = 4.2;   // metres from the stop that count for a player on foot
 export const STOP_R = 9;   // metres from the stop that count as pulled up
 
 export class Missions {
@@ -39,7 +40,9 @@ export class Missions {
     // world markers
     const ring = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, 0.28, 48, 1, true), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.2, 1.3, 0.2), transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, fog: false }));
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 7, 16, 1, true)     /* lead, Nov 10: was a 90 m beam: from the air it read as a yellow line up past the roofs (CHIEF on build 2136) */, new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, 1.0, 0.25), transparent: true, opacity: 0.13, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
-    beam.position.y = 3.5; this.marker = new THREE.Group(); this.marker.add(ring, beam); this.marker.visible = false; game.world.scene.add(this.marker); this.ring = ring;
+    beam.position.y = 3.5; this.marker = new THREE.Group(); this.marker.add(ring, beam);
+    /* feedback lane, Nov 14 ("there is no package", "where is the package"): the package is a thing you can see, a taped parcel in the ring while it waits */
+    { const box = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.34, 0.36), new THREE.MeshStandardMaterial({ color: 0xa9825a, roughness: 0.85 })), tape = new THREE.Mesh(new THREE.BoxGeometry(0.47, 0.345, 0.07), new THREE.MeshStandardMaterial({ color: 0xd8c9a6, roughness: 0.6 })); box.add(tape); box.position.y = 0.17; box.rotation.y = 0.5; box.castShadow = true; this.parcel = box; this.marker.add(box); } this.marker.visible = false; game.world.scene.add(this.marker); this.ring = ring;
     this.say('start'); this.setTarget({ x: best.x, y: best.y, name: 'the car', car: true });
   }
   say(kind, at) { const a = LINES[kind]; this.msg = { text: a[this.jobN % a.length].replace('{at}', at || ''), t: 0 }; }
@@ -48,7 +51,7 @@ export class Missions {
   // A job stop is a place to pull up at a corner, not the middle of the junction: a point in a travel lane on the block that leads into
   // the corner, a few car lengths short of the stop line. `opts.li` picks the lane (default: the kerb lane on the right).
   planStop(c, opts = {}) {
-    const g = this.g, R = g.roads, v = g.player.vehicle; if (!v) return null;
+    /* feedback lane, Nov 14: a stop can be planned for a player on foot too (see step) */ const g = this.g, R = g.roads, v = g.player.vehicle || g.player;
     const at = R.locate(v.x, v.y, v.h); if (!at) return null;
     const r = R.route(at.e, at.dir, c.node); if (!r || !r.length) return null;
     const last = r[r.length - 1], e = last.e, dir = last.dir, n = R.laneCount(e, dir); if (!n || e.len < 30) return null;
@@ -60,7 +63,7 @@ export class Missions {
   }
   // the drive from where the car is to the stop: [{e, dir}...], ending on the stop's own block
   findRoute() {
-    const g = this.g, R = g.roads, v = g.player.vehicle, T = this.target; const at = R.locate(v.x, v.y, v.h); if (!at) return null;
+    const g = this.g, R = g.roads, v = g.player.vehicle || g.player, T = this.target; const at = R.locate(v.x, v.y, v.h); if (!at) return null;
     let segs;
     if (at.e === T.e && at.dir === T.dir && at.s < T.s + 6) segs = [{ e: at.e, dir: at.dir }];
     else { segs = R.route(at.e, at.dir, R.startNode(T.e, T.dir)); if (!segs) return null; if (segs[segs.length - 1].e !== T.e) segs.push({ e: T.e, dir: T.dir }); }
@@ -123,7 +126,9 @@ export class Missions {
       this.timer -= dt;
       if (this.timer <= 0) { this.banner = { title: 'JOB FAILED', sub: 'The client walked', t: 0, bad: true }; this.say('late'); g.sound.fail(); this.jobN++; this.state = 'wait'; this.hold = 4; this.target = null; this.route = null; return; }
     }
-    if ((this.state === 'pickup' || this.state === 'deliver') && pl.vehicle && d < STOP_R && Math.hypot(pl.vehicle.vx, pl.vehicle.vy) < 1.2) {
+    /* feedback lane, Nov 14 (six players: "there is no package", "I'm on the yellow thing waiting to collect the package but nothing happens", "pressed all the buttons"):
+       five of them stood ON FOOT in the ring, and the stop only counted a car pulled up. Standing in the ring on foot counts too (FOOT_R: the ring is 3.2 m). */
+    if ((this.state === 'pickup' || this.state === 'deliver') && !pl.busy && (pl.vehicle ? d < STOP_R && Math.hypot(pl.vehicle.vx, pl.vehicle.vy) < 1.2 : d < FOOT_R)) {
       this.hold += dt;
       if (this.hold > 1.1) {
         this.hold = 0;
@@ -135,6 +140,7 @@ export class Missions {
   }
   draw() {
     const T = this.target, m = this.marker; m.visible = !!T; if (!T) return;
+    if (this.parcel) this.parcel.visible = this.state === 'pickup';
     // the beam: tall enough to find the target from the street ("collect the package objective unclear", "there is no package": at 7 m nobody saw it),
     // short when the camera is high (from the air a tall beam read as a yellow line up past the roofs)
     { const cy = this.g.world.camera.position.y, hgt = cy > 45 ? 7 : cy > 20 ? 7 + (45 - cy) * 1.3 : 40, b = m.children[1]; if (b) { b.scale.y = hgt / 7; b.position.y = hgt / 2; } }

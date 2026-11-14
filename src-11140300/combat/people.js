@@ -162,7 +162,7 @@ function addClips(Bd) {
 // through the same vertex masks, the same baked ground light and occlusion terms (crowd/render.js patch()).
 function standMaterial(src, part, shared, hasMask) {
   const m = src.clone(); m.vertexColors = false; m.transparent = false; m.depthWrite = true; if (part.alphaTest) { m.alphaTest = part.alphaTest; m.side = THREE.DoubleSide; } m.envMapIntensity = src.envMapIntensity;
-  const U = (m.userData.si = { uT0: { value: new THREE.Vector3(1, 1, 1) }, uT1: { value: new THREE.Vector3(1, 1, 1) }, uT2: { value: new THREE.Vector3(1, 1, 1) }, uMask: { value: new THREE.Vector3(...(Array.isArray(part.mask) ? part.mask : [0, 0, 0])) }, uFeet: { value: 0 }, uWound: { value: new THREE.Vector4(0, 0, 0, 0) } });
+  const U = (m.userData.si = { uT0: { value: new THREE.Vector3(1, 1, 1) }, uT1: { value: new THREE.Vector3(1, 1, 1) }, uT2: { value: new THREE.Vector3(1, 1, 1) }, uMask: { value: new THREE.Vector3(...(Array.isArray(part.mask) ? part.mask : [0, 0, 0])) }, uFeet: { value: 0 }, uWound: { value: new THREE.Vector4(0, 0, 0, 0) }, uWoundD: { value: new THREE.Vector3(0, 0, 1) } });
   const lit = !!(shared && shared.tLight && shared.tLight.value), ao = hasMask && part.ao;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, U);
@@ -174,13 +174,13 @@ function standMaterial(src, part, shared, hasMask) {
         #include <project_vertex>`);
     if (shared) Object.assign(sh.uniforms, { tLight: shared.tLight, uHalf: shared.uHalf, uSunColor: shared.uSunColor, uShadowFar: shared.uShadowFar, uShadowCenter: shared.uShadowCenter });
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
-        varying vec3 vWPos; varying vec3 vCTint; varying float vCH; varying float vCAO; varying vec3 vBind; uniform vec4 uWound; uniform sampler2D tLight; uniform vec2 uHalf; uniform vec3 uSunColor; uniform float uShadowFar; uniform vec3 uShadowCenter; vec3 bakeV; vec3 bakeN;`)
-      .replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb *= vCTint; if (uWound.w > 0.0) { vec3 wd = vBind - uWound.xyz; float wr = length(wd) * (1.0 + 0.22 * sin(wd.x * 70.0 + wd.y * 31.0) + 0.16 * sin(wd.y * 110.0 - wd.z * 47.0 + 1.7)); float sw = 1.0 - smoothstep(uWound.w * 0.6, uWound.w, wr); diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.13, 0.008, 0.008) + vec3(0.05, 0.0015, 0.0015), sw * 0.96); }')
+        varying vec3 vWPos; varying vec3 vCTint; varying float vCH; varying float vCAO; varying vec3 vBind; uniform vec4 uWound; uniform vec3 uWoundD; uniform sampler2D tLight; uniform vec2 uHalf; uniform vec3 uSunColor; uniform float uShadowFar; uniform vec3 uShadowCenter; vec3 bakeV; vec3 bakeN;`)
+      .replace('#include <color_fragment>', '#include <color_fragment>\n diffuseColor.rgb *= vCTint; if (uWound.w > 0.0) { vec3 wd = vBind - uWound.xyz; float wa = dot(wd, uWoundD); vec3 wp = wd - uWoundD * wa; float wr = length(wp) * (1.0 + 0.16 * sin(wd.x * 70.0 + wd.y * 31.0) + 0.10 * sin(wd.y * 110.0 - wd.z * 47.0 + 1.7)); float sw = (1.0 - smoothstep(uWound.w * 0.6, uWound.w, wr)) * (1.0 - smoothstep(0.11, 0.17, abs(wa))); diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(0.13, 0.008, 0.008) + vec3(0.05, 0.0015, 0.0015), sw * 0.96); }')
       .replace('#include <aomap_fragment>', (lit ? 'bakeV = texture2D(tLight, vec2(vWPos.x / (2.0 * uHalf.x) + 0.5, -vWPos.z / (2.0 * uHalf.y) + 0.5)).rgb; bakeN = vec3(0.0, 1.0, 0.0);' + BAKE_LIGHT_GLSL : '') + `
         { float ao = ${ao ? 'clamp(vCAO, 0.0, 1.0)' : '1.0'}; float cg = mix(0.45, 1.0, smoothstep(0.0, 1.25, vCH)); float amb = 0.8; float sunK = 1.15;
           reflectedLight.indirectDiffuse *= cg * amb * ao; reflectedLight.indirectSpecular *= cg * 0.5 * ao; reflectedLight.directDiffuse *= mix(1.0, ao, 0.2) * sunK; reflectedLight.directSpecular *= ao * 1.5; }`);
   };
-  m.customProgramCacheKey = () => 'standin6|' + (hasMask ? 'm' : 'u') + (ao ? 'a' : '') + (lit ? 'l' : 'd');
+  m.customProgramCacheKey = () => 'standin7|' + (hasMask ? 'm' : 'u') + (ao ? 'a' : '') + (lit ? 'l' : 'd');
   return m;
 }
 
@@ -195,6 +195,10 @@ BLOB_GEO.setAttribute('normal', new THREE.BufferAttribute(new Float32Array([0, 1
 // Round 15: a DECAL UNDER BODIES by draw order (opaque, hard edge by discard, renderOrder 1, no depth write; bodies are renderOrder 3, so a
 // body lying on it always covers it), and UNLIT: a dark red divided by the film pass's live exposure (POOL_K, set each frame in poseRest),
 // so it shows as the same dark red in sun and shade (lit it went pink, unlit and undivided it glowed).
+// (Nov 14, crosswalk victims with no pool) the pool is a blended quad now, and blended things are drawn in renderOrder: at 1 it came BEFORE the street's
+// paint (streets/ground.js marks 2, photographs 2.5, decals 3), which have no depth of their own to lose to it and were painted over it. 3.5: after
+// all of the street, before the drops (4) and the cars' ground shadows (5). A body still covers it: bodies write depth, the pool is tested against it.
+const POOL_RO = 1;   // lead: the crosswalk pool change (3.5) is not seen working in a browser yet; old order kept
 const POOL_K = { value: 1 }, POOL_TEX = { value: null }, POOL_TEXON = { value: 0 };      // (live play meters exposure into a 1x1 texture the film pass reads, world.js tExp / uExpTex: the pool divides by the same texel, or it glows red in shade: seen in out/pub/lead_over.jpg)
 function poolMat() {
   const m = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, fog: false, toneMapped: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8, blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.SrcColorFactor, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor });
@@ -237,7 +241,7 @@ class Drops {
     this.n = live; this.pts.geometry.attributes.position.needsUpdate = true; this.pts.geometry.attributes.aS.needsUpdate = true; this.pts.geometry.attributes.aA.needsUpdate = true; this.mat.uniforms.uScale.value = h / (2 * Math.tan((cam.fov * Math.PI) / 360));
   }
   land(x, g, z, sz) {
-    let s = this.spots[this.si]; if (!s) { const me = new THREE.Mesh(BLOB_GEO, poolMat()); me.frustumCulled = false; me.renderOrder = 1; me.receiveShadow = true; this.B.blobs.add(me); s = this.spots[this.si] = { me, t: 0, r: 0 }; } this.si = (this.si + 1) % NSPOT;
+    let s = this.spots[this.si]; if (!s) { const me = new THREE.Mesh(BLOB_GEO, poolMat()); me.frustumCulled = false; me.renderOrder = POOL_RO; me.receiveShadow = true; this.B.blobs.add(me); s = this.spots[this.si] = { me, t: 0, r: 0 }; } this.si = (this.si + 1) % NSPOT;
     s.t = 0; s.r = sz; s.me.material.uniforms.uH.value = 0.7; s.me.position.set(x, g + 0.03, z); s.me.rotation.y = x * 7.1 + z * 3.3; s.me.material.uniforms.uS.value = x * 3.7 + z; s.me.material.uniforms.uA.value = 0.9; s.me.scale.setScalar(s.r * 0.4);
   }
 }
@@ -296,12 +300,15 @@ class StandIn {
     mx.update(0); h.updateMatrixWorld(true);
   }
   // a dark wet stain on the clothes where the bullet went in, spreading a little: fixed to the body (worked out in the mesh's bind space)
+  // (Nov 14) it was a BALL about a point inside the body: where the flat faces of a low-poly shirt cut the ball it showed as jagged shards. Now a round
+  // blot about the bullet's own line (uWoundD, bind space), on whatever relief the cloth has, within a hand's depth of the wound
   mark(x, y, z, dx, dy, dz) {
     const B = this.fit.B, P = new THREE.Vector3(x + dx * 0.09, y + dy * 0.09, z + dz * 0.09), mid = (a, b) => a.getWorldPosition(new THREE.Vector3()).lerp(b.getWorldPosition(_v2), 0.5);
     const cand = [[B.head, B.head.getWorldPosition(new THREE.Vector3())], [B.chest2 || B.chest, mid(B.chest, B.neck)], [B.hips, mid(B.hips, B.chest)], [B.thigh_L, mid(B.thigh_L, B.shin_L)], [B.thigh_R, mid(B.thigh_R, B.shin_R)], [B.shin_L, mid(B.shin_L, B.foot_L)], [B.shin_R, mid(B.shin_R, B.foot_R)]];
     let best = cand[0], bd = 1e9; for (const c of cand) { const d = c[1].distanceTo(P); if (d < bd) { bd = d; best = c; } }
     let me = null; this.root.traverse((o) => { if (o.isSkinnedMesh && !me) me = o; }); if (!me) return; const j = me.skeleton.bones.indexOf(best[0]); if (j < 0) return;
     _m.multiplyMatrices(best[0].matrixWorld, me.skeleton.boneInverses[j]).multiply(me.bindMatrix).invert(); P.applyMatrix4(_m); this.wound = { t: 0, x: P.x, y: P.y, z: P.z };
+    { const D = _v4.set(dx, dy, dz); if (D.lengthSq() < 1e-8) D.set(0, 0, 1); D.transformDirection(_m); for (const m of this.mats) m.userData.si.uWoundD.value.copy(D); }
   }
   dress(a) {
     for (const m of this.mats) { const U = m.userData.si; tintOf(a.tint[0], U.uT0.value); tintOf(a.tint[1], U.uT1.value); tintOf(a.tint[2], U.uT2.value); U.uFeet.value = a.z; U.uWound.value.set(0, 0, 0, 0); }
@@ -319,10 +326,23 @@ export class Bodies {
     // walls and standing things from the map, and the cars near a falling body as boxes (a point is eased out of a box, a few cm a step)
     this.boxes = []; this.boxN = 0;
     this.env = { ground: (x, z) => (st.onSidewalk(x, -z) ? 0.15 : 0), solid: true, cross: (x0, z0, x1, z1) => st.raycast(x0, -z0, x1, -z1) < 1,
+      // (Nov 14) what stands within rad of a body, asked a few times a second by the doll so that each of its 22 points is tested against a handful of
+      // lines of its own and not against the map's grid every step: out.segs = the collision lines (x, z, x, z ...; three.js space), out.n = how many
+      // numbers, out.other = a post, a piece of furniture or a car's box is that near too (env.wall is then asked for every point as before)
+      near: (x, z, rad, out) => { const c = st.cell, y = -z, S = out.segs || (out.segs = []), seen = this._seen || (this._seen = new Set()); let n = 0, other = false; seen.clear();
+        for (let i = Math.floor((x - rad) / c); i <= Math.floor((x + rad) / c); i++) for (let j = Math.floor((y - rad) / c); j <= Math.floor((y + rad) / c); j++) { const k = st.key(i, j), a = st.segs.get(k);
+          if (a) for (const s of a) { if (seen.has(s)) continue; seen.add(s); const dx = s[2] - s[0], dy = s[3] - s[1], t = clamp(((x - s[0]) * dx + (y - s[1]) * dy) / (dx * dx + dy * dy || 1e-9), 0, 1), ex = x - s[0] - dx * t, ey = y - s[1] - dy * t; if (ex * ex + ey * ey < rad * rad) { S[n++] = s[0]; S[n++] = -s[1]; S[n++] = s[2]; S[n++] = -s[3]; } }
+          if (!other) { const b = st.circ.get(k); if (b) for (const o of b) if (o.on && Math.hypot(x - o.x, y - o.y) < rad + o.r) { other = true; break; } } }
+        if (!other) for (const b of this.boxes) if ((x - b.x) * (x - b.x) + (y - b.y) * (y - b.y) < (rad + 3.5) * (rad + 3.5)) { other = true; break; }
+        out.n = n; out.other = other; return out; },
       // np: walls only (a body let go by the doll's `noWall` rule: no chairs, posts or cars, but a building still holds it)
-      wall: (x, z, r, out, y, np) => { let hit = false; if (st.resolve(x, -z, r, _o, !!np)) { x = _o.x; z = -_o.y; hit = true; }
-      if (!np) for (const c of this.boxes) { const dx = x - c.x, dy = -z - c.y; if (dx * dx + dy * dy > c.r2 || (y !== undefined && y > c.top)) continue; const lx = dx * c.cs + dy * c.sn, ly = -dx * c.sn + dy * c.cs, px = c.hx + r - Math.abs(lx), py = c.hy + r - Math.abs(ly); if (px <= 0 || py <= 0) continue;
-        let ex = 0, ey = 0; if (px < py) ex = (lx < 0 ? -1 : 1) * Math.min(px, 0.05); else ey = (ly < 0 ? -1 : 1) * Math.min(py, 0.05); x += ex * c.cs - ey * c.sn; z -= ex * c.sn + ey * c.cs; hit = true; }
+      wall: (x, z, r, out, y, np, x0, z0) => { let hit = false; if (st.resolve(x, -z, r, _o, !!np)) { x = _o.x; z = -_o.y; hit = true; }
+      // (Nov 14) cars hold a body the `noWall` rule has let go too (propped on a bonnet for 2.4 s it was let INTO the car); and a point that stood
+      // outside a car's box a step ago (x0, z0: where it last stood) is stopped whole at the side it came to, not eased 5 cm a step from inside
+      // (a body thrown by a blast moves up to 13 cm a step: it went into the car). Eased as before when the car came to it or it came down from above.
+      for (const c of this.boxes) { const dx = x - c.x, dy = -z - c.y; if (dx * dx + dy * dy > c.r2 || (y !== undefined && y > c.top + 0.5)) continue;      /* (+0.5: a thrown body met the box only below the roof line, went over the edge of the roof and came down INTO the car: 10 of 600 in node) */ const lx = dx * c.cs + dy * c.sn, ly = -dx * c.sn + dy * c.cs, px = c.hx + r - Math.abs(lx), py = c.hy + r - Math.abs(ly); if (px <= 0 || py <= 0) continue;
+        let ex = 0, ey = 0, whole = false; if (x0 !== undefined) { const ax = x0 - c.x, ay = -z0 - c.y, lx0 = ax * c.cs + ay * c.sn, ly0 = -ax * c.sn + ay * c.cs, ox = Math.abs(lx0) - c.hx - r, oy = Math.abs(ly0) - c.hy - r; if (ox > -0.02 || oy > -0.02) { whole = true; if (ox >= oy) ex = (lx0 < 0 ? -1 : 1) * (c.hx + r) - lx; else ey = (ly0 < 0 ? -1 : 1) * (c.hy + r) - ly; } }
+        if (!whole) { if (px < py) ex = (lx < 0 ? -1 : 1) * Math.min(px, 0.05); else ey = (ly < 0 ? -1 : 1) * Math.min(py, 0.05); } x += ex * c.cs - ey * c.sn; z -= ex * c.sn + ey * c.cs; hit = true; }
       // (seen on a laptop, out/pub/crossA_k0: a body lying INSIDE a concrete block) the map holds street furniture as a circle (a block: r 0.5 m) but a block is
       // drawn as a box whose corners reach 0.75 m: for a body the big furniture circles count 45 % wider (eased out, 5 cm a step at most)
       if (!np && st.circ && st.key && st.cell) { try { const ci = Math.floor(x / st.cell), cj = Math.floor(-z / st.cell); for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const L = st.circ.get(st.key(ci + a, cj + b)); if (!L) continue; for (const c of L) { if (!c.on || c.tag !== 'furniture' || c.r < 0.45 || (y !== undefined && y > 0.75)) continue; const dx = x - c.x, dy = -z - c.y, d = Math.hypot(dx, dy), R = c.r * 1.45 + r; if (d >= R || d < 1e-6) continue; const e = Math.min(R - d, 0.05); x += (dx / d) * e; z -= (dy / d) * e; hit = true; } } } catch (e) {} }
@@ -332,7 +352,7 @@ export class Bodies {
     const cr = game.crowd; this.crowd = cr && cr.on ? cr : null;
     this.pools = [];
     if (!this.blood) { try { if (combat && combat.fx && combat.fx.blood) combat.fx.blood = () => {}; } catch (e) {} }
-    try { const w = new THREE.Mesh(BLOB_GEO, poolMat()); w.material.uniforms.uA.value = 1; w.position.set(0, -60, 0); w.frustumCulled = false; w.renderOrder = 1; w.receiveShadow = true; this.blobs.add(w); } catch (e) {}
+    try { const w = new THREE.Mesh(BLOB_GEO, poolMat()); w.material.uniforms.uA.value = 1; w.position.set(0, -60, 0); w.frustumCulled = false; w.renderOrder = POOL_RO; w.receiveShadow = true; this.blobs.add(w); } catch (e) {}
     this.t = 0; this.threats = []; this.pending = []; this.afraid = []; this.flinches = []; this.hidden = []; this.seedN = 4242;
     // a hit that does not kill: combat.hit() answers 'ped'; the flinch starts from here (its code is not ours to edit)
     // a bullet meets a body that is already down (the game's own ray skips them): flesh, a jolt, a little blood
@@ -400,7 +420,7 @@ export class Bodies {
   }
   // the cars near bodies that are still moving, as boxes for env.wall
   cars() {
-    const B = this.boxes, g = this.g; B.length = 0; const add = (c) => { if (!c || !c.def) return; const cs = Math.cos(c.h), sn = Math.sin(c.h), hx = c.def.len / 2 - 0.08, hy = c.def.wid * 0.45; B.push({ x: c.x, y: c.y, cs, sn, hx, hy, r2: (hx + 1) * (hx + 1) + (hy + 1) * (hy + 1), top: (c.z || 0) + c.def.hgt * 0.85 }); };
+    const B = this.boxes, g = this.g; B.length = 0; const add = (c) => { if (!c || !c.def) return; const cs = Math.cos(c.h), sn = Math.sin(c.h), hx = c.def.len / 2 - 0.08, hy = c.def.wid * 0.45; B.push({ c, x: c.x, y: c.y, cs, sn, hx, hy, r2: (hx + 1) * (hx + 1) + (hy + 1) * (hy + 1), top: (c.z || 0) + c.def.hgt * 0.85 }); };
     const near = (d) => { if (!d || d.asleep) return; const x = d.p[I.P * 3], y = -d.p[I.P * 3 + 2]; try { for (const c of g.parked.near(x, y, 6, (this._pk ||= []))) if (!B.some((b) => b.x === c.x && b.y === c.y)) add(c); } catch (e) {}
       for (const L of [g.traffic && g.traffic.cars, g.vehicles]) if (L) for (const c of L) if (Math.abs(c.x - x) < 7 && Math.abs(c.y - y) < 7 && !B.some((b) => b.x === c.x && b.y === c.y)) add(c); };
     for (const b of this.live) near(b.doll); for (const q of this.peds) near(q.body && q.body.doll);
@@ -409,7 +429,7 @@ export class Bodies {
 
   // ------------------------------------------------------------------ hit but alive: a flinch where it struck
   pool(doll, h, force) {
-    if (!this.blobs || !this.blood || force >= 4) return; const i = doll.nearest(h.x, h.z, -h.y, [I.H, I.C, I.CF, I.P, I.PF, I.KL, I.KR]), i2 = i === I.C || i === I.CF ? I.P : i, me = new THREE.Mesh(BLOB_GEO, poolMat()); me.frustumCulled = false; me.renderOrder = 1; me.visible = false; me.receiveShadow = true; me.rotation.y = this.rnd() * 6.28;
+    if (!this.blobs || !this.blood || force >= 4) return; const i = doll.nearest(h.x, h.z, -h.y, [I.H, I.C, I.CF, I.P, I.PF, I.KL, I.KR]), i2 = i === I.C || i === I.CF ? I.P : i, me = new THREE.Mesh(BLOB_GEO, poolMat()); me.frustumCulled = false; me.renderOrder = POOL_RO; me.visible = false; me.receiveShadow = true; me.rotation.y = this.rnd() * 6.28;
     me.material.uniforms.uS.value = this.rnd() * 20; this.blobs.add(me); this.pools.push({ me, doll, i, i2, t: 0, r: 0.5 + this.rnd() * 0.16, sx: 0.85 + this.rnd() * 0.4 });
     if (this.pools.length > 14) { const d = this.pools.shift(); this.blobs.remove(d.me); d.me.material.dispose(); }
   }
@@ -534,6 +554,7 @@ export class Bodies {
     const t0 = performance.now();
     try { this.stepFear(dt); } catch (e) { if (!this._err3) { this._err3 = true; console.log('[people] bystanders failed: ' + (e && (e.stack || e.message))); } }
     if (--this.boxN <= 0) { this.boxN = 12; try { this.cars(); } catch (e) { this.boxes.length = 0; } }
+    else for (const b of this.boxes) { const c = b.c; if (c.x !== b.x || c.y !== b.y) { b.x = c.x; b.y = c.y; b.cs = Math.cos(c.h); b.sn = Math.sin(c.h); } }      // (Nov 14) between the listings every box stays on its car (a moving car's box was up to 0.2 s behind it)
     for (const b of this.live) { if (!b.doll) continue; b.t += dt; b.doll.step(dt); }
     for (let i = this.peds.length - 1; i >= 0; i--) {
       const p = this.peds[i], d = p.body.doll; if (!this.g.peds.list.includes(p)) { this.peds.splice(i, 1); this.blobs.remove(p.body.blob); if (p.body.mark && p.body.mark.parent) p.body.mark.parent.remove(p.body.mark); p.body = null; continue; }
@@ -572,7 +593,7 @@ export class Bodies {
     // for ten seconds or so (it stays where it began: the ground does not follow a limb that is still settling)
     { let ex = 0; try { const f = this.g.world && this.g.world.film; ex = f && f.uniforms && f.uniforms.uExposure ? +f.uniforms.uExposure.value : 0; } catch (e) { ex = 0; } POOL_K.value = ex > 0.05 && isFinite(ex) ? clamp(1 / ex, 0.35, 1.6) : 1; try { const fu = this.g.world.film.uniforms; POOL_TEX.value = fu.tExp ? fu.tExp.value : null; POOL_TEXON.value = fu.uExpTex && fu.uExpTex.value > 0.5 && POOL_TEX.value ? 1 : 0; } catch (e) { POOL_TEXON.value = 0; } }      // (capped: in live play on a laptop the pool showed BRIGHT red under trees, out/pub/lead_over.jpg: one over a small exposure figure blew it up)
     for (const q of this.pools) { const d = q.doll; if (!q.me.visible && d.lain < 0.45 && !d.asleep) continue; q.t += dt; const r = q.r * (0.15 + 0.85 * (1 - Math.exp(-q.t / 1.8)));      // from a hand's width: half size after a second, full in about five (at 3.0 s round 19's critics saw no pool in 2.4 s)
-      if (!q.me.visible) { const P = d.p, lo = P[I.SL * 3 + 1] < P[I.SR * 3 + 1] ? I.SL : I.SR, ox = P[lo * 3] - P[I.C * 3], oz = P[lo * 3 + 2] - P[I.C * 3 + 2], ol = Math.hypot(ox, oz) || 1, x = P[q.i * 3] * 0.65 + P[q.i2 * 3] * 0.35 + (ox / ol) * 0.3, z = P[q.i * 3 + 2] * 0.65 + P[q.i2 * 3 + 2] * 0.35 + (oz / ol) * 0.3; q.me.visible = true; q.me.position.set(x, this.env.ground(x, z) + 0.02, z); }
+      if (!q.me.visible) { const P = d.p, lo = P[I.SL * 3 + 1] < P[I.SR * 3 + 1] ? I.SL : I.SR, ox = P[lo * 3] - P[I.C * 3], oz = P[lo * 3 + 2] - P[I.C * 3 + 2], ol = Math.hypot(ox, oz) || 1, x = P[q.i * 3] * 0.65 + P[q.i2 * 3] * 0.35 + (ox / ol) * 0.3, z = P[q.i * 3 + 2] * 0.65 + P[q.i2 * 3 + 2] * 0.35 + (oz / ol) * 0.3; q.me.visible = true; q.me.position.set(x, this.env.ground(x, z) + 0.03, z); }      /* (Nov 14: 3 cm, as the spots: see POOL_RO) */
       q.me.scale.set(Math.max(0.01, r * q.sx), 1, Math.max(0.01, r)); q.me.material.uniforms.uA.value = 0.96; }
     for (const p of this.afraid) { const F = p.fear; if (!F || F.kind !== 'ped' || p.state === 'down' || !p.vis || !p.vis.object) continue; const want = F.cower > 0 || F.hold > 0; F.dk = clamp((F.dk || 0) + (want ? dt * 6 : -dt * 3.5), 0, 1); if (F.dk <= 0) continue;
       try { let fit = p.vis._fit; if (!fit || fit.root !== p.vis.object) fit = p.vis._fit = new Fit(p.vis.object, p.vis.name || p.kind); if (!fit.ok) continue; p.vis.object.updateMatrixWorld(true); if (fit.flip === undefined) fit.points(); if (F.cower > 0) F.deep = true;

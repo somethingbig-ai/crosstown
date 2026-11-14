@@ -10,7 +10,7 @@ export const NP = 22;
 const MASS = [5, 3, 12, 6, 3.5, 3.5, 2.2, 2.2, 1.3, 1.3, 0.6, 0.6, 10, 5, 5, 5, 5, 5, 2.6, 2.6, 0.9, 0.9];
 const RAD = [0.098, 0.065, 0.102, 0.078, 0.068, 0.068, 0.05, 0.05, 0.04, 0.04, 0.035, 0.035, 0.102, 0.074, 0.09, 0.09, 0.068, 0.068, 0.06, 0.06, 0.04, 0.04];
 const G_LEGL = 0, G_LEGR = 1, G_SPINE = 2, G_NECK = 3, G_ARML = 4, G_ARMR = 5, NG = 6;
-const EV = (globalThis.process && process.env) || {}, HF = +(EV.HF ?? 0), VF = +(EV.VF || 0.45), PA = +(EV.PA || 5), SB = +(EV.SB || 0.3), MF = +(EV.MF || 0.7), H2 = +(EV.H2 ?? 0), M2 = +(EV.M2 ?? 0.45), T2 = +(EV.T2 ?? 0.32), ST = +(EV.ST || 0.08), AL = +(EV.AL || 1), HS = +(EV.HS ?? 0.5), TB = +(EV.TB ?? 0.5), KT = +(EV.KT ?? 0.2), TS = +(EV.TS ?? 0.42), STEP = +(EV.STEP ?? 0.8), SO = +(EV.SO ?? 0.0), LB = +(EV.LB ?? 0.8), RUP = +(EV.RUP ?? 0.2), KGT = +(EV.KGT ?? 0.35), SF = +(EV.SF ?? 0.15), SITF = +(EV.SITF ?? 0.22), SITH = +(EV.SITH ?? 0.55), LF = +(EV.LF ?? 0.03), AU = +(EV.AU ?? 1.2), KA = +(EV.KA ?? 0.65), KB = +(EV.KB ?? 0.8), PL = +(EV.PL ?? 0.5), UT = +(EV.UT ?? 0), UK = +(EV.UK ?? 0), KMIN = +(EV.KMIN ?? 62), LC = +(EV.LC ?? 0), AT = +(EV.AT ?? 0.3), AH = +(EV.AH ?? 0.15), GV = +(EV.GV ?? 0.25), FG = +(EV.FG ?? 0.003), JK = +(EV.JK ?? 2.6), SAG = +(EV.SAG ?? 0.9), IM = +(EV.IM ?? 1.7), AR = +(EV.AR ?? 0.2), SV = +(EV.SV ?? 0.3), AFT = +(EV.AFT ?? 1.8), GD = +(EV.GD ?? 0.012), KS = +(EV.KS ?? 1.4), NF = +(EV.NF ?? 110), NFH = +(EV.NFH ?? 75), WR = +(EV.WR ?? 1.2), LCAP = +(EV.LCAP ?? 0), AFD = +(EV.AFD ?? 0.9), CR = +(EV.CR ?? 1.25), DFR = +(EV.DFR ?? 0.995), WK = +(EV.WK ?? 4), STG = +(EV.STG ?? 0), AO = +(EV.AO ?? 0.3), AOK = +(EV.AOK ?? 0.3), ROR = +(EV.ROR ?? 0.5), RO = +(EV.RO ?? 2.4), LBK = +(EV.LBK ?? 0.7), ROU = +(EV.ROU ?? 0.5), ROT = +(EV.ROT ?? 4.2), TWL = +(EV.TWL ?? 45), TWC = +(EV.TWC ?? 1.5), KD = +(EV.KD ?? 0.3), AD = +(EV.AD ?? 0.04), ADR = +(EV.ADR ?? 0.15), PSH = +(EV.PSH ?? 1), VK = +(EV.VK ?? 1), RELAX = 3.2, D2R = Math.PI / 180, H_SUB = 1 / 120, ITER = 7, GRAV = 9.81, MU = 0.85;
+const EV = (globalThis.process && process.env) || {}, HF = +(EV.HF ?? 0), VF = +(EV.VF || 0.45), PA = +(EV.PA || 5), SB = +(EV.SB || 0.3), MF = +(EV.MF || 0.7), H2 = +(EV.H2 ?? 0), M2 = +(EV.M2 ?? 0.45), T2 = +(EV.T2 ?? 0.32), ST = +(EV.ST || 0.08), AL = +(EV.AL || 1), HS = +(EV.HS ?? 0.5), TB = +(EV.TB ?? 0.5), KT = +(EV.KT ?? 0.2), TS = +(EV.TS ?? 0.42), STEP = +(EV.STEP ?? 0.8), SO = +(EV.SO ?? 0.0), LB = +(EV.LB ?? 0.8), RUP = +(EV.RUP ?? 0.2), KGT = +(EV.KGT ?? 0.35), SF = +(EV.SF ?? 0.15), SITF = +(EV.SITF ?? 0.22), SITH = +(EV.SITH ?? 0.55), LF = +(EV.LF ?? 0.03), AU = +(EV.AU ?? 1.2), KA = +(EV.KA ?? 0.65), KB = +(EV.KB ?? 0.8), PL = +(EV.PL ?? 0.5), UT = +(EV.UT ?? 0), UK = +(EV.UK ?? 0), KMIN = +(EV.KMIN ?? 62), LC = +(EV.LC ?? 0), AT = +(EV.AT ?? 0.3), AH = +(EV.AH ?? 0.15), GV = +(EV.GV ?? 0.25), FG = +(EV.FG ?? 0.003), JK = +(EV.JK ?? 2.6), SAG = +(EV.SAG ?? 0.9), IM = +(EV.IM ?? 1.7), AR = +(EV.AR ?? 0.2), SV = +(EV.SV ?? 0.3), AFT = +(EV.AFT ?? 1.8), GD = +(EV.GD ?? 0.012), KS = +(EV.KS ?? 1.4), NF = +(EV.NF ?? 110), NFH = +(EV.NFH ?? 75), WR = +(EV.WR ?? 1.2), LCAP = +(EV.LCAP ?? 0), AFD = +(EV.AFD ?? 0.9), CR = +(EV.CR ?? 1.25), DFR = +(EV.DFR ?? 0.995), WK = +(EV.WK ?? 4), STG = +(EV.STG ?? 0), AO = +(EV.AO ?? 0.3), AOK = +(EV.AOK ?? 0.3), ROR = +(EV.ROR ?? 0.5), RO = +(EV.RO ?? 2.4), LBK = +(EV.LBK ?? 0.7), ROU = +(EV.ROU ?? 0.5), ROT = +(EV.ROT ?? 4.2), TWL = +(EV.TWL ?? 45), TWC = +(EV.TWC ?? 1.5), KD = +(EV.KD ?? 0.3), AD = +(EV.AD ?? 0.04), ADR = +(EV.ADR ?? 0.15), PSH = +(EV.PSH ?? 1), VK = +(EV.VK ?? 1), WSL = +(EV.WSL ?? 0.6), LTR = +(EV.LTR ?? 0.11), KFH = +(EV.KFH ?? 42), SLUMP = +(EV.SLUMP ?? 1), RELAX = 3.2, D2R = Math.PI / 180, H_SUB = 1 / 120, ITER = 7, GRAV = 9.81, MU = 0.85;
 const hyp = (x, y, z = 0) => Math.sqrt(x * x + y * y + z * z);
 const sm = (u) => (u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u));
 
@@ -86,7 +86,10 @@ export class Doll {
     // can get past: neck to knee never nearer than a fold of NFH degrees, head to knee and head / neck to ankle never nearer than a hand's
     // length or two. Taken up whole every sub-step (the speed cap after it keeps it from showing as a twitch). Never tighter than the pose it starts in.
     { const sp = D(I.P, I.N), hard = (i, j, lo) => this.hard.push({ i, j, lo: Math.min(lo, D(i, j) * 0.98) }); this.hard = [];
-      for (const s of ['L', 'R']) { const th = D(I['H' + s], I['K' + s]); hard(I.N, I['K' + s], Math.sqrt(sp * sp + th * th - 2 * sp * th * Math.cos(NFH * D2R))); hard(I.H, I['K' + s], 0.3); hard(I.H, I['F' + s], 0.42); hard(I.N, I['F' + s], 0.38); hard(I.C, I['F' + s], 0.3); } }
+      for (const s of ['L', 'R']) { const th = D(I['H' + s], I['K' + s]); hard(I.N, I['K' + s], Math.sqrt(sp * sp + th * th - 2 * sp * th * Math.cos(NFH * D2R))); hard(I.H, I['K' + s], 0.3); hard(I.H, I['F' + s], 0.42); hard(I.N, I['F' + s], 0.38); hard(I.C, I['F' + s], 0.3); 
+        // (Nov 14) and a knee folds no further than a knee can (KFH degrees between thigh and shin; the soft stop at KMIN gives a centimetre a pass and a body
+        // sitting down on its own leg drove the ankle up to the hip joint: the shin lay inside the thigh, 33 cm past the stop in node)
+        if (KFH) { const sh = D(I['K' + s], I['F' + s]); hard(I['H' + s], I['F' + s], Math.sqrt(th * th + sh * sh - 2 * th * sh * Math.cos(KFH * D2R))); } } }
     // --- tone: what the muscles were holding
     this.sp = {};
     for (const s of ['L', 'R']) { const g = s === 'L' ? G_LEGL : G_LEGR, o = s === 'L' ? 'R' : 'L', ga = s === 'L' ? G_ARML : G_ARMR;
@@ -96,7 +99,12 @@ export class Doll {
     this.sp.curl = spring(I.CF, I.PF, G_SPINE); this.sp.sideL = spring(I.SL, I.HL, G_SPINE); this.sp.sideR = spring(I.SR, I.HR, G_SPINE); this.sp.diagL = spring(I.SL, I.HR, G_SPINE); this.sp.diagR = spring(I.SR, I.HL, G_SPINE);
     this.sp.nod = spring(I.H, I.CF, G_NECK); spring(I.H, I.SL, G_NECK); spring(I.H, I.SR, G_NECK);
     this.extra = [];      // short-lived pulls (a hand to the wound)
-    this.legLen = { L: D(I.HL, I.KL) + D(I.KL, I.FL), R: D(I.HR, I.KR) + D(I.KR, I.FR) }; this.shin = { L: D(I.KL, I.FL), R: D(I.KR, I.FR) }; this.nk0 = D(I.N, I.PF); this.relT = 0;
+    this.legLen = { L: D(I.HL, I.KL) + D(I.KL, I.FL), R: D(I.HR, I.KR) + D(I.KR, I.FR) }; this.shin = { L: D(I.KL, I.FL), R: D(I.KR, I.FR) }; this.nk0 = D(I.N, I.PF); this.relT = 0;    // (shot bodies at walls, Nov 14) where each point last stood on its own side of every wall: the pose as struck. A point that is ALREADY across
+    // a collision line from the hips as the person stands (an arm swung through a shop front) is given the last place on the hips' side of it
+    // instead, so the first step brings it back (left alone it was held on the wrong side for good).
+    { const W = (this.wq = Float64Array.from(p)), cr = env.cross, P3 = I.P * 3; this.gxz = new Float64Array(NP * 2);
+      if (cr) for (let i = 0; i < NP; i++) { const k = i * 3; if (i === I.P || !cr(p[P3], p[P3 + 2], p[k], p[k + 2])) continue; let lo = 0, hi = 1; for (let n = 0; n < 7; n++) { const m = (lo + hi) / 2; if (cr(p[P3], p[P3 + 2], p[P3] + (p[k] - p[P3]) * m, p[P3 + 2] + (p[k + 2] - p[P3 + 2]) * m)) hi = m; else lo = m; }
+        lo = Math.max(0, lo - 0.08 / (Math.hypot(p[k] - p[P3], p[k + 2] - p[P3 + 2]) || 1)); W[k] = p[P3] + (p[k] - p[P3]) * lo; W[k + 2] = p[P3 + 2] + (p[k + 2] - p[P3 + 2]) * lo; this.nThru = (this.nThru || 0) + 1; } }
   }
   rnd() { this.seed = (this.seed * 1664525 + 1013904223) >>> 0; return this.seed / 4294967296; }
   triple(o, a, b, c) { const p = this.p, ox = p[o * 3], oy = p[o * 3 + 1], oz = p[o * 3 + 2], ax = p[a * 3] - ox, ay = p[a * 3 + 1] - oy, az = p[a * 3 + 2] - oz, bx = p[b * 3] - ox, by = p[b * 3 + 1] - oy, bz = p[b * 3 + 2] - oz, cx = p[c * 3] - ox, cy = p[c * 3 + 1] - oy, cz = p[c * 3 + 2] - oz;
@@ -244,6 +252,11 @@ export class Doll {
     // of them a call (the game hands over 1/60 s or less; a hitch or another caller with a long dt gets slow motion, never one long step)
     if (this.asleep) return; if (!(dt > 0)) return; if (dt > 4 * H_SUB) dt = 4 * H_SUB; const n = Math.max(1, Math.round(dt / H_SUB));
     for (let s = 0; s < n; s++) { this.sub(); if (!this.sane()) return; }
+    // (Nov 14) SLUMPED AGAINST A WALL OR A CAR: hips on the ground, the trunk leaning on the wall behind it (the neck nearer the wall than the hips, the
+    // trunk touching it for a quarter of a second). It is left sitting there. The three rules below tipped it "the way it leans" every third of a
+    // second, which is into the wall: it twitched against the wall until it fell asleep at 14 s.
+    { const p_ = this.p, P = I.P * 3, N = I.N * 3, pu = p_[P + 1] - this.env.ground(p_[P], p_[P + 2]), nu = p_[N + 1] - this.env.ground(p_[N], p_[N + 2]), wl = Math.hypot(this.wnx || 0, this.wnz || 0);
+      this.slump = !!(SLUMP && this.t > 0.8 && (this.atWall || 0) > 0.9 && wl > 1e-6 && pu < 0.32 && nu > 0.36 && ((p_[N] - p_[P]) * this.wnx + (p_[N + 2] - p_[P + 2]) * this.wnz) / wl < -0.04); if (this.slump) this.slumped = (this.slumped || 0) + dt; }
     // nothing dead stays sitting up or squatting on its heels: a trunk that has come to a stop off the ground is tipped over
     { const p_ = this.p, q_ = this.q, c = I.C * 3, up = p_[c + 1] - this.env.ground(p_[c], p_[c + 2]), v = Math.hypot(p_[c] - q_[c], p_[c + 1] - q_[c + 1], p_[c + 2] - q_[c + 2]) / H_SUB;
       const pu = p_[I.P * 3 + 1] - this.env.ground(p_[I.P * 3], p_[I.P * 3 + 2]), nu = p_[I.N * 3 + 1] - this.env.ground(p_[I.N * 3], p_[I.N * 3 + 2]);
@@ -251,12 +264,12 @@ export class Doll {
       if (butt && this.t > 0.8 && vp < 0.35 && this.t > (this.tipT || 0)) { this.nRule = (this.nRule || 0) + 1; this.rA = (this.rA || 0) + 1; this.tipT = this.t + 0.45; this.loose = this.t + 0.3; let ax = p_[I.HL * 3] - p_[I.HR * 3], az = p_[I.HL * 3 + 2] - p_[I.HR * 3 + 2]; const al = Math.hypot(ax, az) || 1, sg = this.rnd() < 0.5 ? 2.6 : -2.6; ax = ax / al * sg * 0.4; az = az / al * sg * 0.4; for (const i of [I.P, I.PF, I.HL, I.HR, I.KL, I.KR]) this.addVel(i, ax, 0, az);
         // (a body draped over its own knees with the hips in the air: the legs slide out from under it, away from the head)
         let lx = p_[I.P * 3] - p_[I.N * 3], lz = p_[I.P * 3 + 2] - p_[I.N * 3 + 2]; const ll = Math.hypot(lx, lz) || 1; lx = lx / ll * 2.8; lz = lz / ll * 2.8; for (const i of [I.KL, I.KR, I.FL, I.FR, I.TL, I.TR]) this.addVel(i, lx, 0.25, lz); for (const i of [I.P, I.PF, I.HL, I.HR]) this.addVel(i, lx * 0.3, -0.6, lz * 0.3); this.still = 0; }
-      else if (this.t > 0.8 && (up > 0.4 || (pu > 0.22 && nu > 0.36)) && v < 0.6 && this.t > (this.tipT || 0)) { this.nRule = (this.nRule || 0) + 1; this.rB = (this.rB || 0) + 1; this.tipT = this.t + 0.35; let ex = p_[c] - (p_[I.FL * 3] + p_[I.FR * 3]) / 2, ez = p_[c + 2] - (p_[I.FL * 3 + 2] + p_[I.FR * 3 + 2]) / 2; const el = Math.hypot(ex, ez); { const lx = p_[I.N * 3] - p_[I.P * 3], lz = p_[I.N * 3 + 2] - p_[I.P * 3 + 2], ll = Math.hypot(lx, lz); if (ll > 0.12) { ex = lx / ll; ez = lz / ll; } else if (this.push) { ex = this.push.bx; ez = this.push.bz; } else
+      else if (!this.slump && this.t > 0.8 && (up > 0.4 || (pu > 0.22 && nu > 0.36)) && v < 0.6 && this.t > (this.tipT || 0)) { this.nRule = (this.nRule || 0) + 1; this.rB = (this.rB || 0) + 1; this.tipT = this.t + 0.35; let ex = p_[c] - (p_[I.FL * 3] + p_[I.FR * 3]) / 2, ez = p_[c + 2] - (p_[I.FL * 3 + 2] + p_[I.FR * 3 + 2]) / 2; const el = Math.hypot(ex, ez); { const lx = p_[I.N * 3] - p_[I.P * 3], lz = p_[I.N * 3 + 2] - p_[I.P * 3 + 2], ll = Math.hypot(lx, lz); if (ll > 0.12) { ex = lx / ll; ez = lz / ll; } else if (this.push) { ex = this.push.bx; ez = this.push.bz; } else
         if (el < 0.08) { const a = this.rnd() * 6.283; ex = Math.cos(a); ez = Math.sin(a); } else { ex /= el; ez /= el; } }      // sat up: it goes over the way it already leans
         for (const i of [I.C, I.CF, I.N, I.H, I.SL, I.SR]) this.addVel(i, ex * 1.1, 0, ez * 1.1); this.still = 0; } }
     // nor propped half up on its elbows: hips down but the shoulders still well off the ground and nothing moving: it lies back
     { const p_ = this.p, q_ = this.q, n = I.N * 3, P = I.P * 3, nu = p_[n + 1] - this.env.ground(p_[n], p_[n + 2]), pu = p_[P + 1] - this.env.ground(p_[P], p_[P + 2]), v = Math.hypot(p_[n] - q_[n], p_[n + 1] - q_[n + 1], p_[n + 2] - q_[n + 2]) / H_SUB;
-      if (this.t > 1 && nu > 0.3 && pu < 0.24 && v < 0.4 && this.t > (this.tipT || 0)) { this.nRule = (this.nRule || 0) + 1; this.rC = (this.rC || 0) + 1; this.tipT = this.t + 0.4; this.loose = this.t + 0.25; let ex = p_[n] - p_[P], ez = p_[n + 2] - p_[P + 2]; const el = Math.hypot(ex, ez) || 1; ex /= el; ez /= el; for (const i of [I.C, I.CF, I.N, I.H, I.SL, I.SR]) this.addVel(i, ex * 1.6, -0.5, ez * 1.6); for (const i of [I.EL, I.ER, I.WL, I.WR]) { const ox = p_[i * 3] - p_[I.C * 3], oz = p_[i * 3 + 2] - p_[I.C * 3 + 2], ol = Math.hypot(ox, oz) || 1; this.addVel(i, (ox / ol) * 1.8, 0, (oz / ol) * 1.8); } this.still = 0; } }
+      if (!this.slump && this.t > 1 && nu > 0.3 && pu < 0.24 && v < 0.4 && this.t > (this.tipT || 0)) { this.nRule = (this.nRule || 0) + 1; this.rC = (this.rC || 0) + 1; this.tipT = this.t + 0.4; this.loose = this.t + 0.25; let ex = p_[n] - p_[P], ez = p_[n + 2] - p_[P + 2]; const el = Math.hypot(ex, ez) || 1; ex /= el; ez /= el; for (const i of [I.C, I.CF, I.N, I.H, I.SL, I.SR]) this.addVel(i, ex * 1.6, -0.5, ez * 1.6); for (const i of [I.EL, I.ER, I.WL, I.WR]) { const ox = p_[i * 3] - p_[I.C * 3], oz = p_[i * 3 + 2] - p_[I.C * 3 + 2], ol = Math.hypot(ox, oz) || 1; this.addVel(i, (ox / ol) * 1.8, 0, (oz / ol) * 1.8); } this.still = 0; } }
     // nor do its knees stay standing up once it lies there: a raised knee with nothing holding it falls outward
     if (this.t > 0.9 && !this.aft) { const p_ = this.p, q_ = this.q, pu = p_[I.P * 3 + 1] - this.env.ground(p_[I.P * 3], p_[I.P * 3 + 2]); if (pu < 0.24) for (const [k, f, sg] of [[I.KL, I.FL, 1], [I.KR, I.FR, -1]]) {
       const ku = p_[k * 3 + 1] - this.env.ground(p_[k * 3], p_[k * 3 + 2]), kv = Math.hypot(p_[k * 3] - q_[k * 3], p_[k * 3 + 1] - q_[k * 3 + 1], p_[k * 3 + 2] - q_[k * 3 + 2]) / H_SUB; if (ku < 0.27 || kv > 0.3) continue; this.nRule = (this.nRule || 0) + 0.02;
@@ -265,12 +278,12 @@ export class Doll {
     const p = this.p, q = this.q; let m = 0, mh = 0; for (let i = 0; i < NP * 3; i++) { const v = Math.abs(p[i] - q[i]); if (v > m) m = v; if (v > mh && HEAVY[(i / 3) | 0]) mh = v; }
     { const lowC = p[I.C * 3 + 1] - this.env.ground(p[I.C * 3], p[I.C * 3 + 2]) < 0.38, lowP = p[I.P * 3 + 1] - this.env.ground(p[I.P * 3], p[I.P * 3 + 2]) < 0.38; if (this.onGround > 5 && lowC && lowP) this.lain += dt; else if (!(lowC && lowP)) this.lain = Math.max(0, this.lain - dt * 2); }      // lain: seconds the trunk has been down (kneeling does not count)
     // (a body still propped off the ground is not at rest, however still: the rules above get their chance first)
-    const gy_ = (i) => p[i * 3 + 1] - this.env.ground(p[i * 3], p[i * 3 + 2]), propped = this.t < 7 && (gy_(I.P) > 0.26 || gy_(I.N) > 0.4 || gy_(I.KL) > 0.42 || gy_(I.KR) > 0.42);
+    const gy_ = (i) => p[i * 3 + 1] - this.env.ground(p[i * 3], p[i * 3 + 2]), propped = !this.slump && this.t < 7 && (gy_(I.P) > 0.26 || gy_(I.N) > 0.4 || gy_(I.KL) > 0.42 || gy_(I.KR) > 0.42);
     if (propped && this.t > 2.4) this.noWall = true;      // wedged upright among chairs or against a post: it stops being held up by them
     const settling = propped;
     if (settling) this.still = 0; else if (mh < 0.05 * H_SUB * (this.t > 4 ? 3 : 1) && m < 0.3 * H_SUB && this.t > 0.7) { this.still += dt; if (this.still > 0.45) this.sleep(); } else this.still = 0;
     if (this.t > 3 && !settling && m < 0.4 * H_SUB) { this.slow = (this.slow || 0) + dt; if (this.slow > 1.2) this.sleep(); } else this.slow = 0;
-    if (this.lain > 3.4 && !propped) this.sleep();      // settled by its own motion, then still
+    if (this.lain > 3.4 && !propped && !(this.t < 9 && this.limbT > this.t - 0.1)) this.sleep();      // settled by its own motion, then still (not while a limb is still being eased out of the trunk)
     if (this.t > 14) this.sleep();
   }
   sleep() { this.asleep = true; this.q.set(this.p); }
@@ -291,7 +304,7 @@ export class Doll {
     // once the body is down a leg coming out from under it slides out; it does not whip
     const legCap = !this.fast && this.tLow !== undefined && t > this.tLow + 0.12 ? LCAP * h : 0;
     const slowT = this.aft && this.lain > 0 && !this.fast;      // once the trunk is down a knee still standing or an arm still in the air sinks, it does not drop: there is flesh on it
-    for (let i = 0; i < NP; i++) { const k = i * 3; let dm = damp < 0.99 && FREE[i] ? DFR : damp; if (slowT && (KNEE[i] ? KD : ARM[i] ? AD : 0) && p[k + 1] - gc[i] - R[i] > 0.05) dm = Math.min(dm, 1 - (KNEE[i] ? KD : AD)); let vx = (p[k] - q[k]) * dm, vy = (p[k + 1] - q[k + 1]) * (dm > 0.99 ? 0.9995 : dm), vz = (p[k + 2] - q[k + 2]) * dm; if (low && LEG[i] && vy > vup) vy = vup; { const lim = legCap && LEG[i] ? Math.min(vmax, legCap) : LIGHT[i] ? vmax * 0.75 : vmax, v2 = vx * vx + vy * vy + vz * vz; if (v2 > lim * lim) { const c = lim / Math.sqrt(v2); vx *= c; vy *= c; vz *= c; } } q[k] = p[k]; q[k + 1] = p[k + 1]; q[k + 2] = p[k + 2]; p[k] += vx; p[k + 1] += vy - gy; p[k + 2] += vz; nacc[i] = 0; gc[i] = env.ground(p[k], p[k + 2]); }
+    for (let i = 0; i < NP; i++) { const k = i * 3; let dm = damp < 0.99 && FREE[i] ? DFR : damp; if (slowT && (KNEE[i] ? KD : ARM[i] ? AD : 0) && p[k + 1] - gc[i] - R[i] > 0.05) dm = Math.min(dm, 1 - (KNEE[i] ? KD : AD)); let vx = (p[k] - q[k]) * dm, vy = (p[k + 1] - q[k + 1]) * (dm > 0.99 ? 0.9995 : dm), vz = (p[k + 2] - q[k + 2]) * dm; if (low && LEG[i] && vy > vup) vy = vup; { const lim = legCap && LEG[i] ? Math.min(vmax, legCap) : LIGHT[i] ? vmax * 0.75 : vmax, v2 = vx * vx + vy * vy + vz * vz; if (v2 > lim * lim) { const c = lim / Math.sqrt(v2); vx *= c; vy *= c; vz *= c; } } q[k] = p[k]; q[k + 1] = p[k + 1]; q[k + 2] = p[k + 2]; p[k] += vx; p[k + 1] += vy - gy; p[k + 2] += vz; nacc[i] = 0; gc[i] = env.ground(p[k], p[k + 2]); this.gxz[i * 2] = p[k]; this.gxz[i * 2 + 1] = p[k + 2]; }
     // the pelvis' own pitch is a light, loosely held thing in this skeleton (its front point swings about the hip line): left free it
     // flicks over when a hip stop engages on a body lying still; its turning relative to the pelvis is soaked up, hard once down
     { const k = this.onGround > 5 ? 0.3 : 0.06, a = I.PF * 3, b = I.P * 3; for (let c = 0; c < 3; c++) { const vp = p[b + c] - q[b + c], vf = p[a + c] - q[a + c]; p[a + c] -= (vf - vp) * k; } }
@@ -374,7 +387,7 @@ export class Doll {
       for (let k = this.sticks.length - 1; k >= 0; k--) { const s = this.sticks[k]; pair(s.i, s.j, s.d, 1); }
       if (it >= ITER - 2) { this.rigid(this.blocks[0]); this.rigid(this.blocks[1]); }
       // the ground
-      if (it === ITER - 1) for (let i = 0; i < NP; i++) if (p[i * 3 + 1] < 0.4 + gc[i]) gc[i] = env.ground(p[i * 3], p[i * 3 + 2]);      // where the constraints have left it
+      // (Nov 14: the ground under each point is looked up again once the constraints have left it, at the END of the step now, below, in place of here: the same number of look-ups as before; they are most of what a body costs)
       for (let i = 0; i < NP; i++) { const k = i * 3, g = gc[i] + R[i]; if (p[k + 1] >= g) continue;
         if (g - p[k + 1] > 0.085) { const g0 = env.ground(q[k], q[k + 2]) + R[i]; if (g0 < g - 0.05) { p[k] = q[k]; p[k + 2] = q[k + 2]; if (p[k + 1] < g0) { nacc[i] += g0 - p[k + 1]; p[k + 1] = g0; } continue; } }      // the kerb's face
         nacc[i] += g - p[k + 1]; p[k + 1] = g; }
@@ -386,13 +399,25 @@ export class Doll {
     // was then pushed out on the FAR side and the body followed it into the building. env.cross (optional): the way from where the joint last
     // stood to where it is now may not cross a wall. env.solid: building walls still hold a body the `noWall` rule has let go of (that rule is
     // for chairs and posts; env.wall's sixth argument then asks for walls only). Without env.cross / env.solid (node tests) nothing changes.
-    if (env.wall && (!this.noWall || env.solid)) { const o = this._o || (this._o = { x: 0, z: 0 }), W = this.wq || (this.wq = Float64Array.from(q)), np = !!this.noWall, cr = env.cross; for (const i of WALL) { const k = i * 3;
-      if (cr && (p[k] !== W[k] || p[k + 2] !== W[k + 2]) && cr(W[k], W[k + 2], p[k], p[k + 2])) { p[k] = W[k]; p[k + 2] = W[k + 2]; q[k] = W[k]; q[k + 2] = W[k + 2]; }
-      if (env.wall(p[k], p[k + 2], R[i] + 0.03, o, p[k + 1], np)) { if (cr && cr(W[k], W[k + 2], o.x, o.z)) { o.x = W[k]; o.z = W[k + 2]; } p[k] = o.x; p[k + 2] = o.z; q[k] = o.x; q[k + 2] = o.z; }
-      W[k] = p[k]; W[k + 2] = p[k + 2]; } }
+    // (the walls are met at the END of the step now, below: see WALLS)
     if (NFH) for (const s of this.hard) { const a = s.i * 3, b = s.j * 3; let dx = p[b] - p[a], dy = p[b + 1] - p[a + 1], dz = p[b + 2] - p[a + 2]; const d2 = dx * dx + dy * dy + dz * dz; if (d2 >= s.lo * s.lo) continue; const d = Math.sqrt(d2) || 1e-6, c = (d - s.lo) / d / (w[s.i] + w[s.j]); dx *= c; dy *= c; dz *= c;
       p[a] += dx * w[s.i]; p[a + 1] += dy * w[s.i]; p[a + 2] += dz * w[s.i]; p[b] -= dx * w[s.j]; p[b + 1] -= dy * w[s.j]; p[b + 2] -= dz * w[s.j];
       for (const i of [s.i, s.j]) { const g = gc[i] + R[i]; if (p[i * 3 + 1] < g) p[i * 3 + 1] = g; } this.nHard = (this.nHard || 0) + 1; }
+    // (Nov 14, player report 075004-16a733 'a shot body folded into a knot') NO LIMB LIES THROUGH THE TRUNK. The stops above are between points (a wrist
+    // from the mid spine, an ankle from the pelvis): the MIDDLE of a forearm or a shin could still come to rest on the spine's own line, between
+    // those points (node, 150 bodies: 20 ended with a forearm, a hand or a shin within 5 cm of it, in the open as much as at walls). Each forearm,
+    // hand, shin and foot is kept 11 cm off the two lines of the spine, eased out a few mm a step (the trunk is not moved).
+    if (LTR) { const P = I.P * 3, Cc = I.C * 3, N = I.N * 3; for (let n = 0; n < LIMB.length; n += 2) { const a = LIMB[n] * 3, b = LIMB[n + 1] * 3; for (let m = 0; m < 2; m++) { const u = m ? Cc : P, v = m ? N : Cc;
+      const d1x = p[b] - p[a], d1y = p[b + 1] - p[a + 1], d1z = p[b + 2] - p[a + 2], d2x = p[v] - p[u], d2y = p[v + 1] - p[u + 1], d2z = p[v + 2] - p[u + 2], rx = p[a] - p[u], ry = p[a + 1] - p[u + 1], rz = p[a + 2] - p[u + 2];
+      const A = d1x * d1x + d1y * d1y + d1z * d1z, E = d2x * d2x + d2y * d2y + d2z * d2z, F = d2x * rx + d2y * ry + d2z * rz, Cq = d1x * rx + d1y * ry + d1z * rz, Bq = d1x * d2x + d1y * d2y + d1z * d2z, den = A * E - Bq * Bq; if (A < 1e-9 || E < 1e-9) continue;
+      let sS = den > 1e-12 ? (Bq * F - Cq * E) / den : 0; sS = sS < 0 ? 0 : sS > 1 ? 1 : sS; let tT = (Bq * sS + F) / E; if (tT < 0) { tT = 0; sS = -Cq / A; sS = sS < 0 ? 0 : sS > 1 ? 1 : sS; } else if (tT > 1) { tT = 1; sS = (Bq - Cq) / A; sS = sS < 0 ? 0 : sS > 1 ? 1 : sS; }
+      let ex = rx + d1x * sS - d2x * tT, ey = ry + d1y * sS - d2y * tT, ez = rz + d1z * sS - d2z * tT; const d = Math.sqrt(ex * ex + ey * ey + ez * ez); if (d >= LTR) continue;
+      // a limb UNDER the trunk is a body lying on its own arm: left alone. Otherwise it is eased off the spine's line the way it already lies from it
+      // (an arm across the belly comes to rest ON it), 1 cm a step at most
+      if (ey < -0.03 && Math.min(p[a + 1] - gc[LIMB[n]], p[b + 1] - gc[LIMB[n + 1]]) < 0.09) continue;
+      if (d < 0.015) { const sl = Math.hypot(d2x, d2z) || 1; ex = -d2z / sl; ey = 0.5; ez = d2x / sl; }
+      const el = Math.sqrt(ex * ex + ey * ey + ez * ez) || 1, e = Math.min(LTR - d, 0.01) / el, wa = 1 - sS, wb = sS, nn = 1 / (wa * wa + wb * wb); p[a] += ex * e * wa * nn; p[a + 1] += ey * e * wa * nn; p[a + 2] += ez * e * wa * nn; p[b] += ex * e * wb * nn; p[b + 1] += ey * e * wb * nn; p[b + 2] += ez * e * wb * nn;
+      for (const i of [LIMB[n], LIMB[n + 1]]) { const g = gc[i] + R[i]; if (p[i * 3 + 1] < g) p[i * 3 + 1] = g; } this.nLimb = (this.nLimb || 0) + 1; this.limbT = t; } } }
     // whatever the constraints wanted, no joint is moved further in a step than a body can move (a stop that lets go must not show as a twitch)
     { const cap = (this.t < 1.2 && this.fast ? 17 : calm + 1) * h, c2 = cap * cap; for (let i = 0; i < NP; i++) { const k = i * 3, dx = p[k] - q[k], dy = p[k + 1] - q[k + 1], dz = p[k + 2] - q[k + 2], d2 = dx * dx + dy * dy + dz * dz, cc = legCap && LEG[i] ? Math.min(cap, legCap * 1.15) : cap; if (d2 > cc * cc) { const c = cc / Math.sqrt(d2); p[k] = q[k] + dx * c; p[k + 1] = q[k + 1] + dy * c; p[k + 2] = q[k + 2] + dz * c; } } }
     // a trunk that has come down stays down: whatever the joints still have to sort out, they do it along the ground (a stop taking
@@ -401,6 +426,36 @@ export class Doll {
     { const gcn = this.gcon || (this.gcon = [0, 0]); for (let s = 0; s < 2; s++) { const i = s ? I.FR : I.FL, k = i * 3; gcn[s] = nacc[i] > 0 ? 1 : 0; if (!PN[s]) continue; w[i] = 1 / MASS[i]; const dx = p[k] - q[k], dz = p[k + 2] - q[k + 2]; if (dx * dx + dz * dz < 0.012 * 0.012 && nacc[i] > 0) { p[k] = q[k]; p[k + 2] = q[k + 2]; } else this.plant[s ? 'R' : 'L'] = 0; } }
     // a leg letting itself out along the ground does not lift its knee or its foot to do it
     if (LC && this.aft && this.aft.t0 !== undefined) { const c = 0.12 * h; for (const i of LEGS) { const k = i * 3 + 1; if (p[k] - q[k] > c) p[k] = q[k] + c; } }
+    // WALLS, CARS AND THE GROUND, LAST (Nov 14; Matt saw a body go through a wall, and a shot crowd person lay with two points 18 cm inside one).
+    // Until now 9 of the 22 points were tested (head, mid spine, pelvis, knees, wrists, ankles): shoulders, elbows, neck, hand tips, hip joints,
+    // toes and the two front points went through any wall the trunk stood near (node, 600 bodies shot 0.2-3 m from walls: about half had a point
+    // pass a line), and the hard stops, the speed cap and the keep-down rule moved points AFTER the test. Now every point, after everything else
+    // has moved it: its whole move from where it last stood may not cross a collision line (env.cross), it is pushed off lines, posts and cars
+    // on its own side (env.wall; the place it last stood is handed over so a car's side can stop it whole), and nothing ends a step under the ground
+    // (the lie-back rule lowers a shoulder and the keep-down rule then held it 4 mm lower every step: a shoulder sank 13 cm into the pavement).
+    { const GX = this.gxz, fresh = (i, k) => { if (p[k] !== GX[i * 2] || p[k + 2] !== GX[i * 2 + 1]) { gc[i] = env.ground(p[k], p[k + 2]); GX[i * 2] = p[k]; GX[i * 2 + 1] = p[k + 2]; } return gc[i] + R[i]; };
+      for (let i = 0; i < NP; i++) { const k = i * 3; if (p[k + 1] >= 0.45 + gc[i]) continue; const g = fresh(i, k); if (p[k + 1] >= g) continue;
+        if (g - p[k + 1] > 0.085) { const g0 = env.ground(q[k], q[k + 2]) + R[i]; if (g0 < g - 0.05) { p[k] = q[k]; p[k + 2] = q[k + 2]; gc[i] = g0 - R[i]; GX[i * 2] = p[k]; GX[i * 2 + 1] = p[k + 2]; if (p[k + 1] < g0) { nacc[i] += g0 - p[k + 1]; p[k + 1] = g0; } continue; } }
+        nacc[i] += g - p[k + 1]; p[k + 1] = g; }
+      if (env.wall && (!this.noWall || env.solid)) { const o = this._o || (this._o = { x: 0, z: 0 }), W = this.wq, np = !!this.noWall; let touch = 0, wpx = 0, wpz = 0;
+        // the lines near this body (env.near, people.js), looked up every sixth step with room for what it can move meanwhile; each point is then tested
+        // against those few (the same arithmetic as the map's own ray), and the map is asked (env.wall) only for a point that is within reach of one
+        // of them or when a post, a piece of furniture or a car is near. Without env.near (node tests) env.cross / env.wall are asked every time.
+        let NB = null; if (env.near) { NB = this._nb || (this._nb = { n: 0, other: true }); if (!(this._nbN-- > 0)) { this._nbN = 5; env.near(p[I.P * 3], p[I.P * 3 + 2], 3.1, NB); } }
+        const S = NB && NB.segs, ns = NB ? NB.n : 0, crE = env.cross;
+        const cr = NB ? (ax, az, bx, bz) => { const rx = bx - ax, rz = bz - az; for (let n = 0; n < ns; n += 4) { const sx = S[n + 2] - S[n], sz = S[n + 3] - S[n + 1], den = rx * sz - rz * sx; if (Math.abs(den) < 1e-9) continue; const t = ((S[n] - ax) * sz - (S[n + 1] - az) * sx) / den, u = ((S[n] - ax) * rz - (S[n + 1] - az) * rx) / den; if (t >= 0 && t < 1 && u >= 0 && u <= 1) return true; } return false; } : crE;
+        const far = this._far || (this._far = { v: false }); far.v = false; if (NB) { const dx = p[I.P * 3], dz = p[I.P * 3 + 2]; for (let i = 0; i < NP; i++) { const ex = p[i * 3] - dx, ez = p[i * 3 + 2] - dz; if (ex * ex + ez * ez > 2.9) { far.v = true; break; } } }      // (a point more than 1.7 m from the hips: the short list may not reach it)
+        for (let i = 0; i < NP; i++) { const k = i * 3, x1 = p[k], z1 = p[k + 2], rr = R[i] + 0.03; const crr = far.v ? crE : cr;
+          if (crr && (p[k] !== W[k] || p[k + 2] !== W[k + 2]) && crr(W[k], W[k + 2], p[k], p[k + 2])) { p[k] = W[k]; p[k + 2] = W[k + 2]; q[k] = W[k]; q[k + 2] = W[k + 2]; touch++; }
+          let ask = !NB || NB.other || far.v; if (!ask) for (let n = 0; n < ns; n += 4) { const sx = S[n + 2] - S[n], sz = S[n + 3] - S[n + 1], l2 = sx * sx + sz * sz || 1e-9; let t = ((p[k] - S[n]) * sx + (p[k + 2] - S[n + 1]) * sz) / l2; t = t < 0 ? 0 : t > 1 ? 1 : t; const ex = p[k] - S[n] - sx * t, ez = p[k + 2] - S[n + 1] - sz * t; if (ex * ex + ez * ez < rr * rr) { ask = true; break; } }
+          if (ask && env.wall(p[k], p[k + 2], rr, o, p[k + 1], np, W[k], W[k + 2])) { if (crr && crr(W[k], W[k + 2], o.x, o.z)) { p[k] = W[k]; p[k + 2] = W[k + 2]; q[k] = W[k]; q[k + 2] = W[k + 2]; }
+            // pushed off a wall on its own side: what it was moving ALONG the wall it keeps in part (WSL; it used to lose all of it every step it touched,
+            // so a body falling against a wall hung on it), what it was moving INTO the wall is gone
+            else { const nx = o.x - p[k], nz = o.z - p[k + 2], nl = Math.hypot(nx, nz); let vx = 0, vz = 0; if (WSL && nl > 1e-7) { vx = p[k] - q[k]; vz = p[k + 2] - q[k + 2]; const vn = (vx * nx + vz * nz) / nl; vx = (vx - (nx / nl) * vn) * WSL; vz = (vz - (nz / nl) * vn) * WSL; } p[k] = o.x; p[k + 2] = o.z; q[k] = o.x - vx; q[k + 2] = o.z - vz; if (TRUNKW[i]) { wpx += nx; wpz += nz; } }
+            if (TRUNKW[i]) touch++; }
+          W[k] = p[k]; W[k + 2] = p[k + 2];
+          if ((p[k] !== x1 || p[k + 2] !== z1) && p[k + 1] < 0.45 + gc[i]) { const g = fresh(i, k); if (p[k + 1] < g) { nacc[i] += g - p[k + 1]; p[k + 1] = g; } } }
+        this.atWall = touch ? Math.min(1, (this.atWall || 0) + h * 4) : Math.max(0, (this.atWall || 0) - h * 2); this.wnx = (this.wnx || 0) * 0.97 + wpx; this.wnz = (this.wnz || 0) * 0.97 + wpz; } }      // atWall: 0..1, the trunk has been touching a wall or a car (a quarter of a second to 1); (wnx, wnz): the way the wall pushes
     // friction where it touches, and no bounce
     let on = 0;
     for (let i = 0; i < NP; i++) { if (nacc[i] <= 0) continue; on++; const k = i * 3; { const vy = p[k + 1] - q[k + 1]; if (vy < 0 || vy < nacc[i]) q[k + 1] = p[k + 1]; }
@@ -480,4 +535,5 @@ const PUSH = [I.H, I.N, I.C, I.CF, I.SL, I.SR, I.P, I.PF];
 const THROW = [I.C, I.CF, I.N, I.H, I.SL, I.SR];
 const STS = +(EV.STM ?? 1) ? [I.P, I.PF, I.HL, I.HR] : [I.H, I.N, I.C, I.CF, I.SL, I.SR, I.P, I.PF, I.HL, I.HR];
 const SIT = [I.H, I.N, I.C, I.CF, I.SL, I.SR, I.P, I.PF, I.HL, I.HR];
-const WALL = [I.H, I.C, I.P, I.KL, I.KR, I.WL, I.WR, I.FL, I.FR];
+const LIMB = [I.EL, I.WL, I.ER, I.WR, I.WL, I.AL, I.WR, I.AR, I.KL, I.FL, I.KR, I.FR, I.FL, I.TL, I.FR, I.TR];
+const TRUNKW = []; for (const i of [I.H, I.N, I.C, I.CF, I.SL, I.SR, I.P, I.PF, I.HL, I.HR]) TRUNKW[i] = 1;

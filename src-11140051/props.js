@@ -33,7 +33,7 @@ export function install(game, opts = {}) {
 
   // ---------------------------------------------------------------- what is loose, and where
   const hash = new Map(), hk = (x, y) => Math.floor(x / CELL) * 100003 + Math.floor(y / CELL), byName = new Map();
-  for (const m of F.meshes) { let a = byName.get(m.name); if (!a) byName.set(m.name, (a = [])); a.push(m); }
+  for (const m of F.meshes) { const nm = m.name || (m.userData && m.userData.kind) || ''; let a = byName.get(nm); if (!a) byName.set(nm, (a = [])); a.push(m); }      // v4: by userData.kind when a mesh has no name (the names were lost in the 12:57 Nov 13 build and every prop went dead)
   const shapes = new Map();
   function shapeFrom(geos, k) {       // a model's own outline: its box, and the vertex furthest out in each of 26 directions
     const box = new THREE.Box3(), best = DIRS.map(() => ({ d: -1e9, p: new THREE.Vector3() })); let any = false;
@@ -164,6 +164,12 @@ export function install(game, opts = {}) {
       for (let q = a.length - 1; q >= 0; q--) { const s = a[q], dx = s[2] - s[0], dy = s[3] - s[1], l = Math.hypot(dx, dy); if (l > 4 || l < 0.2) continue; const t = Math.max(0, Math.min(1, ((rec.x - s[0]) * dx + (rec.y - s[1]) * dy) / (l * l))), d = Math.hypot(rec.x - s[0] - dx * t, rec.y - s[1] - dy * t);
         if (d < 0.12 && (Math.abs(dx * hy - dy * hx) / l < 0.15 || Math.abs(dx * hx + dy * hy) / l < 0.15)) { a.splice(q, 1); n++; } } }
     S.unwalled += n; return n; }
+  // the wall line of a fence panel (the one unwall() takes out), found once
+  function fenceSeg(rec) { if (rec.seg !== undefined) return rec.seg; rec.seg = null; const c = st.cell, hx = Math.cos(rec.h), hy = Math.sin(rec.h);
+    for (let i = Math.floor((rec.x - 3) / c); i <= Math.floor((rec.x + 3) / c) && !rec.seg; i++) for (let j = Math.floor((rec.y - 3) / c); j <= Math.floor((rec.y + 3) / c) && !rec.seg; j++) { const a = st.segs.get(st.key(i, j)); if (!a) continue;
+      for (const s of a) { const dx = s[2] - s[0], dy = s[3] - s[1], l = Math.hypot(dx, dy); if (l > 4 || l < 0.2) continue; const t = Math.max(0, Math.min(1, ((rec.x - s[0]) * dx + (rec.y - s[1]) * dy) / (l * l))), d = Math.hypot(rec.x - s[0] - dx * t, rec.y - s[1] - dy * t);
+        if (d < 0.12 && (Math.abs(dx * hy - dy * hx) / l < 0.15 || Math.abs(dx * hx + dy * hy) / l < 0.15)) { rec.seg = s.slice(0, 4); break; } } }
+    return rec.seg; }
   // before the game moves anything: props about to be touched wake up (their circles go, so the car or the player is not stopped dead)
   function pre() {
     const pl = game.player;
@@ -173,7 +179,12 @@ export function install(game, opts = {}) {
       near(c.x, c.y, L + 1, (rec) => { if (rec.body || rec.dead || rec.fx === 2) return; const dx = rec.x - c.x, dy = rec.y - c.y, lx = dx * ch + dy * shn, ly = -dx * shn + dy * ch;
         if (!rec.fx) { if (Math.abs(lx) < L && Math.abs(ly) < W) wake(rec); return; }
         // a fixed thing: the car has to be going at it fast enough, and the blow costs the car speed and a dent
-        const L2 = (c.def ? c.def.len : 4.4) / 2 + 0.3 + sp * 0.04, W2 = (c.def ? c.def.wid : 1.8) / 2 + (rec.name === 'fence' ? 0.9 : 0.12); if (sp < BREAK_SPEED || Math.abs(lx) > L2 || Math.abs(ly) > W2 || (dx * k.vx + dy * k.vy) < 0) return;
+        const L2 = (c.def ? c.def.len : 4.4) / 2 + 0.3 + sp * 0.04, W2 = (c.def ? c.def.wid : 1.8) / 2 + (rec.name === 'fence' ? 0.9 : 0.12); if (sp < BREAK_SPEED) return;
+        if (rec.name === 'fence' && fenceSeg(rec)) {      // v4: a fence breaks only where the car's outline meets the panel's own line, and only driven INTO (3 m/s or more across it): a car passing beside it or scraping along it leaves it up
+          const s = rec.seg, sx = s[2] - s[0], sy = s[3] - s[1], sl = Math.hypot(sx, sy) || 1, W3 = (c.def ? c.def.wid : 1.8) / 2 + 0.2; if (Math.abs(k.vx * -sy + k.vy * sx) / sl < 3) return;
+          let hit = false; for (let q = 0; q <= 4 && !hit; q++) { const px = s[0] + sx * q / 4 - c.x, py = s[1] + sy * q / 4 - c.y, qx = px * ch + py * shn, qy = -px * shn + py * ch; if (Math.abs(qx) < L2 && Math.abs(qy) < W3 && px * k.vx + py * k.vy > 0) hit = true; }
+          if (!hit) return;
+        } else if (Math.abs(lx) > L2 || Math.abs(ly) > W2 || (dx * k.vx + dy * k.vy) < 0) return;
         S.force = true; let b = null; try { b = wake(rec); if (b) { S.broken++; near(rec.x, rec.y, 0.5, (pl2) => { if (pl2.fx === 2 && !pl2.body && !pl2.dead && Math.hypot(pl2.x - rec.x, pl2.y - rec.y) < 0.35) { const b2 = wake(pl2); if (b2) b2.v.set(k.vx * 0.5, 0.5, -k.vy * 0.5); } }); } } finally { S.force = false; }
         if (!b) return; if (rec.name === 'fence') unwall(rec);
         b.v.set(k.vx * 0.4, 0.9 + sp * 0.04, -k.vy * 0.4); b.w.set(-k.vy / sp * 2.2, 0, -k.vx / sp * 2.2);

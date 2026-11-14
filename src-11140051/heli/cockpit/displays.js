@@ -15,15 +15,16 @@ export class Displays {
   // the whole city once, north up, as a GPS draws it: blocks, parks, streets, avenues
   buildBase() {
     const city = this.game && this.game.city; if (!city || !city.meta) return;
-    const half = Math.max(city.meta.hx, city.meta.hy) + 60, N = 2048, s = N / (2 * half), cv = this.mk(N, N), x = cv.getContext('2d');
-    const X = (px) => (px + half) * s, Y = (py) => (half - py) * s;
+    /* tiles lane: the picture is centred on the whole playable box (city.meta.play when the city has more than one area) and reaches the old margin beyond it; the old city gives the same picture as before */
+    const M0 = city.meta, pb = M0.play || [-M0.px, -M0.py, M0.px, M0.py], bcx = (pb[0] + pb[2]) / 2, bcy = (pb[1] + pb[3]) / 2, half = Math.max((pb[2] - pb[0]) / 2 + M0.hx - M0.px, (pb[3] - pb[1]) / 2 + M0.hy - M0.py) + 60, N = 2048, s = N / (2 * half), cv = this.mk(N, N), x = cv.getContext('2d');
+    const X = (px) => (px - bcx + half) * s, Y = (py) => (half - (py - bcy)) * s;
     x.fillStyle = '#0b1418'; x.fillRect(0, 0, N, N);
     const poly = (pts) => { x.beginPath(); pts.forEach((p, i) => (i ? x.lineTo(X(p[0]), Y(p[1])) : x.moveTo(X(p[0]), Y(p[1])))); x.closePath(); };
     x.fillStyle = '#27333a'; for (const b of city.blocks || []) { if (!b.ext) continue; poly(b.ext); x.fill(); }
     x.fillStyle = '#1f6a34'; for (const p of city.parks || []) { if (!p.ext) continue; poly(p.ext); x.fill(); }
     x.lineCap = 'round'; x.lineJoin = 'round';
     for (const pass of [0, 1]) for (const e of city.edges || []) { if (!e.pts || !!e.ave !== !!pass) continue; x.strokeStyle = e.ave ? '#d9c05a' : '#7c8a92'; x.lineWidth = Math.max(1.2, (e.width || 9) * s * (e.ave ? 0.55 : 0.4)); x.beginPath(); e.pts.forEach((p, i) => (i ? x.lineTo(X(p[0]), Y(p[1])) : x.moveTo(X(p[0]), Y(p[1])))); x.stroke(); }
-    this.base = cv; this.baseS = s; this.baseHalf = half;
+    this.base = cv; this.baseS = s; this.baseHalf = half; this.baseC = [bcx, bcy];
   }
   // f: flight; cw: { caption: lit } ; returns true if the picture changed
   update(f, dt, lit, t) {
@@ -44,7 +45,7 @@ export class Displays {
     x.save(); x.beginPath(); x.rect(gx, gy, gw, gh); x.clip(); x.fillStyle = '#081014'; x.fillRect(gx, gy, gw, gh);
     const mapW = gw - 118, cx = gx + 118 + mapW / 2, cy = gy + 40 + (gh - 40) * 0.66, pxPerM = mapW / 900;      // 900 m across the map
     x.save(); x.beginPath(); x.rect(gx + 118, gy + 40, mapW, gh - 40); x.clip();
-    if (this.base) { x.save(); x.translate(cx, cy); x.rotate(-hdg * Math.PI / 180); const k = pxPerM / this.baseS; x.scale(k, k); x.drawImage(this.base, -(mapX + this.baseHalf) * this.baseS, -(this.baseHalf - mapY) * this.baseS); x.restore(); }
+    if (this.base) { x.save(); x.translate(cx, cy); x.rotate(-hdg * Math.PI / 180); const k = pxPerM / this.baseS; x.scale(k, k); x.drawImage(this.base, -(mapX - this.baseC[0] + this.baseHalf) * this.baseS, -(this.baseHalf - (mapY - this.baseC[1])) * this.baseS); x.restore(); }
     // the pads as waypoints, and a magenta leg to the active one
     const pads = (h && h.pads) || [], rot = (px, py) => { const dx = px - mapX, dy = py - mapY, a = hdg * Math.PI / 180, ex = dx * Math.cos(a) - dy * Math.sin(a), ny = dx * Math.sin(a) + dy * Math.cos(a); return [cx + ex * pxPerM, cy - ny * pxPerM]; };
     let near = null, nd = 1e9; pads.forEach((p, i) => { const d = Math.hypot(p.x - mapX, p.y - mapY); if (i === this.wp) { near = p; nd = d; } });

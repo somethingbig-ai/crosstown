@@ -50,5 +50,6 @@
 "assets/streets/vehicles/grime.webp": 1,
 "assets/ground_light.webp": 1,
 "array:red_brick_03_diff.jpg|white_sandstone_bricks_03_diff.jpg|concrete_wall_008_diff.jpg|dark_brick_wall_diff.jpg|yellow_brick_diff.jpg": "assets/tex/walls_diff.ktx2",
-"array:red_brick_03_nor.jpg|white_sandstone_bricks_03_nor.jpg|concrete_wall_008_nor.jpg|dark_brick_wall_nor.jpg|yellow_brick_nor.jpg": "assets/tex/walls_nor.ktx2"
+"array:red_brick_03_nor.jpg|white_sandstone_bricks_03_nor.jpg|concrete_wall_008_nor.jpg|dark_brick_wall_nor.jpg|yellow_brick_nor.jpg": "assets/tex/walls_nor.ktx2",
+"assets/ground_light2.webp": 1
 }

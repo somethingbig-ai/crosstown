@@ -22,6 +22,7 @@ export class Budget {
     const scene = this.g.world.scene, items = [], c = new THREE.Vector3(); scene.updateMatrixWorld(true);
     for (const top of scene.children) {
       const name = top.name || ''; if (SKIP.test(name) || top.isLight) continue;
+      if (top.userData && (top.userData.crashOwn || top.userData.brkOwn)) continue;     /* tiles lane, Nov 13 (the van with no body at the end of a long drive): a crashed car's own body mesh (crash.js adds it to the scene as a one-instance mesh) MOVES with the car; listed here it kept the place it had when this list was made and was hidden as a far small thing once the car was 280 m from there */
       const kind = SMALL.test(name) ? 1 : BIG.test(name) ? 2 : (top.isInstancedMesh ? 1 : (top.isScene || /city|tile|bld/i.test(name)) ? 3 : 0);
       if (!kind) continue;
       top.traverse((o) => {

@@ -29,6 +29,8 @@ export class Heights {
   // light courts, set-backs, roof tanks and plant included), read back from the GPU once at load. Outside it, the map's footprints.
   bake() {
     const w = this.g.world, r = w.renderer, N = 1024, TILES = 3, SPAN = 512, half = TILES * SPAN / 2, size = N * TILES;
+    /* tiles lane: the picture grows north in whole 512 m squares to cover a playable box that reaches past the old 1.5 km square (city.meta.play); the old city gives the same 3 x 3 picture */
+    const pbH = this.g.city.meta.play, TY = pbH ? Math.max(TILES, Math.ceil((pbH[3] + 80 + half) / SPAN)) : TILES;
     const rt = new THREE.WebGLRenderTarget(N, N, { type: THREE.FloatType, format: THREE.RGBAFormat, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true });
     const mat = new THREE.ShaderMaterial({ side: THREE.DoubleSide, vertexShader: `varying float vY; void main() {
         #ifdef USE_INSTANCING
@@ -40,9 +42,9 @@ export class Heights {
     const L = 7, marked = [], mark = (o) => o && o.traverse((q) => { if (q.isMesh) { q.layers.enable(L); marked.push(q); } });
     for (const m of w.buildingMeshes || []) mark(m); mark(w.heroRoot); for (const m of this.g.propMeshes || []) if (['watertower', 'ac'].includes(m.userData.kind)) mark(m);
     const cam = new THREE.OrthographicCamera(-SPAN / 2, SPAN / 2, SPAN / 2, -SPAN / 2, 1, 3000); cam.layers.set(L); cam.up.set(0, 0, -1);
-    const hf = new Uint16Array(size * size), buf = new Float32Array(N * N * 4), sc = w.scene, old = { rt: r.getRenderTarget(), om: sc.overrideMaterial, bg: sc.background, cc: r.getClearColor(new THREE.Color()), ca: r.getClearAlpha(), sh: r.shadowMap.autoUpdate };
+    const hf = new Uint16Array(size * N * TY), buf = new Float32Array(N * N * 4), sc = w.scene, old = { rt: r.getRenderTarget(), om: sc.overrideMaterial, bg: sc.background, cc: r.getClearColor(new THREE.Color()), ca: r.getClearAlpha(), sh: r.shadowMap.autoUpdate };
     sc.overrideMaterial = mat; sc.background = null; r.setClearColor(0x000000, 0); r.shadowMap.autoUpdate = false;
-    for (let ty = 0; ty < TILES; ty++) for (let tx = 0; tx < TILES; tx++) {
+    for (let ty = 0; ty < TY; ty++) for (let tx = 0; tx < TILES; tx++) {
       const cx = -half + (tx + 0.5) * SPAN, cy = -half + (ty + 0.5) * SPAN;      // map x east, y north
       cam.position.set(cx, 2000, -cy); cam.lookAt(cx, 0, -cy); cam.updateMatrixWorld();
       r.setRenderTarget(rt); r.clear(); r.render(sc, cam); r.readRenderTargetPixels(rt, 0, 0, N, N, buf);
@@ -50,7 +52,7 @@ export class Heights {
       for (let j = 0; j < N; j++) { const row = (ty * N + j) * size + tx * N; for (let i = 0; i < N; i++) hf[row + i] = Math.min(65535, Math.max(0, Math.round(buf[(j * N + i) * 4] * 10))); }
     }
     r.setRenderTarget(old.rt); sc.overrideMaterial = old.om; sc.background = old.bg; r.setClearColor(old.cc, old.ca); r.shadowMap.autoUpdate = old.sh; for (const q of marked) q.layers.disable(L); rt.dispose(); mat.dispose();
-    this.hf = hf; this.hfN = size; this.hfHalf = half; this.hfS = size / (2 * half);
+    this.hf = hf; this.hfN = size; this.hfHalf = half; this.hfS = size / (2 * half); this.hfY1 = -half + TY * SPAN;
     let n = 0; for (let i = 0; i < hf.length; i += 97) if (hf[i] > 20) n++; if (n < 50) { this.hf = null; throw new Error('height picture came back empty'); }
   }
   // a level patch of roof near (x, y): the centre of the flattest `size` m square within `reach`, at least `minH` up; null if none
@@ -65,7 +67,7 @@ export class Heights {
   }
   // top of the solid at map (x, y) that a point at height zq is in or above; the street otherwise
   top(x, y, zq) {
-    if (this.hf && Math.abs(x) < this.hfHalf - 1 && Math.abs(y) < this.hfHalf - 1) {
+    if (this.hf && Math.abs(x) < this.hfHalf - 1 && y > -this.hfHalf + 1 && y < (this.hfY1 || this.hfHalf) - 1) {
       const h = this.hf[Math.floor((y + this.hfHalf) * this.hfS) * this.hfN + Math.floor((x + this.hfHalf) * this.hfS)] * 0.1; this.last = null;
       if (h <= 0.5 && this.solids) for (const o of this.solids) if (Math.abs(x - o.x) < o.radius && Math.abs(y - o.y) < o.radius && Math.hypot(x - o.x, y - o.y) < o.radius) return o.top;     // low things other parts built (the fountain)
       return h > 0.5 ? h : this.street(x, y);

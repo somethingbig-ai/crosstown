@@ -8,7 +8,9 @@ export class Hud {
     Object.assign(c.style, { position: 'fixed', inset: '0', width: '100vw', height: '100vh', pointerEvents: 'none' }); document.body.appendChild(c);
     this.ctx = c.getContext('2d'); this.w = 0; this.h = 0; this.mapR = 118; this.street = ''; this.streetT = 0;
     // the map, drawn once to an offscreen canvas in map metres (4 px per 5 m), rotated and clipped per frame
-    const city = game.city, hx = city.meta.hx, hy = city.meta.hy, S = (this.mapS = 0.8), m = (this.map = document.createElement('canvas')); m.width = Math.ceil(hx * 2 * S); m.height = Math.ceil(hy * 2 * S);
+    // tiles lane: the map picture covers the whole playable box plus the same margin the old map had round its box (city.meta.play, when the
+    // city has more than one area; the old city gives the same picture as before). hx = metres from the picture's west edge to x = 0, hy = its north edge's y.
+    const city = game.city, M0 = city.meta, pb = M0.play || [-M0.px, -M0.py, M0.px, M0.py], mgx = M0.hx - M0.px, mgy = M0.hy - M0.py, hx = mgx - pb[0], hy = pb[3] + mgy, S = (this.mapS = 0.8), m = (this.map = document.createElement('canvas')); m.width = Math.ceil((pb[2] - pb[0] + 2 * mgx) * S); m.height = Math.ceil((pb[3] - pb[1] + 2 * mgy) * S);
     const x = m.getContext('2d'); x.fillStyle = '#3d4148'; x.fillRect(0, 0, m.width, m.height);
     const P = (p) => [(p[0] + hx) * S, (hy - p[1]) * S];
     x.fillStyle = '#1b1d21';

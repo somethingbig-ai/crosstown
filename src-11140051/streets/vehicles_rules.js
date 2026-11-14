@@ -113,8 +113,10 @@ export const ONE_LANE_RUN = 4, ONE_LANE_GAP = 8.0, ONE_LANE_CLEAR = 6.6;      //
 const nameHash = (str) => { let h = 2166136261; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); } return hash(h); };
 export function buildSlots(game, opts = {}) {
   const R = game.roads, cars = game.kit.cars, P = game.parked, st = game.statics, b = game.bounds;
-  const keep = P.slots.filter((s) => s.mission && !s.gone);
-  for (const s of P.slots) if (!s.mission) { s.gone = true; for (const c of s.circles) c.on = false; }
+  // tiles lane (map areas as sets): opts.only(e, ei) limits the pass to some road edges; opts.append keeps every slot already there and adds to them
+  // (the area the player does not start in gets its parked cars after the game is ready). A slot depends only on its own edge and what stands near it.
+  const append = !!opts.append, keep = P.slots.filter((s) => (append || s.mission) && !s.gone);
+  if (!append) for (const s of P.slots) if (!s.mission) { s.gone = true; for (const c of s.circles) c.on = false; }
   const hyd = (game.city.props.hydrant || []).map((p) => [p[0], p[1]]);
   const hgrid = new Map(); for (const h of hyd) { const k = Math.floor(h[0] / 40) + ',' + Math.floor(h[1] / 40); if (!hgrid.has(k)) hgrid.set(k, []); hgrid.get(k).push(h); }
   const nearHyd = (x, y, d) => { const i = Math.floor(x / 40), j = Math.floor(y / 40); for (let a = i - 1; a <= i + 1; a++) for (let c = j - 1; c <= j + 1; c++) { const l = hgrid.get(a + ',' + c); if (l) for (const h of l) if ((h[0] - x) ** 2 + (h[1] - y) ** 2 < d * d) return true; } return false; };
@@ -135,7 +137,7 @@ export function buildSlots(game, opts = {}) {
   const boxCut = (A, B) => { for (const P of [A, B]) for (let i = 0; i < 4; i++) { const nx = P[(i + 1) % 4][1] - P[i][1], ny = -(P[(i + 1) % 4][0] - P[i][0]); let a0 = 1e9, a1 = -1e9, b0 = 1e9, b1 = -1e9; for (const q of A) { const v = q[0] * nx + q[1] * ny; if (v < a0) a0 = v; if (v > a1) a1 = v; } for (const q of B) { const v = q[0] * nx + q[1] * ny; if (v < b0) b0 = v; if (v > b1) b1 = v; } if (a1 <= b0 || b1 <= a0) return false; } return true; };
   for (const k of keep) { const d = k.def || cars[k.type]; if (!d) continue; const ch = Math.cos(k.h), sh_ = Math.sin(k.h), bx = [[1, 1], [1, -1], [-1, -1], [-1, 1]].map(([a, c]) => [k.x + ch * d.len / 2 * a - sh_ * d.wid / 2 * c, k.y + sh_ * d.len / 2 * a + ch * d.wid / 2 * c]), gk = Math.floor(k.x / 20) + ',' + Math.floor(k.y / 20); if (!boxGrid.has(gk)) boxGrid.set(gk, []); boxGrid.get(gk).push(bx); }
   R.edges.forEach((e, ei) => {
-    if (e.s0 === undefined || e.len < 30) return;
+    if (e.s0 === undefined || e.len < 30) return; if (opts.only && !opts.only(e, ei)) return;
     const table = e.ave ? PARK_AVE : PARK_STREET, occ = opts.occupancy ?? (e.ave ? 0.80 : 0.93);
     /* ONE-LANE STREETS LEAVE ROOM (Nov 12, public report 20261112132507-7e132b: a car turned across W 21st St could not get out between two parked rows 4.5-5.1 m
        apart): a street with one traffic lane has ONE parked row, on the side its name picks (the same side all along the street), so a car has at least ONE_LANE_CLEAR

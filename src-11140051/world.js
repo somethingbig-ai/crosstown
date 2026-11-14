@@ -135,11 +135,16 @@ export class World {
     const walls = ['red_brick_03', 'white_sandstone_bricks_03', 'concrete_wall_008', 'dark_brick_wall', 'yellow_brick'];
     const [wa, wn, lm, asA, asN, asR, cpA, cpN, grA, sky] = await Promise.all([
       texArray(walls.map((w) => w + '_diff.jpg'), true), texArray(walls.map((w) => w + '_nor.jpg'), false),
-      new Promise((res) => texLoader.load(A + 'ground_light.webp', (t) => { t.colorSpace = THREE.NoColorSpace; t.flipY = true; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.anisotropy = 4; res(t); })),
+      // tiles lane: a city of more than one area (city.meta.sets) has ONE ground lightmap twice as tall (ground_light2, lanes/tiles/tools/lightmap_join.py): the
+      // old picture in its middle half, the north in the upper quarter and, wrapped round, in the lower one. It repeats in v and uHalf.y is doubled (below), so
+      // every shader's own lookup v = y / (2 uHalf.y) + 0.5 lands right with no change. A card that cannot hold 8192 px, or ?lm2=0, keeps the old picture.
+      new Promise((res) => { const tall = (this.lm2 = !!(city.meta.sets && Q.get('lm2') !== '0' && this.renderer.capabilities.maxTextureSize >= 8192));
+        const one = (name, wrapT, next) => texLoader.load(A + name, (t) => { t.colorSpace = THREE.NoColorSpace; t.flipY = true; t.wrapS = THREE.ClampToEdgeWrapping; t.wrapT = wrapT; t.anisotropy = 4; res(t); }, undefined, next);
+        if (tall) one('ground_light2.webp', THREE.RepeatWrapping, () => { this.lm2 = false; one('ground_light.webp', THREE.ClampToEdgeWrapping, () => res(null)); }); else one('ground_light.webp', THREE.ClampToEdgeWrapping, () => res(null)); }),
       tex('asphalt_02_diff.jpg', true), tex('asphalt_02_nor.jpg'), tex('asphalt_02_rough.jpg'), tex('concrete_pavement_diff.jpg', true), tex('concrete_pavement_nor.jpg'), tex('leafy_grass_diff.jpg', true),
       loadHDR(A + LIGHT.sky),
     ]);
-    Object.assign(this.shared.tWallA, { value: wa }); this.shared.tWallN.value = wn; this.shared.tLight.value = lm; this.shared.tSign.value = makeSignAtlas();
+    Object.assign(this.shared.tWallA, { value: wa }); this.shared.tWallN.value = wn; this.shared.tLight.value = lm; if (this.lm2) this.shared.uHalf.value.y = 2 * build.hy;     /* tiles lane: the tall two-area lightmap (see its load above) */ this.shared.tSign.value = makeSignAtlas();
     this.setupSky(sky);
     onProgress('city');
     const facade = makeFacadeMaterial(this.shared);

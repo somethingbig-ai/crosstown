@@ -20,13 +20,22 @@ export async function addStreets(game, opts = {}) {
     try { const m = await import('./streets/' + ((heldOn || NEXT_ON) && NEXT[p] && !(p === 'trees' && oldTrees) ? NEXT[p] : p) + '.js');
       // tiles lane (map areas as sets, lanes/tiles/CONTRACT.md): a layer named in PER_SET is built once per area of a city that lists its areas (meta.sets), each call
       // with that area's slice of the city; the first area's result stands where the one result stood, the others hang off it as .sets. ?persets=0 = one whole-city call as before.
-      if (PER_SET.includes(p) && game.city.meta.sets && !(game.P && game.P.get('persets') === '0')) { const { setsOf } = await import('./sets.js'); const res = {};
-        for (const S of setsOf(game.city)) { const st = game.statics; if (st) st.owner = S.name; try { res[S.name] = (await m.add(game, { ...ctx, city: S.city, set: S })) || {}; } finally { if (st) st.owner = null; } }
-        const first = Object.values(res)[0] || {}; first.sets = res; out.parts[p] = first; }
+      if (PER_SET.includes(p) && game.city.meta.sets && !(game.P && game.P.get('persets') === '0')) { const { setsOf } = await import('./sets.js'); const res = {}, all = setsOf(game.city);
+        // the area the player starts in is built now; the others AFTER the game is ready, one at a time (the load does not wait for streets a player cannot reach
+        // for a minute). Stills, films and test tools build everything now, as hero.js does; ?setslate=1 forces the late order, ?setslate=0 the old one.
+        const Q = game.P, tool = !!window.__noStart || !!navigator.webdriver || (Q && (Q.has('demo') || Q.has('capture') || Q.has('shot') || Q.has('play') || Q.get('crowd') === 'none' || Q.get('peds') === '0'));
+        const late = Q && Q.get('setslate') === '1' ? true : Q && Q.get('setslate') === '0' ? false : !tool, pl = game.player || { x: -196, y: -214 };
+        const here = all.find((S) => pl.x >= S.play[0] && pl.x <= S.play[2] && pl.y >= S.play[1] && pl.y <= S.play[3]) || all[0];
+        const one = async (S) => { const st = game.statics; if (st) st.owner = S.name; const t1 = performance.now(); try { res[S.name] = (await m.add(game, { ...ctx, city: S.city, set: S })) || {}; } finally { if (st) st.owner = null; } return Math.round(performance.now() - t1); };
+        await one(here); for (const S of all) if (S !== here) { if (late) (out.later = out.later || []).push({ part: p, set: S.name, run: () => one(S) }); else await one(S); }
+        const first = res[here.name] || {}; first.sets = res; out.parts[p] = first; }
       else out.parts[p] = (await m.add(game, ctx)) || {}; out.report[p] = Object.assign({ ms: Math.round(performance.now() - t) }, out.parts[p].report || {}); }
     catch (e) { out.report[p] = 'FAILED: ' + (e && (e.stack || e.message) || e).toString().slice(0, 400); console.log('[streets] ' + p + ' not loaded: ' + (e && e.message)); }
   }
   console.log('[streets] ' + JSON.stringify(out.report).slice(0, 900));
+  // tiles lane: the areas left for after ready (above) are built here, each in its own turn of the page, with a pause between them
+  if (out.later && out.later.length) { const sl = (ms) => new Promise((r) => setTimeout(r, ms)); out.lateDone = (async () => { while (!window.__ready && !window.__error) await sl(200); await sl(1200);
+      for (const j of out.later) { try { const ms = await j.run(); (out.report.late = out.report.late || []).push([j.part, j.set, ms, +(performance.now() / 1000).toFixed(1)]); console.log('[streets] ' + j.part + ' of ' + j.set + ' built after ready in ' + ms + ' ms'); } catch (e) { console.log('[streets] late ' + j.part + ' of ' + j.set + ' FAILED: ' + (e && e.message)); } await sl(400); } })(); }
   // lead, Nov 12 (CHIEF: no solid trunk in a traffic lane): a tree's collision circle that stands in a lane is switched off (5 of 1414 on the 19:25 build); the streets lane moves or drops those trees
   try { const st = game.statics, rd = game.roads; let n = 0; if (st && st.circ && rd && rd.inLane) for (const a of st.circ.values()) for (const c of a) if (c.tag === 'tree' && c.on && rd.inLane(c.x, c.y, c.r)) { c.on = false; n++; } if (n) console.log('[streets] ' + n + ' tree trunks in a traffic lane made passable'); out.report.trunksInLane = n; } catch (e) {}
   return out;

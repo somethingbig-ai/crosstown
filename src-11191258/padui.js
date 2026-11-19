@@ -65,8 +65,8 @@ export function install(game) {
     return armed ? 'armed' : 'foot'; };
   const hook = () => !!(game.grapple && game.grapple.on);
   const ROWS = {
-    foot: () => [['ls', 'Walk'], ['l3', 'Run'], game.melee && game.melee.on && ['rt', 'Punch'],      /* gameplay/melee */ ['a', 'Jump'], ['y', 'Get in'], ['b', 'Gun'], hook() && ['du', 'Hook'], ['dd', 'Light'], ['back', 'Map'], ['start', 'Menu']],
-    armed: () => [['lt', 'Aim'], ['rt', 'Fire'], game.melee && game.melee.on && ['r3', 'Strike'],      /* gameplay/melee */ ['x', 'Reload'], ['lb rb', 'Weapon'], ['b', 'Put away'], ['a', 'Jump'], ['y', 'Get in'], hook() && ['du', 'Hook'], ['back', 'Map']],
+    foot: () => [['ls', 'Walk'], ['l3', 'Run'], game.melee && game.melee.on && ['rt', 'Punch'],      /* gameplay/melee */ ['a', 'Jump'], ['y', game.footout && game.footout.on && game.footout.prompt ? 'Climb out' : 'Get in'     /* gameplay footout: the walled-in prompt's own name */], ['b', 'Gun'], hook() && ['du', 'Hook'], ['dd', 'Light'], ['back', 'Map'], ['start', 'Menu']],
+    armed: () => [['lt', 'Aim'], ['rt', 'Fire'], game.melee && game.melee.on && ['r3', 'Strike'],      /* gameplay/melee */ ['x', 'Reload'], ['lb rb', 'Weapon'], ['b', 'Put away'], ['a', 'Jump'], ['y', game.footout && game.footout.on && game.footout.prompt ? 'Climb out' : 'Get in'     /* gameplay footout: the walled-in prompt's own name */], hook() && ['du', 'Hook'], ['back', 'Map']],
     scope: () => [['lt', 'Scope'], ['rt', 'Fire'], ['dud', 'Zoom'], ['x', 'Reload']],
     car: () => [['rt', 'Gas'], ['lt', 'Brake'], ['ls', 'Steer'], game.combat && game.combat.DRIVEFIRE && game.combat.DRIVEPAD && ['rb', 'Fire'],      /* gameplay/takeover 3 */ ['a', 'Handbrake'], game.__horn && game.__horn.on && ['l3', 'Horn'],      /* gameplay/horn */ ['y', 'Get out'], ['dlr', 'Radio'], ['back', 'Map']],
     heli: () => [['ls', 'Tilt'], ['lb rb', 'Turn'], ['rt', 'Up'], ['lt', 'Down'], ['x', 'Engine'], game.heli && game.heli.rockets && !game.heli.rockets.dead && ['a', 'Rocket'], ['r3', 'View'], ['du', 'Stability'], ['y', 'Get out'], ['back', 'Map']],

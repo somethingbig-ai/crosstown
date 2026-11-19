@@ -13,6 +13,8 @@ import { LookCtl } from './look.js';
 import { imp as lrImp } from './loadretry.js';     // progress lane, Nov 15: a code file that failed to download is asked for again (src/loadretry.js; ?loadretry=0 off)
 import { waterAt } from './streets/water.js';
 import { fcOf, fcDrive, fcDrag, install as fcInstall } from './move/fastcars.js';
+import { camPull } from './move/campull.js';     // gameplay lane, Nov 19: the chase camera comes in front of a bus or truck that stands between it and the player's car (public note Nov 18; ?campull=0)
+import { kitOrder as pier86Kit } from './pier86.js';     /* merge2 round 32: Pier 86 (src/pier86.js; ?pier86=0) */
 // downtown lane, Nov 15 (shore guard): the shore's wall is two thin lines; at the narrow end of a pier (the Skyport pier, x 1,173, y -1,056) a car-size circle gets
 // through them (lanes/downtown/tools/shore-flood.mjs). Whatever the walls did, a move of the player or of a car that would END in the water from a place on land is
 // not made. One point-in-outline test a step, only on a city that lists water. ?waterguard=0 off.
@@ -160,7 +162,7 @@ export class Game {
     const bx = this.bounds.x + 6, by = this.bounds.y + 6, ox = this.bounds.cx, oy = this.bounds.cy; st.addPoly([[ox - bx, oy - by], [ox + bx, oy - by], [ox + bx, oy + by], [ox - bx, oy + by]], 0, 'edge'); for (const h of this.bounds.holes || []) st.addPoly([[h[0], h[1]], [h[2], h[1]], [h[2], h[3]], [h[0], h[3]]], 0, 'edge');     /* downtown lane (helper game19): and round each part of the box that is no area's (above) */     /* 'edge': never low, the map edge stays closed (tags: geo.js addSeg) */
     // rooftop kit: water tanks and plant on mid-rise roofs
     const r = rng(5), extra = { watertower: [], ac: [] }, kitB = new Map();     /* facades lane: kitB = each roof unit's own building, for roofkit.js */
-    for (const b of city.buildings) {
+    for (const b of pier86Kit(city)) {     /* merge2 round 32: city.buildings, with the records pier86.js dropped back in their places for the random draws only (marked nokit) */
       if (b.part || b.minh > 0 || b.area < 180) continue; const nkW = extra.watertower.length, nkA = extra.ac.length;     /* uptown: a building a hand-built one replaces (city data key nokit) gets no roof tank or plant: they hung in the air over the lower model; the random draws are still made, so every other roof is as before */
       const cx = b.poly.reduce((s, p) => s + p[0], 0) / b.poly.length, cy = b.poly.reduce((s, p) => s + p[1], 0) / b.poly.length;
       if (b.h > 22 && b.h < 95 && b.style !== 2 && r() < 0.55) { extra.watertower.push([cx + (r() - 0.5) * 3, cy + (r() - 0.5) * 3, r() * TAU, 0.9 + r() * 0.3, b.h]); kitB.set(extra.watertower[extra.watertower.length - 1], b); }
@@ -222,6 +224,7 @@ export class Game {
     if (this.P.get('handling') !== '0') try { (await import('./move/handling.js')).install(this, Vehicle); } catch (e) { console.log('[handling] not loaded: ' + (e && (e.stack || e.message))); }     /* gameplay lane, Nov 15 (19 player reports on car handling): the steering and grip of the car the player drives (src/move/handling.js). It must stay ABOVE the cars.js line: it wraps Vehicle.step first, cars.js wraps it. ?handling=0 off (nothing fetched; the car is the live one) */
     if (this.P.get('drift') !== '0') try { (await import('./move/drift.js')).install(this, Vehicle); } catch (e) { console.log('[drift] not loaded: ' + (e && (e.stack || e.message))); }     /* driving lane, Nov 16 (Matt, #nyc: 'It's hard to drift. Drifting should be satisfying and doable'): handbrake slides for the car the player drives, with smoke, skid marks and a camera swing (src/move/drift.js, driftfx.js). It must stay BELOW the handling.js line and ABOVE the cars.js line: it wraps handling's step, cars.js wraps it. ?drift=0 off (nothing fetched; the car is as before); ?driftfx=0 = no smoke, marks or camera swing */
     if (this.P.get('weight') !== '0') try { (await import('./move/weight.js')).install(this, Vehicle); } catch (e) { console.log('[weight] not loaded: ' + (e && (e.stack || e.message))); }     /* driving lane, Nov 17 (CHIEF 15:10; players: 'driving feels too floaty, no weight', 'car fishtails in back while turning'): the ordinary car's grip brought to a real car's (about 0.9 g for the sedan, was 2 g in town), front tyres that scrub speed when asked for more, the limit heard and seen, a calmer tail on the sports car (src/move/weight.js). It must stay BELOW the drift.js line and ABOVE the cars.js line. ?weight=0 off (nothing fetched; every car as before) */
+    try { (await import('./move/footout.js')).install(this); } catch (e) { console.log('[footout] not loaded: ' + (e && (e.stack || e.message))); }     // gameplay lane, Nov 19 (a public player: 'i climbed up a ladder into a building now i cant get out'): a player on foot who is walled in is offered 'F climb out' (move/footout.js; ?footout=0 = no prompt)
     if (this.P.get('footround') !== '0') try { (await import('./move/footround.js')).install(this); } catch (e) { console.log('[footround] not loaded: ' + (e && (e.stack || e.message))); }     // gameplay lane, Nov 18 (Matt's trailer at 1:08, 'the player walks into a pole'): on foot he side-steps poles, hydrants, trunks and bins and is held out of benches, shelters and kiosks (src/move/footround.js; ?footround=0 = as before)
     if (this.P.get('jump') !== '0') try { (await import('./move/jump.js')).install(this); } catch (e) { console.log('[jump] not loaded: ' + (e && (e.stack || e.message))); }     // gameplay lane: jump on foot, Space / controller A (src/move/jump.js, jumpcore.js); ?jump=0 off (nothing fetched)
     if (this.P.get('grapple') !== '0') /* merge2 batch 34 (CHIEF 22:08 Nov 17): on by default on Matt's link too, as the public site has had it since Nov 16; ?grapple=0 off */ try { (await import('./move/grapple.js')).install(this); } catch (e) { console.log('[grapple] not loaded: ' + (e && (e.stack || e.message))); }     // gameplay lane: grappling hook, X on foot (src/move/grapple.js); default OFF, ?grapple=1 on (without it nothing is fetched)
@@ -570,11 +573,12 @@ export class Game {
     const hd = d * Math.cos(pitch); let hit = 1; for (const sd of [0, 0.45, -0.45]) hit = Math.min(hit, this.statics.raycast(C.tx, C.ty, C.tx + bx * (hd + 0.6) - by * sd, C.ty + by * (hd + 0.6) + bx * sd));
     if (this.player.alt > 2) hit = 1;     // heli lane: on a roof the street-level walls are below you
     const want = hit < 1 ? Math.max(0.9, d * hit - 0.35) : d; if (!dt || C.clip === undefined) C.clip = want; else C.clip += (want - C.clip) * Math.min(1, dt * (want < C.clip ? 22 : 2.2)); d = Math.min(d, C.clip);
-    let cx = C.tx + bx * d * Math.cos(pitch), cy = C.ty + by * d * Math.cos(pitch), cz = C.tz + C.h + d * Math.sin(pitch);
+    const vp = this.player.vehicle && this.P.get('campull') !== '0' ? camPull(this, C, bx, by, d, pitch, dt) : null; if (vp) d = vp.d;     // gameplay campull: a vehicle in the way (null, and nothing changed, when none is)
+    let cx = C.tx + bx * d * Math.cos(pitch), cy = C.ty + by * d * Math.cos(pitch), cz = C.tz + C.h + d * Math.sin(pitch); if (vp) cz += vp.up;
     if (cz < 0.4) cz = 0.4;
     const sh = C.shake * C.shake * 0.25, n = this.frame;
     cam.position.set(cx + Math.sin(n * 1.7) * sh, cz + Math.sin(n * 2.3) * sh, -cy + Math.cos(n * 1.3) * sh);
-    const ahead = this.player.vehicle ? 2.2 : 0;
+    const ahead = this.player.vehicle ? (vp ? vp.ahead : 2.2) : 0;     // (pulled in, the view keeps about the chase view's angle: the horizon stays in the picture)
     cam.lookAt(C.tx + Math.cos(C.yaw) * ahead, C.tz + (this.player.vehicle ? 0.1 : 0.15), -(C.ty + Math.sin(C.yaw) * ahead));
     // looking up: the camera orbits the player and looks at them, so its lowest orbit was also the highest the view could tilt (14 degrees below the horizon)
     { const extra = -0.25 - C.pitch; if (extra > 0) { const d = cam.getWorldDirection(this._vd || (this._vd = new THREE.Vector3())), hl = Math.hypot(d.x, d.z) || 1, e = Math.min(1.4, Math.asin(clamp(d.y, -1, 1)) + extra);

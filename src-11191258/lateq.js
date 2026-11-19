@@ -35,7 +35,9 @@ export function installLateQ(P) {
   let iv = 0, lastIv = 0; const wideOn = !(P && P.get('lateqwide') === '0'), cap = () => LQ.max * (performance.now() < LQ.wideT ? 2 : 1);
   const beat = () => { const n = performance.now(); if (wideOn && window.__ready && lastIv && n - lastIv > 250 + STALL) { if (n >= LQ.wideT) LQ.wide++; LQ.wideT = n + WIDEMS; } lastIv = n; pump(); };
   // has this lane something to fetch now? (a lane has one download on the line at a time, or spec.par of them)
-  const wants = (w) => w.busy < (w.spec.par || 1) && (w.once ? !w.done : !!val(w.spec.more)) && (!w.spec.gate || !!val(w.spec.gate));
+  /* lead fast-start, Nov 19: LANDMARKS FIRST. While the landmark models are still coming down (hero.js fetches them itself, one at a time, from just before ready) only the road and the wall relief take turns here; everything of rank 2 and more waits for them, 25 s after ready at most. ?herofirst=0 = as before */
+  const HF = !(P && P.get('herofirst') === '0'), heroHold = (w) => { if (!HF) return false; const hs = window.world && window.world.heroState; if (!hs || !hs.late || hs.done) return false; if (performance.now() / 1000 - (window.__readyAt || 1e9) > 25) return false; const k = val(w.spec.kind); return (k in RANK ? RANK[k] : RANK.far) >= 2; };
+  const wants = (w) => w.busy < (w.spec.par || 1) && (w.once ? !w.done : !!val(w.spec.more)) && (!w.spec.gate || !!val(w.spec.gate)) && !heroHold(w);
   // the smaller the sooner
   const score = (w) => { const k = val(w.spec.kind), d = +val(w.spec.d); let r = k in RANK ? RANK[k] : RANK.far;
     if ((k === 'cabin' || k === 'heli') && LQ.heliDist) { const h = +val(LQ.heliDist); if (h < NEARH) r = 0.5; }

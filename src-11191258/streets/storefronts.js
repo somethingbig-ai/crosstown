@@ -626,7 +626,7 @@ function solidMaterial(shared, tMask, double, det) {
 function glassMaterial(shared, tex, tune) {
   const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.06, metalness: 0 });
   m.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, { uSunColor: shared.uSunColor, uSunDir: shared.uSunDir, uShadowFar: shared.uShadowFar, uShadowCenter: shared.uShadowCenter, tLight: shared.tLight, uHalf: shared.uHalf, tMask: { value: tex.mask }, tRoom: { value: tex.rooms }, tProp: { value: tex.props }, uSf: tune });
+    Object.assign(sh.uniforms, { uSfNight: (shared.uNightK && new URLSearchParams(location.search).get('sfnight') !== '0') ? shared.uNightK : { value: new THREE.Vector3(1, 0, 0) }, uSunColor: shared.uSunColor, uSunDir: shared.uSunDir, uShadowFar: shared.uShadowFar, uShadowCenter: shared.uShadowCenter, tLight: shared.tLight, uHalf: shared.uHalf, tMask: { value: tex.mask }, tRoom: { value: tex.rooms }, tProp: { value: tex.props }, uSf: tune });
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + G.GLASS_VERT_PARS).replace('#include <begin_vertex>', '#include <begin_vertex>\n' + G.GLASS_VERT);
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + G.GLASS_FRAG_PARS).replace('#include <aomap_fragment>', G.GLASS_FRAG_MAIN);
   };

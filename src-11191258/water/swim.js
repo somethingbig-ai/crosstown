@@ -257,7 +257,8 @@ export async function install(game, W) {
   function ladderAt(p) {      // p on the shore line with its normal: a ladder there if a man can stand behind it and float in front of it
     if (!inPlay(p.x, p.y, 5) || !W.afloat(p.x + p.nx * 1.5, p.y + p.ny * 1.5) || !W.afloat(p.x + p.nx * 4, p.y + p.ny * 4)) return null;
     for (const back of [2.0, 2.5]) { const lx = p.x - p.nx * back, ly = p.y - p.ny * back; if (W.afloat(lx, ly)) continue; if (st) { st.resolve(lx, ly, 0.34, _o); if (Math.hypot(_o.x - lx, _o.y - ly) > 0.35) continue; if (shore.near(_o.x, _o.y, _w2) && _w2.d > -1.3) continue; }
-      return { x: p.x, y: p.y, nx: p.nx, ny: p.ny, lx, ly, lz: kerb(lx, ly) }; }
+      let out = null; if (g.footout && g.footout.ladderOut && !(P && P.get('ladderin') === '1')) try { out = g.footout.ladderOut(lx, ly); if (out === false) continue; } catch (e) { out = null; }      /* gameplay lane, Nov 19 (report bd6d92: 'i climbed up a ladder into a building now i cant get out'): a ladder whose top is inside a building's outline (walls are lines: he stood INSIDE the pier shed at 1222, -497) takes him on from the top over the wall to the nearest open ground, L.out (move/footout.js does the move); with no open ground within 25 m there is no ladder; ?ladderin=1 = as before */
+      return { x: p.x, y: p.y, nx: p.nx, ny: p.ny, lx, ly, lz: kerb(lx, ly), out }; }
     return null;
   }
   try {

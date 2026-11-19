@@ -14,6 +14,7 @@
 // world.heroState = { late, groups: {name: 'wait'|'loading'|'in'|'failed'}, done, log: [...] }; world.heroDone = a promise.
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { rows as pier86Rows } from './pier86.js';     /* merge2 round 32 */
 // lead, Nov 14 (players' load split, build 11:11: PLAY lit a middle 30 s after Ready, most of it these files coming down one after another while
 // the line had stood idle through the 17 s of shader compiling before Ready): the BYTES of each landmark can be asked for early (fetchBytes, kept
 // until its loader takes them); parsing and the hand-over to the graphics card stay where they were, after Ready. ?heropre=0 off.
@@ -34,6 +35,7 @@ export async function addHero(world, dir) {
   // The ordinary map never asks for it. ?herosouth=0 off.
   const south = ((world.city.meta && world.city.meta.sets) || []).some((s) => /^d[A-D]-/.test(s.set || '')) && Q.get('herosouth') !== '0';
   if (south) list = list.concat((await fetch(dir + (world.city.meta.sets.some((s) => /^d[CD]-/.test(s.set || '')) ? 'hero-south19.json' : 'hero-south.json'))     /* helper game19: a map with rows C / D reads hero-south19.json = the same entries + the Lower Manhattan landmarks (One WTC, the Statue, Woolworth, the Oculus, the pools, NYSE, Federal Hall, Trinity's spire) */.then((r) => (r.ok ? r.json() : [])).catch(() => [])).filter((h) => !h.off));
+  list = list.concat(pier86Rows(world.city));     /* merge2 round 32: the three records pier86.js took out of the map data at Pier 86, as cut-only rows; ?pier86=0 */
   if (!list.length) return;
   // penn lane, Nov 17: an entry's "circles": [[x east, y north, radius], ...] become round obstacles (bollards, pylons, a kiosk: things of a model that stand free on the sidewalk) once the game's collision world exists. ?herocol=0 off.
   { const cs = list.flatMap((h) => h.circles || []); if (cs.length && Q.get('herocol') !== '0') { let n = 0; const iv = setInterval(() => { const g = window.game; if (++n > 600) clearInterval(iv); if (!g || !g.statics || !g.statics.addCircle) return; clearInterval(iv); for (const c of cs) g.statics.addCircle(c[0], c[1], c[2], 'hero'); if (world.heroState) world.heroState.circles = cs.length; console.log('[game] hero: ' + cs.length + ' round obstacles added'); }, 500); } }

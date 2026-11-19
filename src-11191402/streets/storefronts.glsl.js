@@ -181,7 +181,7 @@ export const GLASS_VERT = /* glsl */`
 export const GLASS_FRAG_PARS = /* glsl */`
 varying vec3 vS; varying vec3 vDirS; varying vec3 vWPos; varying vec4 vQ; varying vec4 vG0; varying vec4 vG1; varying vec4 vG2; varying vec4 vG3; varying vec4 vG4; varying vec4 vG5;
 uniform sampler2D tMask; uniform sampler2D tRoom; uniform sampler2D tProp; uniform sampler2D tLight; uniform vec2 uHalf; uniform vec3 uSunColor; uniform vec3 uSunDir; uniform float uShadowFar; uniform vec3 uShadowCenter;
-uniform vec4 uSf;      // x interior light, y mirror gain, z daylight into the room, w parked cars in the mirror (density)
+uniform vec3 uSfNight; uniform vec4 uSf;      // x interior light, y mirror gain, z daylight into the room, w parked cars in the mirror (density)
 ` + SF_COMMON + /* glsl */`
 const vec3 SF_AMB = vec3(0.40, 0.47, 0.58);
 vec3 sfAmb(float sky){ return SF_AMB * (0.16 + 0.84 * clamp(sky, 0.0, 1.0)); }
@@ -342,7 +342,7 @@ export const GLASS_FRAG_MAIN = /* glsl */`
   #ifdef USE_ENVMAP
     sky = getIBLRadiance(geometryViewDir, normalize((viewMatrix * vec4(Nw, 0.0)).xyz), 0.0) / max(envMapIntensity, 1e-3);
   #endif
-  vec3 refl = sfStreet(vS, R, vWPos, Rw, sky, alW, outW);
+  vec3 refl = sfStreet(vS, R, vWPos, Rw, sky, alW, outW); refl *= max(uSfNight.x, 0.14);      /* merge lane, Nov 19 (uptown audit: 'the shop window shows a bright sunny daytime street at night'): the mirrored street was lit by a constant sky light at every hour; it now goes down with the daylight (uNightK.x: 1 by day, 0.05 at night; floor 0.14 = a lamp-lit street). ?sfnight=0 = as before */
   vec3 amb = sfAmb(bkh.r); vec3 Lout = uSunColor * ndl * sunVis + amb * 0.75;
   vec3 dayC = (amb * 0.8 + uSunColor * 0.10 * bkh.g) * uSf.z;
   vec3 sunL = vec3(dot(uSunDir, alW), uSunDir.y, dot(uSunDir, outW));

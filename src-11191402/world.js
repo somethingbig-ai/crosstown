@@ -11,6 +11,7 @@ import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { installCamera } from './camera.js';   /* camera lane's module (lanes/camera/handoff/camera.js), hooked as its own world.patch does */
 import { addHero } from './hero.js';
+import * as pier86 from './pier86.js';     /* merge2 round 32: Pier 86 without the three things that are not buildings; ?pier86=0 */
 import { makeFacadeMaterial, makeSignAtlas, NOISE_GLSL, BAKE_LIGHT_GLSL } from './facade.js';
 
 const A = 'assets/';
@@ -207,7 +208,7 @@ export class World {
   async load(onProgress = () => {}) {
     { const sp = (Q.get('spawn') || '').split(',').map(Number); if (sp.length === 2 && isFinite(sp[0]) && isFinite(sp[1])) this.startAt = sp; }     /* downtown lane (the brooklyn lane's ?spawn=x,y of game.js): the first load of tiles and light slabs is the one round that start */
     const [build, city] = await Promise.all([fetch(A + 'build.json').then((r) => r.json()), fetch(A + (Q.get('city') || (window.__CFG && window.__CFG.city) || 'city.json'))   /* lead, Nov 15: the public build can name its map (PUBLIC_CITY in tools/public_build.sh): the third area costs about 3 s to ready, so public stays on the two-area map for now */.then((r) => r.json())     /* tiles lane: ?city=sets/union/city.json = the stitched two-area city (test) */]);
-    this.city = city; this.build = build; { const sp = Q.get('spawn') ? Q.get('spawn').split(',').map(Number) : city.meta.spawn; if (sp && sp.length === 2 && sp.every(Number.isFinite)) this.startAt = sp; }     /* uptown row3: a map that does not hold the old start point names its own (city.meta.spawn = [x, y]; ?spawn=x,y) */
+    this.city = city; this.build = build; try { pier86.drop(city); } catch (e) { console.warn('[game] pier86: ' + (e && e.message)); } { const sp = Q.get('spawn') ? Q.get('spawn').split(',').map(Number) : city.meta.spawn; if (sp && sp.length === 2 && sp.every(Number.isFinite)) this.startAt = sp; }     /* uptown row3: a map that does not hold the old start point names its own (city.meta.spawn = [x, y]; ?spawn=x,y) */
     let s = build.sun; const bakedEl = Math.asin(s[2] / Math.hypot(s[0], s[1], s[2])) * 180 / Math.PI;
     if (Math.abs(bakedEl - LIGHT.skySunEl) > 3 || Q.has('LsunAz')) { const a = LIGHT.sunAz * Math.PI / 180, e = LIGHT.sunEl * Math.PI / 180; s = [Math.sin(a) * Math.cos(e), Math.cos(a) * Math.cos(e), Math.sin(e)]; this.sunOverride = true; }
     this.sunDir = new THREE.Vector3(s[0], s[2], -s[1]).normalize();     // map (east, north, up) -> three (x, y up, -north)
@@ -277,6 +278,7 @@ export class World {
     this.streetDummy = new THREE.WebGLCubeRenderTarget(1); this.streetCam = new THREE.CubeCamera(0.5, 4000, this.streetRT); this.scene.add(this.streetCam);
     this.shared.tStreet.value = this.streetDummy.texture; this.streetN = 0; this.streetFull = Q.has('capture') || Q.has('shot') || Q.get('street') === 'full'; this.streetOff = Q.get('street') === '0';
     if (Q.get('hero') !== '0' && !(window.__CFG && window.__CFG.hero === false && Q.get('hero') !== '1')) { try { await addHero(this, Q.get('hdir') || A + 'hero/');     /* uptown (landmarks): ?hdir=assets/hero-u3/ = another hero folder (the uptown test map's three landmarks) */ } catch (e) { console.warn('[game] hero buildings not loaded: ' + (e && e.message)); } }     // facades lane: hand-built hero buildings (Flatiron, Madison Green, 23rd/5th corner, 200 Fifth)
+    try { pier86.walls(this); } catch (e) { console.warn('[game] pier86: ' + (e && e.message)); }     /* merge2 round 32: the museum building at Pier 86 loses its rule-made shop floor (src/pier86.js) */
     onProgress('ready');
   }
 
@@ -342,7 +344,7 @@ export class World {
     const R = this.shared.uShadowFar.value;
     Object.assign(sun.shadow.camera, { left: -R, right: R, top: R + SH_EXT, bottom: -R, near: LIGHT.shadowNear, far: LIGHT.shadowFar }); sun.shadow.camera.updateProjectionMatrix();     /* light, Nov 16: SH_EXT = room for tall roofs on the side height pushes them to */
     sun.shadow.bias = -0.00002; sun.shadow.normalBias = 0.05; sun.shadow.radius = 1.0;
-    this.scene.add(sun); this.scene.add(sun.target); this.sun = sun;
+    this.scene.add(sun); this.scene.add(sun.target); this.sun = sun; if (Q.get('mirrorlit') !== '0') sun.layers.enable(3);     /* fast-start: from the first frame, so the programs linked ahead for the mirror are the main ones */
     this.shared.uSunColor.value.copy(sunCol).multiplyScalar(I / Math.PI);
   }
 
@@ -547,6 +549,7 @@ export class World {
     if (n % 120 === 0) {      // (re)tag what the live faces draw: late-loading layers (streets) join on a later pass
       for (const top of this.scene.children) if (top === this.skyMesh || top.userData.streetCube || (Q.get('scars') === '0' ? /^(streets_ground|streets_trees)/ : /^(streets_ground|streets_trees|streets_vehicles|st_furniture)/).test(top.name || '')     /* lead, Nov 10: cars and street furniture are mirrored too, so paint and glass show the car alongside and the signal pole, not an empty street */) top.traverse((o) => o.layers.enable(3));
       for (const c of cam.children) c.layers.set(3);
+      if (Q.get('mirrorlit') !== '0') { const L = (this.mirrorLamps = []); this.scene.traverse((o) => { if (o.isLight && o.layers.isEnabled(0)) { if (!o.layers.isEnabled(3)) o.layers.enable(3); L.push(o); } }); }     /* lead fast-start, Nov 19: the lamps the main camera sees are seen by the mirror too: same lamp state, same shader programs (see tools/patchm.py in lanes/lead/fast-start). ?mirrorlit=0 = before; ?mirrorlit=2 = the lamps also LIGHT the mirror's picture (looked better by day and worse on a dry night, blind critic Nov 19) */
     }
     if (n < 2) return;          // let the first frames (shadow map, materials) settle
     const ev = this.streetEvery || 3; if (n % ev) return;          // one face every third frame (every 4th or 6th when the game has cut detail to hold frame rate)
@@ -559,7 +562,7 @@ export class World {
     // holds streetRT.texture needs to know.)
     if (!this.streetBack) { this.streetBack = new THREE.WebGLCubeRenderTarget(this.streetRT.width, { type: this.streetRT.texture.type, generateMipmaps: false, minFilter: THREE.LinearFilter }); this.streetBack.texture.colorSpace = this.streetRT.texture.colorSpace; r.initRenderTarget(this.streetBack); r.initRenderTarget(this.streetRT);     /* both must exist on the GPU or the swap below never happens and the shown cube stays blank */ }
     const old = r.getRenderTarget(), xr = r.xr.enabled; r.xr.enabled = false; this.shared.tStreet.value = this.streetDummy.texture; sm.autoUpdate = false;
-    r.setRenderTarget(this.streetBack, f);     /* always the back cube: the swap below exchanges the GPU textures, so 'back' is always the unseen one (alternating targets as well drew into the shown cube and swapped in a blank one: glasskit, Nov 11) */ r.render(this.scene, cam.children[f]);
+    r.setRenderTarget(this.streetBack, f);     /* always the back cube: the swap below exchanges the GPU textures, so 'back' is always the unseen one (alternating targets as well drew into the shown cube and swapped in a blank one: glasskit, Nov 11) */ { const L = Q.get('mirrorlit') === '2' ? null : this.mirrorLamps, I = L && L.map((o) => o.intensity); if (L) for (const o of L) o.intensity = 0;     /* the mirror's picture stays as it was, without lamps: they are counted (so the programs are the main picture's) but give no light while a face is drawn */ r.render(this.scene, cam.children[f]); if (L) L.forEach((o, i) => { o.intensity = I[i]; }); }
     r.setRenderTarget(old); r.xr.enabled = xr; sm.autoUpdate = au;
     if (ordered) this.streetFace = (f + 1) % 6;
     if (f === 5) { const pa = r.properties.get(this.streetRT.texture), pb = r.properties.get(this.streetBack.texture); if (pa.__webglTexture && pb.__webglTexture) { const t = pa.__webglTexture; pa.__webglTexture = pb.__webglTexture; pb.__webglTexture = t; this.streetSwaps = (this.streetSwaps || 0) + 1; r.resetState(); } }

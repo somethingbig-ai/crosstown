@@ -14,6 +14,7 @@ import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import { BAKE_LIGHT_GLSL } from '../facade.js';
+import { place as parkLampPlaces } from './parklamps.js';     /* merge2 round 33: where the small parks' lamp posts stand */
 /* merge lane batch 9: parkside.js is fetched only on a map that can use it (one of the uptown lane's sets in city.meta.sets, or one of its four switches in the address); every other map gets the same empty answer parkside() gives there, with no request */
 const upSide = async (game) => { if (game.__parkside) return game.__parkside; const Q = game.P, has = (k) => !!(Q && Q.get && Q.get(k) !== null);
   if ((game.city && game.city.meta && (game.city.meta.sets || []).some((s) => /^u\d/.test((s && s.set) || ''))) || has('pkside') || has('hexwalk') || has('pkbench') || has('pkwall')) return (await import('./parkside.js')).parkside(game);
@@ -824,6 +825,20 @@ function buildProtos(A, A2, A3) {
       b.lathe([[0.262, 6.99], [0.262, 6.95], [0.25, 6.86], [0.2, 6.72], [0.11, 6.62], [0.0, 6.6]], C('#9aa08f'), { w: [0.0, 0.05], seg: 18, at: [sx * 1.12, 0, 0] });
       b.lathe([[0.266, 7.0], [0.268, 6.97], [0.264, 6.94]], cID, Object.assign({ seg: 18, at: [sx * 1.12, 0, 0] }, CI)); }
     P.twin = b.build(); }
+  // ---- merge2 round 33: the small parks' lamp post (kind 'plamp', placed by ./parklamps.js along the park paths): a 4.1 m cast-iron post with one lantern, by hand.
+  // An eight-sided pedestal, a fluted shaft, a cup, a frosted urn-shaped lantern with four ribs under a small roof and finial. The lantern's middle is 3.52 m up (sky/nightkit.js).
+  { const b = pb(), cI = C('#232a26'), cID = C('#191e1b'), CI = { w: [0.06, 0.16] };
+    b.box([0, 0.04, 0], [0.5, 0.08, 0.5], cID, CI);
+    b.lathe([[0.22, 0.08], [0.22, 0.2], [0.19, 0.25], [0.18, 0.72], [0.2, 0.76], [0.2, 0.82], [0.16, 0.87], [0.12, 0.98], [0.1, 1.1]], cI, Object.assign({ seg: 8, spin: PI / 8 }, CI));
+    { const y0 = 1.1, y1 = 2.95, r0 = 0.085, r1 = 0.062, NF = 10, SD = NF * 4, NR = 3, pos = [], idx = [];       // the fluted shaft
+      for (let k = 0; k <= NR; k++) { const t = k / NR, r = r0 + (r1 - r0) * t; for (let q = 0; q < SD; q++) { const a = q / SD * TAU, rr = r * (1 - 0.09 * Math.pow(0.5 + 0.5 * Math.cos(a * NF), 2)); pos.push(Math.cos(a) * rr, y0 + (y1 - y0) * t, Math.sin(a) * rr); } }
+      for (let k = 0; k < NR; k++) for (let q = 0; q < SD; q++) { const a = k * SD + q, b2 = k * SD + (q + 1) % SD, c2 = a + SD, d2 = b2 + SD; idx.push(a, c2, b2, b2, c2, d2); }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(pos.length / 3 * 2), 2)); g.setIndex(idx); g.computeVertexNormals(); b.push(g, cI, CI); }
+    b.lathe([[0.062, 2.95], [0.1, 2.98], [0.1, 3.03], [0.075, 3.07], [0.07, 3.14], [0.13, 3.2], [0.135, 3.24]], cI, Object.assign({ seg: 12 }, CI));
+    const gl = pb(); gl.lathe([[0.11, 3.24], [0.195, 3.33], [0.215, 3.5], [0.19, 3.72], [0.15, 3.8]], C('#8f9384'), { w: [0.0, 0.05], seg: 12 });      // the lantern's frosted glass is a part of its own that writes no depth: the night kit's glow stands inside it and shows through (an opaque globe hid the glow's core: a dark lantern in a ring of light)
+    for (let k = 0; k < 4; k++) { const a = k * PI / 2 + PI / 4, c = Math.cos(a), sn = Math.sin(a); b.cyl([0.118 * c, 3.24, 0.118 * sn], [0.202 * c, 3.33, 0.202 * sn], 0.011, 0.011, cID, Object.assign({ seg: 4 }, CI)); b.cyl([0.202 * c, 3.33, 0.202 * sn], [0.222 * c, 3.5, 0.222 * sn], 0.011, 0.011, cID, Object.assign({ seg: 4 }, CI)); b.cyl([0.222 * c, 3.5, 0.222 * sn], [0.197 * c, 3.72, 0.197 * sn], 0.011, 0.011, cID, Object.assign({ seg: 4 }, CI)); b.cyl([0.197 * c, 3.72, 0.197 * sn], [0.157 * c, 3.8, 0.157 * sn], 0.011, 0.011, cID, Object.assign({ seg: 4 }, CI)); }
+    b.lathe([[0.15, 3.79], [0.215, 3.8], [0.22, 3.83], [0.13, 3.92], [0.055, 3.98], [0.06, 4.03], [0.0, 4.12]], cI, Object.assign({ seg: 12 }, CI));
+    P.plamp = b.build(); P.plampGlass = gl.build(); }
   { const b = pb(); b.cyl([0, 0, 0], [0, 0.95, 0], 0.26, 0.2, C('#4a4d4f'), { seg: 8, w: [0.4, 0.3] }); b.cyl([0, 0.95, 0], [0, 8.4, 0], 0.108, 0.07, cGalv, { seg: 6, w: [0.2, 0.5] }); b.tube([[0, 8.35, 0], [0.5, 9.6, 0], [2.45, 9.76, 0]], 0.048, cGalv, { n: 5, seg: 4, w: [0.2, 0.5] }); b.box([2.8, 9.72, 0], [0.7, 0.1, 0.3], C('#74797c'), PLAIN); P.lampLod = b.build(); }
   { const b = pb(); b.quad('banner', [-0.58, 5.975, 0], 0.6, 1.5, { double: true, vary: true, w: [0, 0] }); for (const y of [5.2, 6.75]) for (const x of [-0.34, -0.82]) b.box([x, y + (y > 6 ? -0.03 : 0.03), 0], [0.03, 0.07, 0.02], C('#c9c6bc'), PLAIN); P.banner = b.build(); }
   // ---- sign post with footing; parking plate; bus stop
@@ -1144,7 +1159,7 @@ export async function add(game, ctx) {
   const def = (name, parts, o = {}) => { kinds[name] = Object.assign({ parts: Array.isArray(parts) ? parts : [{ geometry: parts, material: fMat }], far: 400, near: 0, shadow: true, list: [] }, o); };
   // a soft dark patch under things that stand on the ground (the sun shadow map is too coarse for chair legs and bin feet)
   const BLOB = { ptable: 0.55, pchair: 0.4, planter3: 1.05, urn0: 0.85, urn1: 0.85, urn2: 0.85, basket: 0.62, basketFull: 0.62, planter0: 1.05, planter1: 1.05, planter2: 1.05, newsbox: 0.42, hydrant: 0.34, meter: 0.3, pbin: 0.42, can: 0.42, canRust: 0.42, cart: [1.25, 0.8], bike: [0.95, 0.28], bikeB: [0.95, 0.3], bikeShare: [0.95, 0.3],
-    pchairL: 0, cbox: 0.4, crate: 0.4, ubox: 0.5, kiosk: [0.4, 0.7], block: [0.9, 0.6], bag: 0.45, chalk: 0.5, barrier: [1.0, 0.45], cone: 0.26, spost: 0.16, busstop: 0.18, bench: [1.1, 0.5], cbflat: [0.6, 0.45] };
+    pchairL: 0, cbox: 0.4, crate: 0.4, ubox: 0.5, kiosk: [0.4, 0.7], block: [0.9, 0.6], bag: 0.45, chalk: 0.5, barrier: [1.0, 0.45], cone: 0.26, spost: 0.16, plamp: 0.34, busstop: 0.18, bench: [1.1, 0.5], cbflat: [0.6, 0.45] };
   const BINT = [C('#2c3d34'), C('#263830'), C('#5d6163'), C('#6f7375'), C('#232526')];
   let frameSolid = null;      // set below, once the collision helpers exist: bikes and racks are solid along their frames (public feedback Nov 12: "Bikes dont have collision")
   const put = (name, x, y, z, h, o) => { const K = kinds[name]; if (!K) return; if (UPS.wall && UPS.segs.length && UP_NO.test(name) && UPS.inStrip(x, y)) return;     /* uptown (parkside) */ if (frameSolid && (name === 'bike' || name === 'bikeB' || name === 'bikeShare' || name === 'rack')) { const fq = frameSolid(name, x, y, h); if (!fq) return; x = fq[0]; y = fq[1]; } if ((name === 'basket' || name === 'basketFull') && !(o && o.tint)) o = Object.assign({ tilt: [(hsh(x, y, 71) - 0.5) * 0.09, (hsh(x, y, 72) - 0.5) * 0.09], s: 0.9 + 0.16 * hsh(x, y, 73) }, o, { tint: BINT[Math.floor(hsh(Math.round(x / 60), Math.round(y / 60), 74) * 2.99) + (hsh(x, y, 75) < 0.07 ? 2 : 0)] }); K.list.push([x, y, z, h, o || null]); const B = BLOB[name]; if (name === 'ptable' || name === 'pchair') put(name + 'L', x, y, z, h, o);  if (name === 'lampA' || name === 'lampS') put('lampSh', x, y, z, h, { s: name === 'lampA' ? 1 : 0.88 }); if (name === 'bike' || name === 'bikeB') { put('bikeL', x, y, z, h, o); put('bikeM', x, y, z, h, o); } if (name === 'basket' || name === 'basketFull') put('basketL', x, y, z, h, o); if (name === 'planter0' || name === 'planter1' || name === 'planter2' || name === 'planter3') put('planterL', x, y, z, h, o); if (name === 'urn0' || name === 'urn1' || name === 'urn2') put('urnL', x, y, z, h, o);
@@ -1184,7 +1199,7 @@ export async function add(game, ctx) {
   def('hblade', [{ geometry: P.hblade, material: hMat }], { far: 260, shadow: false, fam: 'blade', atlas: A2 }); def('honeway', [{ geometry: P.honeway, material: hMat }], { far: 260, shadow: false }); def('hpsign', [{ geometry: P.hpsign, material: hMat }], { far: 220, shadow: false, fam: 'park', atlas: A2 });
   def('armface', P.armface, { far: 200, shadow: false }); def('harmface', [{ geometry: P.harmface, material: hMat }], { far: 200, shadow: false });
   def('blade', [{ geometry: P.blade, material: bMat }], { far: 260, shadow: false, fam: 'blade', atlas: A3 || A }); def('armsign', [{ geometry: P.armsign, material: bMat }], { far: 300, shadow: false, fam: 'blade', atlas: A3 || A }); def('oneway', P.oneway, { far: 260, shadow: false }); def('cab', P.cab, { far: 260, shadow: false });
-  def('twin', P.twin, { far: 400 });
+  def('twin', P.twin, { far: 400 }); def('plamp', [{ geometry: P.plamp, material: fMat }, { geometry: P.plampGlass, material: new THREE.MeshStandardMaterial({ color: 0x9a9e90, roughness: 0.55, metalness: 0, transparent: true, opacity: 0.9, depthWrite: false }), noShadow: true }], { far: 320 });     /* merge2 round 33: the park lamp post */
   def('lampA', P.lampA, { far: 140, fam: 'sticker', shadow: false }); def('lampS', P.lampS, { far: 140, fam: 'sticker', shadow: false }); def('lampLod', P.lampLod, { near: 140, far: 700, shadow: false }); def('banner', P.banner, { far: 220, fam: 'banner', shadow: false });
   def('spost', P.spost, { far: 300 , shadow: false }); def('psign', P.psign, { far: 220, shadow: false, fam: 'park' }); def('psignP', P.psignP, { far: 220, shadow: false, fam: 'park' }); def('psignL', P.psignL, { far: 220, shadow: false, fam: 'park' }); def('busstop', P.busstop, { far: 400 , shadow: false });
   def('shelter', [{ geometry: P.shelter, material: fMat }, { geometry: P.shelterGlass, material: glassMat, noShadow: true }], { far: 500 });
@@ -1674,6 +1689,15 @@ export async function add(game, ctx) {
   dEach('shed_parapet', (x, y, z, h, sa) => { if (sa < 4.5) return; const r = hsh(x, y, 87), al = Math.min(sa * 0.5, 2.2 + r * 3), cx = Math.cos(h), cy = Math.sin(h);
     put('shedBoard', x + cx * al, y + cy * al, z + 2.85, h, { cell: [Math.floor(r * 3), 0] }); if (sa > 7) put('shedPermit', x + cx * (al + 1.5), y + cy * (al + 1.5), z + 2.9, h, { tilt: [0, (r - 0.5) * 0.08] }); });
 
+  // ---- merge2 round 33: lamp posts along the paths of the small parks (Madison Square Park and every other park the grass layer has a path layout for). The places
+  // are ./parklamps.js's rule on the grass layer's own layouts (ctx.parts.grass.paths): about every 22 m, 1 m outside the paving, sides alternating, clear of trees,
+  // buildings, sand and whatever this file has stood. Each is solid as the other posts are; sky/nightkit.js reads kinds.plamp.list for the pool and the glow. ?pathlamps=0 = none (not ?parklamps: that name is the park lane's, for Central Park's own posts).
+  let parkLamps = null;
+  if (kinds.plamp && !(game.P && game.P.get('pathlamps') === '0')) { try { const G = ctx.parts && ctx.parts.grass, layP = G && G.paths, gz = G && G.report && isFinite(parseFloat(G.report.y)) ? parseFloat(G.report.y) : 0.18;
+      if (layP && layP.length) { const R = parkLampPlaces(city, layP, { skip: (x, y) => !!(game.park && game.park.on && game.park.owns && game.park.owns(x, y)), ok: (x, y) => (game.bounds && game.bounds.in ? game.bounds.in(x, y, 0) : playable(x, y)),     /* the whole played map, as the street lights are: not only the core box this file's sidewalk pieces keep to */ taken: (x, y) => !!(occ.hit(x, y, 0.45) || bldAt(x, y) || laneNear(x, y, 0.6)) });
+        for (const q of R.posts) { put('plamp', q[0], q[1], gz, hsh(q[0], q[1], 91) * TAU); occ.add(q[0], q[1], 0.3); post(q[0], q[1], 0.2); }
+        parkLamps = { n: R.posts.length, parks: R.parks.filter((k) => k.n) }; console.log('[streets] park lamps: ' + R.posts.length + ' posts in ' + parkLamps.parks.length + ' parks: ' + parkLamps.parks.map((k) => (k.name || 'park at ' + k.at.join(',')) + ' ' + k.n).join(', ')); } }
+    catch (e) { console.log('[streets] park lamps not placed: ' + (e && e.message)); } }
   // ================================================================= build the instanced meshes
   const hidden = ['signal', 'light', 'hydrant', 'bin', 'meter', 'newsbox'];
   for (const m of game.propMeshes || []) if (hidden.includes(m.userData.kind)) { if (m.userData.kind === 'hydrant' && !kinds.hydrant && !kinds.hydLod) continue; m.visible = false; }
@@ -1686,7 +1710,7 @@ export async function add(game, ctx) {
       let c = 0; const r = T * 0.7072; for (const [k, n] of tl) { const tx = (Math.floor(k / 1024) - 512 + 0.5) * T, ty = (k % 1024 - 512 + 0.5) * T; for (const sp of SAMP) { const d = Math.hypot(sp[0] - tx, sp[1] - ty); if (d - r < K.far && d + r >= K.near) c += DRAW + n * vertsK; } }
       if (c < bc) { bc = c; best = T; } }
     return best; };
-  const NOAO = /^(blob|sunsh|sigSh|lampSh|sh_|net|hblade|honeway|hpsign|armface|harmface|blade|armsign|oneway|psign|banner|shedBoard|shedPermit|cbflat|scrap)/, CUBE = /^(sig[SL][cm]?$|sigLod|lamp[AS]$|lampLod|twin|shelter|cart|umbrella|kiosk)/;
+  const NOAO = /^(blob|sunsh|sigSh|lampSh|sh_|net|hblade|honeway|hpsign|armface|harmface|blade|armsign|oneway|psign|banner|shedBoard|shedPermit|cbflat|scrap)/, CUBE = /^(sig[SL][cm]?$|sigLod|lamp[AS]$|lampLod|twin|plamp|shelter|cart|umbrella|kiosk)/;
   if (PT) { const FAR = { sigS: 45, sigL: 45, sigSc: 45, sigLc: 45, sigSh: 45, sigLh: 45, sigSm: 130, sigLm: 130, sigSmh: 130, sigLmh: 130, lampA: 110, lampS: 110, rack: 90, fence: 120, spost: 120, urnL: 120, planterL: 120, pchairL: 100, ptableL: 110, bagLod: 120, scaf: 90, shedUnder: 60, scrap: 40, bikeL: 110, net: 150, psign: 140, psignP: 140, psignL: 140, hpsign: 140,
       blade: 180, hblade: 180, armsign: 200, oneway: 180, honeway: 180, cab: 180, meter: 150, meterFar: 150, newsbox: 150, delin: 140, cone: 140, cbflat: 100, banner: 160, hydLod: 180, basketL: 120, busstop: 250, shelter: 300, kiosk: 300, kioskFar: 300, umbrella: 300, umbrellaC: 300, umbrellaV1: 300, umbrellaV2: 300, cart: 300,
       block: 250, benchP: 200, aframe: 160, dock: 160, dockKiosk: 250, pbin: 160, shedBoard: 150, sigLodS: 350, sigLodL: 350, lampLod: 350 };
@@ -1762,5 +1786,5 @@ export async function add(game, ctx) {
   world.scene.add(group);
   const kc = {}; for (const k in kinds) if (kinds[k].list.length) kc[k] = kinds[k].list.length;
   console.log('[streets] furniture kinds ' + JSON.stringify(kc) + ' kerb ' + JSON.stringify(counts));
-  return { group, meshes, kinds, grateSpots, perf: PFS, lit, report: { instances, ktris: Math.round(tris / 1000), signals: sigs.length, lights: (city.props.light || []).length, plazaSets, fence_m: Math.round(fenceM), scafBays, shedBays, osmPlazas, shops: shopN, grates: gratesIn.length, grateRacks, shared_m: sharedM, circles: circles.n, seatMoved: seated.moved, seatDropped: seated.dropped, bikeSeat, signNames: names.length, signSheet: A3 ? [A3.tex.image.width, A3.tex.image.height] : null } };
+  return { group, meshes, kinds, grateSpots, parkLamps, perf: PFS, lit, report: { instances, parkLamps: parkLamps ? parkLamps.n : 0, ktris: Math.round(tris / 1000), signals: sigs.length, lights: (city.props.light || []).length, plazaSets, fence_m: Math.round(fenceM), scafBays, shedBays, osmPlazas, shops: shopN, grates: gratesIn.length, grateRacks, shared_m: sharedM, circles: circles.n, seatMoved: seated.moved, seatDropped: seated.dropped, bikeSeat, signNames: names.length, signSheet: A3 ? [A3.tex.image.width, A3.tex.image.height] : null } };
 }

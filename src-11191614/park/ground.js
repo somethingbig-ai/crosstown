@@ -3,7 +3,7 @@
 // black = lawn, white = outside the park (not drawn). Steep ground turns to rock in the shader whatever the mask says.
 // Lawn, litter and dirt are the scans the lawn layer already uses (assets/streets/grass); asphalt is the road's (assets/tex).
 import * as THREE from 'three';
-import { lit, tex } from './mat.js';
+import { lit, tex, nightOn, NORTH17 } from './mat.js';
 import { CELL, N, STEP } from './terrain.js';
 
 export const BASE = 0.16;      // the park's ground at relief 0 stands this far above the roadway (the lawn layer's parks stood at the model's grass height)
@@ -22,9 +22,11 @@ export async function shared(game) {
 
 const PARS = /* glsl */`
   uniform sampler2D tMask, tLawn, tLitter, tDirt, tWorn, tAsph, tRock, tParkCut; uniform vec4 uParkBox; uniform vec3 uMLawn, uMLit, uMDirt, uMWorn; uniform vec4 uChunk;
-  vec3 tone(vec3 c, vec3 mean, vec3 to) { return to * c / max(mean, vec3(0.01)); }`;
+  vec3 tone(vec3 c, vec3 mean, vec3 to) { return to * c / max(mean, vec3(0.01)); }
+  vec3 leaf17(vec3 c) { return vec3(min(c.r, c.g * 1.7), c.g, min(c.b, c.g * 0.45)); }      /* handoff-17: a leaf of the sheet, held inside rust / ochre (see the LIT block) */`;
 const SAND8 = typeof location === 'undefined' || new URLSearchParams(location.search).get('parksand') !== '0';      // handoff-8: sand without a tile pattern and with a soft worn margin; `?parksand=0` = as before
-const BODY = /* glsl */`
+const LIT14 = typeof location === 'undefined' || new URLSearchParams(location.search).get('parklitter') !== '0';      // handoff-14 / -17: a wood's floor is leaf litter, not a black sheet, in the chunks north of mat.js's NORTH17; `?parklitter=0` = as before everywhere
+const BODY = (nightOn_) => /* glsl */`
   vec2 m = vec2(w.x, -w.y);
   vec3 mk = texture2D(tMask, (m - uChunk.xy) / uChunk.z).rgb;
   if (min(mk.r, min(mk.g, mk.b)) > 0.6) discard;
@@ -44,9 +46,34 @@ const BODY = /* glsl */`
   vec3 lawn = tone(texture2D(tLawn, m / 3.3).rgb, uMLawn, vec3(0.033, 0.036, 0.016)) * mix(vec3(0.70, 0.80, 0.78), vec3(1.25, 1.08, 0.80), smoothstep(0.25, 0.75, big));
   vec3 wornC = tone(texture2D(tWorn, m / 2.7).rgb, uMWorn, vec3(0.040, 0.038, 0.020));
   lawn = mix(lawn, wornC, smoothstep(0.50, 0.68, fbm(m * 0.11 + 3.0)) * 0.8);      // look pass k1: worn patches were rare (0.55 .. 0.8, 0.7)
-  vec3 lit_ = tone(texture2D(tLitter, m / 2.1).rgb, uMLit, vec3(0.060, 0.038, 0.018));
+  // The old floor, as the live build draws it and as EVERY drift on a lawn, every disc under a crown and every bank still draws it: litter.webp read as a
+  // floor. That sheet is single leaves on a CLEAR ground (alpha above 0.5 on 1.2 % of it, black elsewhere) and means.json holds no mean for it, so this
+  // "litter" is near black with orange dots. At part strength (a crown's disc, a drift: the south end is nearly all of this) it reads as shade with fallen
+  // leaves, which three critic rounds tuned; at FULL strength (a whole area the data calls wood or bed) it is the tar-black sheet of the stills north of 72nd St
+  vec4 lfA = texture2D(tLitter, m / 2.1);
+  vec3 lit_ = tone(lfA.rgb, uMLit, vec3(0.060, 0.038, 0.018));
   vec3 lit2 = tone(texture2D(tLitter, m.yx / 3.7 + 0.4).rgb, uMLit, vec3(0.075, 0.050, 0.020));
   vec3 litter = mix(lit_, lit2, smoothstep(0.35, 0.65, mid));
+  vec3 floor17 = litter;
+  ${LIT14 ? `// handoff-17 (after handoff-14; merge batch 15 sent 14 back: it had changed the south end too). In a chunk north of NORTH17 (uChunk.w = 1) the floor
+  // of a wood, where the wood's share is near whole (see col below), is a bed of matted leaves and earth (the dirt and worn scans toned to leaf litter,
+  // some green understory) with the sheet's leaves laid ON it by their alpha at three sizes. South of the line nothing here runs: the picture is the live build's.
+  // PINK FLECKS (the lead's read of hold nf2, merge's critic at south_b): in linear light the sheet's leaves are red (red 1.6 to 3.6 times green, median 2.1,
+  // blue up to 0.77 of green: measured) and handoff-14 laid them under a near-grey tint (0.150, 0.140, 0.120), which kept that ratio: crimson with blue in
+  // it = pink / magenta on a brown bed. Now leaf17() holds a leaf inside rust / ochre (red at most 1.7 green, blue at most 0.45 green), and the bed's own
+  // blue is down (0.019 -> 0.014, 0.022 -> 0.0165: a grey-brown with that much blue read mauve beside the lawn's green)
+  if (uChunk.w > 0.5) {
+    floor17 = mix(tone(texture2D(tDirt, m.yx / 2.3 + 0.21).rgb, uMDirt, vec3(0.030, 0.0245, 0.0140)), tone(texture2D(tWorn, m / 1.9 + 0.63).rgb, uMWorn, vec3(0.037, 0.030, 0.0165)), smoothstep(0.35, 0.65, mid)) * (0.78 + 0.44 * big);
+    floor17 *= mix(vec3(1.05, 0.96, 0.84), vec3(0.96, 0.99, 0.95), fine);
+    floor17 = mix(floor17, lawn * 0.85, smoothstep(0.62, 0.80, fbm(m * 0.19 + 27.0)) * 0.45);
+    vec4 lfB = texture2D(tLitter, m.yx / 1.3 + 0.4), lfC = texture2D(tLitter, (m * mat2(0.8, -0.6, 0.6, 0.8)) / 0.9 + 0.17);
+    floor17 = vec3(min(floor17.r, floor17.g * 1.40), floor17.g, min(floor17.b, floor17.g * 0.60));      /* hold ff1, uptown by day: 1 to 2 % of the bed still drew salmon (red 1.8 green, blue 0.8 green on the still); the bed's own tint is red 1.34, blue 0.50, so this only cuts the outliers */
+    floor17 = mix(floor17, leaf17(lfC.rgb) * 0.42, lfC.a * 0.9); floor17 = mix(floor17, leaf17(lfB.rgb) * 0.54, lfB.a); floor17 = mix(floor17, leaf17(lfA.rgb) * 0.66, lfA.a);      /* hold ff1: at 0.21 / 0.26 / 0.30 a leaf's red equalled the bed's and no leaf could be seen on the new floor (merge batch 15, point 3) */
+    ${nightOn_ ? `// merge batch 15, point 5 (23:00 from the air: "the far north end of the park is a pale blank patch" where the live build shows lit paths): far off, where
+    // no crown is drawn over it, the bare floor took the night's light like a lawn and the lit paths no longer stood out of it. At night the far floor of a wood
+    // goes back to near dark, as a canopy seen from above is (from 500 m, whole at 1000 m; by day nothing changes). A GUESS at the cause until a still shows it
+    floor17 *= mix(1.0, 0.12, clamp((1.0 - uNightK.x) / 0.95, 0.0, 1.0) * smoothstep(500.0, 1000.0, distance(cameraPosition, vWPos)));` : ''}
+  }` : ''}
   ${SAND8 ? `// handoff-8 (critic r3: "a visible checker tile on the sand"): one picture laid square every 2.9 m repeated across a playground; now two layers of it, turned
   // and at other sizes, each showing where a slow noise picks it, so no tile comes round
   vec3 dirt = tone(mix(texture2D(tDirt, (m * mat2(0.8, -0.6, 0.6, 0.8)) / 3.7).rgb, texture2D(tDirt, m.yx / 6.1 + 0.37).rgb, smoothstep(0.30, 0.70, fbm(m * 0.23 + 17.0))), uMDirt, vec3(0.062, 0.049, 0.032)) * (0.8 + 0.4 * big);`
@@ -67,7 +94,7 @@ const BODY = /* glsl */`
   rockC = mix(rockC, mix(dirt * 0.5, mix(dirt, lawn, 0.3) * 0.75, smoothstep(0.4, 0.6, mid)), crack * crack * 0.5 * smoothstep(0.75, 0.9, bakeN.y));      /* lead's read of k2 c: the grass in the cracks drew neon lime (was lawn * 1.1 at 0.85): dull olive-brown and thinner now; NOT seen in a still */      // soil and grass in the cracks of the flatter rock
   float leaves = smoothstep(0.40, 0.70, fbm(m * 0.16 + 11.0) * 0.7 + mid * 0.3);
   vec3 col = mix(lawn, litter, leaves * 0.75);
-  col = mix(col, litter, wood);
+  col = mix(col, mix(litter, floor17, uChunk.w * smoothstep(0.45, 0.75, wood)), wood);      /* handoff-17: the new floor only where the wood's share is near whole, i.e. where the old one drew as a black sheet; drifts, crown discs and banks keep the live build's look (merge batch 15, point 3: its critic missed those leaves) */
   col = mix(col, mix(wornC, dirt, 0.4), sandM * 0.75);      // handoff-8: the worn margin of thin grass and trodden soil round a sand patch (0 with ?parksand=0)
   col = mix(col, dirt, sand);
   col = mix(col, mix(asph, litter, leaves * 0.30 * smoothstep(0.4, 0.7, fine)), paved);
@@ -80,7 +107,7 @@ const BODY = /* glsl */`
 export function material(game, S, tMask, i, j) {
   const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0 });
   m.userData.own = { tMask };
-  return lit(m, game.world.shared, { key: 'ground', pars: PARS, body: BODY, uniforms: { ...S, tMask: { value: tMask }, uChunk: { value: new THREE.Vector4(i * CELL, j * CELL, CELL, 0) } } });
+  return lit(m, game.world.shared, { key: 'ground', pars: PARS, body: BODY(nightOn(game.world.shared)), uniforms: { ...S, tMask: { value: tMask }, uChunk: { value: new THREE.Vector4(i * CELL, j * CELL, CELL, LIT14 && j * CELL >= NORTH17 ? 1 : 0) } } });
 }
 
 const COL = { lawn: '#000', wood: '#0f0', bed: '#0f0', rock: '#00f', sand: '#ff0', water: '#ff0', paving: '#f00', building: '#f00', ice: '#f00', playground: (typeof location !== 'undefined' && new URLSearchParams(location.search).get('parkplay') === '0') ? '#f00' : '#ff0' };      /* critic r2 (Nov 17): the Heckscher playground lay as one sheet of pale paving ("flat white, reads like snow"); a playground's ground is sand and safety surface: the sand / dirt look. ?parkplay=0 = paving as before */

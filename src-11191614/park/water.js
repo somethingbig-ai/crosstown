@@ -2,7 +2,7 @@
 // dark and green as park water is, mirroring the sky and rippling a little. Its edge is a low wall of collision (water is not walkable ground
 // in this pass); the wall is left open under a bridge's deck (corridors = [{ ax, ay, bx, by, hw }]).
 import * as THREE from 'three';
-import { lit } from './mat.js';
+import { lit, nightOn, NORTH17 } from './mat.js';
 import { BASE } from './ground.js';
 
 let MAT = null, MIR = null;
@@ -17,6 +17,12 @@ function mirror(game) {
   const mir = { U: { tMirror: { value: rt.texture }, uMirM: { value: M }, uMirOn: { value: 0 } }, seen: -1e9, level: 0, dist: 1e9, who: null, meshes: new Set(), draws: 0, ms: 0, err: null, frame: 0, seenF: -9, sync: false };
   let fr = 0;
   const off = () => { mir.U.uMirOn.value = 0; if (MAT) MAT.envMapIntensity = 0.32; };
+  // handoff-17 (merge batch 15, point 2: its Pond stills drew "a flat opaque sheet with no reflection"): a stills tool that draws frames by hand, waits 0.4 s and
+  // draws again loses the picture: a frame callback inside the wait finds the water unseen for 400 ms, calls off(), and no callback runs before the hand-drawn
+  // frames that follow (tools/run.mjs asks mirrorNow(); merge's b15x.mjs does not). Now a water sheet drawn through the game's camera while the mirror is off
+  // takes the last picture back if the camera stands exactly where that picture was drawn from. `?parkmirkeep=0` = as before
+  const KEEP17 = !(Q && Q.get('parkmirkeep') === '0'), at = new Float64Array(17).fill(NaN);
+  mir.keep = (c) => { if (!KEEP17 || mir.err || mir.U.uMirOn.value || c !== cam || at[16] !== mir.level) return; const e = cam.matrixWorld.elements; for (let i = 0; i < 16; i++) if (Math.abs(e[i] - at[i]) > 1e-5) return; mir.U.uMirOn.value = 1; mir.kept++; if (MAT) MAT.envMapIntensity = 0.04; };
   const draw = () => { requestAnimationFrame(draw); fr++; if (mir.err) return; if (performance.now() - mir.seen > 400) return off(); if ((fr & 1) && mir.U.uMirOn.value) return; once(); };
   const once = () => {
     P0.set(0, mir.level, 0); cp.setFromMatrixPosition(cam.matrixWorld); if (cp.y <= mir.level + 0.05) return off();
@@ -29,7 +35,7 @@ function mirror(game) {
       const e = vc.projectionMatrix.elements; q.x = (Math.sign(clip.x) + e[8]) / e[0]; q.y = (Math.sign(clip.y) + e[9]) / e[5]; q.z = -1; q.w = (1 + e[10]) / e[14]; clip.multiplyScalar(2 / clip.dot(q)); e[2] = clip.x; e[6] = clip.y; e[10] = clip.z + 1 - 0.003; e[14] = clip.w;
       for (const m of mir.meshes) if (m.visible) { m.visible = false; hid.push(m); }
       R.xr.enabled = false; R.shadowMap.autoUpdate = false; R.shadowMap.needsUpdate = false; R.setRenderTarget(rt); R.clear(); R.render(scene, vc);
-      mir.U.uMirOn.value = 1; if (MAT) MAT.envMapIntensity = 0.04; mir.draws++; mir.ms = performance.now() - t0;
+      mir.U.uMirOn.value = 1; if (MAT) MAT.envMapIntensity = 0.04; mir.draws++; mir.ms = performance.now() - t0; at.set(cam.matrixWorld.elements); at[16] = mir.level;
     } catch (e) { mir.err = String(e && e.message); off(); console.log('[game] park: mirror failed: ' + mir.err); }
     finally { for (const m of hid) m.visible = true; R.setRenderTarget(old.rt); R.xr.enabled = old.xr; R.shadowMap.autoUpdate = old.sh; R.shadowMap.needsUpdate = old.nu; } };
   mir.once = once;
@@ -58,13 +64,35 @@ function material(game) {
   // down, bright at grazing angles); with the mirror off (far, ?parkmirror=0) the sky map shows only at middle angles and the grazing band is dark, as a
   // reflected tree line is; the sheet takes no cast shadows. ?parkwater=0 = the water as before.
   const OLD = !!(game.P && game.P.get('parkwater') === '0'), RIP = !OLD && !(game.P && game.P.get('parkripple') === '0');      // handoff-8: ripples and the browner tint; ?parkripple=0 = the water of handoff-6
+  const LF14 = !(game.P && game.P.get('parkleaves') === '0');      // handoff-14: single small leaves on the water; ?parkleaves=0 = the blobs as before
+  // handoff-14 (stills no1, 23:00: the Lake and Turtle Pond drew brighter than the sky they mirror, a pale glowing sheet): at night the mirrored picture's
+  // share falls to WN14 (0.4; a GUESS at the cause: the night's exposure, on its cap, multiplies the mirror's light a second time). ?parkwnight=K (1 = as before)
+  const WN14 = (() => { const k = game.P && game.P.get('parkwnight'); return k !== null && k !== undefined && k !== '' && isFinite(+k) ? Math.max(0, +k) : 0.4; })();
   const m = new THREE.MeshStandardMaterial({ color: OLD ? new THREE.Color(0.020, 0.022, 0.011) : new THREE.Color(0.012, 0.012, 0.006), roughness: 0.1, metalness: 0.0, envMapIntensity: 0.20 })      /* critic r1, Nov 16: the Pond read milky pale green; mirror tint 0.40/0.45/0.35 -> 0.27/0.28/0.20, sky 0.32 -> 0.20 */;
   const mir = mirror(game), MU = mir ? mir.U : { tMirror: { value: null }, uMirM: { value: new THREE.Matrix4() }, uMirOn: { value: 0 } };
   m.userData.old = OLD;
   MAT = lit(m, game.world.shared, { key: 'water', night: 1.7      /* handoff-9: at night the Pond takes the sky's reflection again (pkSpec back to 1) and its old tint (0.020 -> 0.012 by day): mat.js */, uniforms: MU, pars: 'uniform float uTime; uniform sampler2D tMirror; uniform mat4 uMirM; uniform float uMirOn;',
     body: `float mur = fbm(vec2(w.x, -w.y) * 0.05); diffuseColor.rgb *= 0.7 + 0.7 * mur;
-           float lf = smoothstep(0.80, 0.86, vnoise(vec2(w.x, -w.y) * 1.3)) * smoothstep(0.55, 0.75, fbm(vec2(w.x, -w.y) * 0.08 + 5.0));      // drifts of floating leaves
-           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.10, 0.060, 0.018), lf); pkRough = mix(0.1, 0.8, lf);
+           float n17 = step(${NORTH17.toFixed(1)}, -w.y);      // handoff-17: 1 north of the line (mat.js NORTH17), 0 at the Pond: there the water is the live build's
+           float wNt = ${WN14 < 1 && nightOn(game.world.shared) ? `mix(1.0, ${WN14.toFixed(3)}, n17 * clamp((1.0 - uNightK.x) / 0.95, 0.0, 1.0))` : '1.0'};      // handoff-14: the mirrored sky's share at night (see WN14)
+           ${LF14 ? `// handoff-14 (the lead's read of the Lake: "huge flat yellow discs and dashes float near the camera"): a leaf was a blob of a 0.8 m noise in
+           // bright ochre. Now each leaf is its own turned oval 6 to 10 cm long in a 13 cm cell, dull ochre to brown, thick only inside the drifts;
+           // past 6 to 22 m, where a leaf is smaller than a pixel, the drift is a faint even stain of the same cover
+           // handoff-17 (merge batch 15, point 3: its critic missed the leaves, "A's bank and water are bare"): the drift is as wide as the live build's again (its own
+           // 0.08 noise; the second noise only thins it inside, 0.35 to 1), a leaf is as bright as the old blobs' ochre at its lightest, cover 0.6 of the drift
+           // (was 0.5 of a much rarer one) and the far stain 0.17 (was 0.11). South of NORTH17 the old form draws (the else below): the Pond is the live build's
+           vec2 lq = vec2(w.x, -w.y); float lf = 0.0; vec3 lcol = vec3(0.10, 0.060, 0.018);
+           if (n17 > 0.5) {
+           float ldr = smoothstep(0.55, 0.75, fbm(lq * 0.08 + 5.0)) * (0.35 + 0.65 * smoothstep(0.40, 0.68, fbm(lq * 0.9 + 2.0)));
+           vec2 lc = lq / 0.13, li = floor(lc); float lh = hash21(li), la = hash21(li + 17.0) * 6.283, lz = 0.75 + 0.5 * hash21(li + 41.0);
+           vec2 lp = fract(lc) - 0.5 - (vec2(hash21(li + 5.0), hash21(li + 9.0)) - 0.5) * 0.2, lr =vec2(cos(la) * lp.x + sin(la) * lp.y, cos(la) * lp.y - sin(la) * lp.x);
+           float leaf1 = (1.0 - smoothstep(0.75, 1.0, length(lr / (vec2(0.31, 0.18) * lz)))) * step(lh, 0.6 * ldr);
+           lf = mix(leaf1, 0.17 * ldr, smoothstep(6.0, 22.0, distance(cameraPosition, vWPos)));
+           lcol = mix(vec3(0.092, 0.058, 0.017), vec3(0.046, 0.033, 0.014), hash21(li + 23.0));
+           } else { lf = smoothstep(0.80, 0.86, vnoise(lq * 1.3)) * smoothstep(0.55, 0.75, fbm(lq * 0.08 + 5.0)); }
+           diffuseColor.rgb = mix(diffuseColor.rgb, lcol, lf); pkRough = mix(0.1, 0.8, lf);`
+           : `float lf = smoothstep(0.80, 0.86, vnoise(vec2(w.x, -w.y) * 1.3)) * smoothstep(0.55, 0.75, fbm(vec2(w.x, -w.y) * 0.08 + 5.0));      // drifts of floating leaves
+           diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.10, 0.060, 0.018), lf); pkRough = mix(0.1, 0.8, lf);`}
            if (uMirOn > 0.5) { vec4 mp = uMirM * vec4(vWPos, 1.0); float md = distance(cameraPosition, vWPos); vec2 mq = vWPos.xz * 1.9 + uTime * 0.12;
              vec2 muv = mp.xy / max(mp.w, 0.001) + (vec2(vnoise(mq), vnoise(mq * 1.3 + 7.0)) - 0.5) * vec2(0.003, 0.011) * clamp(30.0 / md, 0.15, 1.0);      // nearly still: the picture trembles a little, more up and down than sideways
              ${RIP ? `// handoff-8 (critic r3: "the mirror is perfect"): a breath of wind ruffles the sheet in slow drifting patches (the sheet has no measure of how far a bank is: the
@@ -74,7 +102,7 @@ function material(game) {
              float cosv = clamp(normalize(cameraPosition - vWPos).y, 0.0, 1.0), fres = 0.03 + 0.97 * pow(1.0 - cosv, 5.0);
              vec3 mc = texture2D(tMirror, clamp(muv, 0.002, 0.998)).rgb; mc = mc / (1.0 + ${OLD ? '0.9' : '0.7'} * dot(mc, vec3(0.333)));      // look pass k1: the far half mirrored the bare sky as a milky sheet: the bright end of the picture is pressed down, the tint is the Pond's green-brown
              ${RIP ? 'mc = mix(vec3(dot(mc, vec3(0.3, 0.6, 0.1))), mc, 0.72);      // handoff-8 (critic r3: "too yellow-lime"; the photographs: a darker, browner green): the mirrored lawn and leaves lose some colour and the tint below is browner and darker (was 0.62, 0.61, 0.47)' : ''}
-             totalEmissiveRadiance += mc * ${OLD ? 'vec3(0.27, 0.27, 0.16)' : RIP ? 'vec3(0.50, 0.475, 0.37)' : 'vec3(0.62, 0.61, 0.47)'} * fres * (1.0 - lf);${OLD ? '' : ' pkSpec = 0.0;'} }
+             totalEmissiveRadiance += mc * ${OLD ? 'vec3(0.27, 0.27, 0.16)' : RIP ? 'vec3(0.50, 0.475, 0.37)' : 'vec3(0.62, 0.61, 0.47)'} * fres * (1.0 - lf) * wNt;${OLD ? '' : ' pkSpec = 0.0;'} }
            ${OLD ? '' : 'else { float cv = clamp(normalize(cameraPosition - vWPos).y, 0.0, 1.0); pkSpec = mix(0.05, 0.42, smoothstep(0.05, 0.26, cv + (mur - 0.5) * 0.08)) * (1.0 - lf); }'}`,
     nbody: `{ vec2 q = vWPos.xz * 2.3; float t = uTime * 0.25;
               vec2 r = vec2(vnoise(q + vec2(t, 0.3 * t)) - vnoise(q + vec2(0.35 - t * 0.6, 1.7)), vnoise(q * 1.7 + vec2(4.0, t)) - vnoise(q * 1.7 + vec2(1.3, 9.0 - t))) * 0.011;

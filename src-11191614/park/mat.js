@@ -22,6 +22,12 @@ const SUN_OLD = typeof location !== 'undefined' && new URLSearchParams(location.
 // pkSpec / pkSide go back to 1. By day the factor is exactly 1 and nothing changes. ?parknight=0 = the night as handoff-6 had it; ?parknightk=K scales the gain.
 // The gain is 1.6 by default (hold n9a, Nov 17: at 1 the rock still read 9.0 against live's 16.7 in the lower half of camera c; at 1.6 17.5, the lawn and Fifth Ave level).
 const NIGHT_K = (() => { if (typeof location === 'undefined') return 1.6; const q = new URLSearchParams(location.search); if (q.get('parknight') === '0') return 0; const k = q.get('parknightk'); return k !== null && k !== '' && isFinite(+k) ? Math.max(0, +k) : 1.6; })();
+export const nightOn = (shared) => NIGHT_K > 0 && !!(shared && shared.uNightK);      // handoff-14: true when lit() declares uNightK (a body that reads it must ask first)
+// handoff-17: the leaf-litter floor, the small leaves on water, the bank rule for trees and the water's night share apply NORTH of this line only (map y in
+// metres = the south edge of chunk row 12, about 69th St). South of it the park is the live build's, tuned over three critic rounds (merge batch 15 sent
+// handoff-14 back for changing it). The south holds the same kinds of area (Hallett Sanctuary is a wood, the Dene a bed), so the kind alone cannot draw the
+// line. `?parkline=Y` moves it (0 = the whole park)
+export const NORTH17 = (() => { if (typeof location === 'undefined') return 3072; const k = new URLSearchParams(location.search).get('parkline'); return k !== null && k !== '' && isFinite(+k) ? +k : 3072; })();
 
 // lit(material, shared, { pars, body, key, spec, night }): adds vWPos (instancing aware), the lightmap read and the bake formula.
 // pars = extra fragment declarations, body = GLSL run after <map_fragment> (may write diffuseColor, pkRough), key = program cache key.

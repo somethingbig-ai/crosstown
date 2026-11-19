@@ -384,11 +384,31 @@ export function install(game) {
       P.setXYZ(k, _e.x + _q.x * wd * 0.5, _e.y + _q.y * wd * 0.5, _e.z + _q.z * wd * 0.5); P.setXYZ(k + 1, _e.x - _q.x * wd * 0.5, _e.y - _q.y * wd * 0.5, _e.z - _q.z * wd * 0.5);
       P.setXYZ(k + 2, _e.x + _q.x * wd * 0.3 + _p.x, _e.y + _q.y * wd * 0.3 + _p.y, _e.z + _q.z * wd * 0.3 + _p.z); P.setXYZ(k + 3, _e.x - _q.x * wd * 0.3 + _p.x, _e.y - _q.y * wd * 0.3 + _p.y, _e.z - _q.z * wd * 0.3 + _p.z); }
     P.needsUpdate = true; m.visible = true; return fh; };
+  const hnd2 = (arm, v) => { if (K.rig && K.rig.ok && K.w > 0.5) K.rig.pos('hand_' + (arm === 'R' ? 'R' : 'L'), v); else hand(v); return v; };
+  const line2 = (dt, sc, a) => { const sw = !!(a && a.mode === 'swing'), pre = a && S.pre ? S.pre : null, L = K.L2 || (K.L2 = { cur: null, fly: null, ret: null, pf: 0, px: V3() }), cam = g.world.camera;
+    if (!K.segs[2]) { K.segs[2] = ribbon('swing-line-back'); sc.add(K.segs[2]); } const m = K.segs[0], o = K.segs[1], r = K.segs[2];
+    const far = (q, x, y, z) => Math.abs(q.x - x) + Math.abs(q.y - y) + Math.abs(q.z - z) > 3, drop = () => { if (L.cur) { L.ret = { tip: V3().set(L.cur.x, L.cur.z, -L.cur.y), arm: L.cur.arm, r: 0 }; L.cur = null; } };
+    if (sw) { if (!(L.cur && !far(L.cur, a.ax, a.ay, a.az))) { if (L.fly && L.fly.pre) { const f = L.fly; f.x = a.ax; f.y = a.ay; f.z = a.az; f.arm = S.arm; f.pre = false; }      // the line thrown ahead is the one that takes his weight
+        else if (!L.fly || far(L.fly, a.ax, a.ay, a.az)) L.fly = { x: a.ax, y: a.ay, z: a.az, arm: S.arm, p: 0.12, pre: false }; }
+      else if (pre && pre.t >= 0.13) { if (!L.fly) L.fly = { x: pre.x, y: pre.y, z: pre.z, arm: pre.arm, p: 0.12, pre: true }; } else if (L.fly && L.fly.pre) L.fly = null; }
+    else if (pre) { if (!L.fly || !L.fly.pre) L.fly = { x: pre.x, y: pre.y, z: pre.z, arm: pre.arm, p: 0.12, pre: true }; drop(); }
+    else { L.fly = null; drop(); }
+    if (L.fly) { const f = L.fly; f.p = Math.min(1, f.p + dt / 0.15); if (f.p >= 1 && !f.pre) { drop(); L.cur = f; L.fly = null; L.pf = 0.18; L.px.set(f.x, f.z, -f.y); ST.thrown = (ST.thrown || 0) + 1;
+        const M = K.marks || (K.marks = []); let q = M.length < 4 ? null : M.shift(); if (!q) { q = new THREE.Mesh(new THREE.SphereGeometry(0.17, 6, 4), new THREE.MeshBasicMaterial({ color: 0x23252a })); q.name = 'swing-mark'; sc.add(q); } q.position.copy(L.px); M.push(q); } }
+    if (L.ret) { L.ret.r += dt / 0.14; if (L.ret.r >= 1) L.ret = null; }
+    let fh = 1, hk = false, he = 1;
+    if (L.cur) { hnd2(L.cur.arm, _a); _b.set(L.cur.x, L.cur.z, -L.cur.y); fh = lay(m, _a, _b, 0, 0, 0); K.tip.copy(_b); K.hnd.copy(_a); K.oTip.copy(_b); hk = true; } else m.visible = false;
+    if (L.fly) { const f = L.fly, e = f.p * (2 - f.p); hnd2(f.arm, _a); _hd.set(f.x, f.z, -f.y); const Lf = _hd.distanceTo(_a); _b.lerpVectors(_a, _hd, e); fh = lay(o, _a, _b, Lf * 0.04 * e, f.p < 1 ? 0.35 * (1 - e) : 0, 0); K.oTip.copy(_b); if (!L.cur) K.tip.copy(_b); hk = true; he = e; } else o.visible = false;
+    if (L.ret) { const q = L.ret, e = q.r * q.r * (3 - 2 * q.r); hnd2(q.arm, _a); _b.lerpVectors(q.tip, _a, e); if (e < 0.93) lay(r, _a, _b, 0, 0.3 * e, 0); else r.visible = false; } else r.visible = false;
+    K.glint.visible = false; K.hook.visible = hk; if (hk) { const dist = cam && cam.position ? cam.position.distanceTo(K.oTip) : 10, h2 = Math.max(0.011 * fh * dist / 0.4, 1.1) * (0.2 + 0.8 * he); K.hook.position.copy(K.oTip); hnd2(L.fly ? L.fly.arm : L.cur.arm, _a); _d.subVectors(K.oTip, _a); if (_d.lengthSq() > 1e-6) K.hook.quaternion.setFromUnitVectors(UP, _d.normalize()); K.hook.scale.set(h2 * 0.7, h2 * 1.2, h2 * 0.7); }
+    if (L.pf > 0) { L.pf -= dt; const u = clamp(1 - L.pf / 0.18, 0, 1); K.puff.visible = true; K.puff.position.copy(L.px); K.puff.scale.setScalar(0.5 + u); K.puff.material.opacity = 0.45 * (1 - u); } else K.puff.visible = false;      // a small dust mark where the hook struck, on the wall only
+    S.l2 = (L.cur ? 1 : 0) + (L.fly ? 2 : 0) + (L.ret ? 4 : 0); };
   const drawLine = (dt) => { const sc = g.world && g.world.scene, a = S.a; if (!sc || !sc.add) return; const sw = !!(a && (a.mode === 'swing' || a.flash > 0)), pre = !sw && a && S.pre ? S.pre : null, on = sw || !!pre;
     if (!K.segs) { if (!on) return; K.segs = [ribbon('swing-line'), ribbon('swing-line-old')]; sc.add(K.segs[0]); sc.add(K.segs[1]);
       K.hook = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), new THREE.MeshBasicMaterial({ color: V2 ? 0xffe9a8 : 0x1b1d22 })); K.hook.frustumCulled = false; K.hook.name = 'swing-hook'; sc.add(K.hook);
       K.glint = new THREE.Mesh(new THREE.OctahedronGeometry(0.07, 0), new THREE.MeshBasicMaterial({ color: 0xffffff })); K.glint.frustumCulled = false; K.glint.visible = false; sc.add(K.glint);
       K.puff = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), new THREE.MeshBasicMaterial({ color: 0xf1ece0, transparent: true, opacity: 0.8, depthWrite: false })); K.puff.frustumCulled = false; K.puff.visible = false; sc.add(K.puff); }
+    if (V2) return line2(dt, sc, a);
     const m = K.segs[0], o = K.segs[1], cam = g.world.camera;
     if (K.rig && K.rig.ok && K.w > 0.5) K.rig.pos('hand_' + ((pre ? pre.arm : S.arm) === 'R' ? 'R' : 'L'), _a); else hand(_a);
     const key = sw ? a.ax * 7 + a.az : 0; if (K.cur && K.cur !== key) { K.old = 0.15; K.oTip.copy(K.tip); K.oFrom.copy(K.hnd); } K.cur = key;      // the line let go: it does not vanish
@@ -422,10 +442,10 @@ export function install(game) {
     const up = a && v > 1 ? clamp(a.vz / v, -1, 1) : 0, LA = (a && a.mode === 'coast' && S.pre ? S.pre.arm : S.arm) === 'R' ? 'R' : 'L', FA = LA === 'L' ? 'R' : 'L', fs = FA === 'R' ? 1 : -1;      // LA = the line arm (the hold's side), FA = the free arm, fs = +1 when the free arm is his right
     const fl = a && a.mode === 'coast' ? a.t : 9, tuck = co && !rolling, reach = false;
     const v2p = sw && V2 && a.qe > 0, P2 = v2p ? clamp((a.q < a.qm ? -(1 - a.q / Math.max(1, a.qm)) : (a.q - a.qm) / Math.max(1, a.qe - a.qm)) * 1.6, -1, 1) : 0; K.ph2 = (K.ph2 || 0) + (P2 - (K.ph2 || 0)) * Math.min(1, dt * 11);
-    const ph = v2p ? K.ph2 : sw ? clamp(((pl.x - a.px) * Math.cos(a.dir) + (pl.y - a.py) * Math.sin(a.dir)) / Math.max(4, a.L), -1, 1) : 0, curl = v2p ? sm((ph - 0.1) / 0.6) : 0;      // where he is on the arc: -1 coming down toward it, 0 under the pivot, +1 going up beyond it
+    const vert = v2p ? sm(((a.az - base - 1.6) / Math.max(1, Math.hypot(a.ax - pl.x, a.ay - pl.y, a.az - base - 1.6)) - 0.9) / 0.08) : 0, bt = v2p ? 1 - Math.abs(K.ph2) : 0; const ph = v2p ? K.ph2 : sw ? clamp(((pl.x - a.px) * Math.cos(a.dir) + (pl.y - a.py) * Math.sin(a.dir)) / Math.max(4, a.L), -1, 1) : 0, curl = v2p ? sm((ph - 0.1) / 0.6) : 0;      // where he is on the arc: -1 coming down toward it, 0 under the pivot, +1 going up beyond it
     // round 7: four shapes a cycle. ON THE LINE the body lies along the rope: sideways toward the hold (seen from behind) and fore-aft with the arc; legs together and trailing on the way down, kicking through and apart past the bottom;
     // the line arm straight up the cable, the free arm out for balance. LET GO: a ball, knees to chest, pitched forward. Then OPEN: a stride in the air, the OTHER arm reaching up for the next line.
-    if (sw) { _t.set(a.ax - pl.x, a.az - base - 1.0, -(a.ay - pl.y)).normalize(); const lat = _t.dot(_rt); _t.copy(UP).addScaledVector(_rt, clamp(lat * 1.5, -0.75, 0.75)).addScaledVector(_fw, clamp(-ph * 1.3, -0.8, 0.8)).normalize(); }
+    if (sw) { _t.set(a.ax - pl.x, a.az - base - 1.0, -(a.ay - pl.y)).normalize(); const lat = _t.dot(_rt); _t.copy(UP).addScaledVector(_rt, clamp(lat * 1.5, -0.75, 0.75)).addScaledVector(_fw, clamp(-ph * 1.3 + (v2p ? 0.35 + vert * 0.4 : 0), -0.8, 0.9)).normalize(); }
     else if (tuck) _t.set(0, 0.6, 0).addScaledVector(_fw, 0.7 + Math.min(fl, 0.45) * 1.6).normalize();      /* trunk pitched forward along his flight, 49 to 67 deg: a quarter-roll at most */
     else if (a) _t.set(0, 1, 0).addScaledVector(_fw, 0.3).addScaledVector(_rt, fs * 0.35).normalize();
     else _t.set(0, 1, 0);
@@ -437,7 +457,7 @@ export function install(game) {
       if (rolling) { _d.copy(_ub).multiplyScalar(0.25).addScaledVector(_fb, 0.9); k = 0.7; }
       else if (tuck) { _d.copy(_fw).multiplyScalar(0.8).addScaledVector(DN, 0.3).addScaledVector(K.lean, 0.2).addScaledVector(_rt, sg * 0.1); k = lead ? 0.4 : 0.55; }
       else if (reach) { _d.copy(DN).addScaledVector(_fw, lead ? 0.3 : -0.7).addScaledVector(_rt, sg * 0.3); k = lead ? 0.8 : 0.97; }
-      else { const kf = clamp(ph * 2.2 + 0.25, -1, 1.2); _d.copy(K.lean).multiplyScalar(-1).addScaledVector(_fw, kf * 1.1).addScaledVector(_rt, sg * (0.05 + Math.max(0, kf) * 0.22)); k = v2p ? 0.97 - curl * (lead ? 0.22 : 0.5) : kf > 0.2 ? (lead ? 1 : 0.72) : 0.97; if (v2p) _d.addScaledVector(UP, curl * 0.35); }
+      else { const cu = Math.max(curl, vert * 0.9), kf = clamp(ph * 2.2 + 0.25, -1, 1.2) + (v2p ? (lead ? 0.5 : -0.4) * bt : 0); _d.copy(K.lean).multiplyScalar(-1).addScaledVector(_fw, kf * 1.1).addScaledVector(_rt, sg * (0.05 + Math.max(0, kf) * 0.22)); k = v2p ? 0.97 - cu * (lead ? 0.3 : 0.5) - bt * (lead ? 0.2 : 0.06) : kf > 0.2 ? (lead ? 1 : 0.72) : 0.97; if (v2p) _d.addScaledVector(UP, cu * 0.35); }
       _d.normalize().multiplyScalar(len * k).add(_pp); _pole.copy(_fw).addScaledVector(K.lean, tuck || rolling ? 0.9 : 0.3); rig._ik(B['thigh_' + sd], B['shin_' + sd], B['foot_' + sd], _d, _pole, w); }
     const armTo = (s, rk, pole) => { rig.pos('upper_arm_' + s, _pp); _d.copy(_ax).normalize().multiplyScalar(rig.armLen * rk).add(_pp); rig.arm(s, _d, pole, w); };      // _ax = the way the arm points
     for (const s of ['L', 'R']) { const sg = s === 'L' ? -1 : 1, line = s === LA;
@@ -446,6 +466,8 @@ export function install(game) {
       else if (tuck) { _ax.copy(_fw).multiplyScalar(0.7).addScaledVector(DN, 0.6).addScaledVector(_rt, -sg * 0.1); armTo(s, 0.6, _pole.set(0, -1, 0).addScaledVector(_rt, sg)); }
       else if (reach) { if (!line) _ax.copy(UP).multiplyScalar(0.85).addScaledVector(_fw, 0.5).addScaledVector(_rt, sg * 0.4); else _ax.copy(DN).multiplyScalar(0.5).addScaledVector(_fw, -0.5).addScaledVector(_rt, sg * 0.7); armTo(s, 0.95, _pole.set(0, -1, 0).addScaledVector(_rt, sg * 0.5)); }
       else if (sw || (a && a.mode === 'swing')) { if (line) { rig.pos('upper_arm_' + s, _pp); _ax.set(a.ax, a.az, -a.ay).sub(_pp).normalize(); _d.copy(_pp).addScaledVector(_ax, rig.armLen * 0.97); rig.arm(s, _d, _pole.set(0, -1, 0).addScaledVector(_rt, sg * 0.5), w); rig.handDir(s, _ax, _rt, w); }
+        else if (v2p && S.pre && S.pre.t >= 0.08) { rig.pos('upper_arm_' + s, _pp); _ax.set(S.pre.x, S.pre.z, -S.pre.y).sub(_pp).normalize(); _d.copy(_pp).addScaledVector(_ax, rig.armLen * 0.97); rig.arm(s, _d, _pole.set(0, -1, 0).addScaledVector(_rt, sg * 0.5), w); }      /* round 20: the free arm throws the next line */
+        else if (v2p) { _ax.copy(_rt).multiplyScalar(sg * 0.55).addScaledVector(UP, -0.7 + Math.max(0, ph) * 0.9).addScaledVector(_fw, -0.7 + ph * 0.6); armTo(s, 0.95, _pole.copy(_fw).multiplyScalar(-1).addScaledVector(DN, 0.5)); }
         else { _ax.copy(_rt).multiplyScalar(sg).addScaledVector(UP, -0.25 + Math.max(0, ph) * 0.9).addScaledVector(_fw, -0.3 + ph * 0.5); armTo(s, 0.95, _pole.copy(_fw).multiplyScalar(-1).addScaledVector(DN, 0.5)); } } }
     const cw = a && a.mode === 'swing' ? LA : null; if (K.curlOn && K.curlOn !== cw) { rig.curl(K.curlOn, 0); K.curlOn = null; } if (cw) { rig.curl(cw, w); K.curlOn = cw; } };
   if (typeof g.syncVisuals === 'function') { const sync0 = g.syncVisuals.bind(g);

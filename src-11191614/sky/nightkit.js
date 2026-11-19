@@ -109,6 +109,7 @@ export async function makeKit(game, N) {
   try { const F = g.streets && g.streets.parts && g.streets.parts.furniture, kinds = F && F.kinds;
     const L = kinds && kinds.lampLod && kinds.lampLod.list; if (L) for (const it of L) { const s = (it[4] && typeof it[4].s === 'number' ? it[4].s : 1), h = it[3] || 0; heads.push([it[0] + Math.cos(h) * 2.8 * s, it[1] + Math.sin(h) * 2.8 * s, (8.4 + 1.25) * s + (it[2] || 0), 1]); }
     const Tw = kinds && kinds.twin && kinds.twin.list; if (Tw) for (const it of Tw) heads.push([it[0], it[1], 4.2 + (it[2] || 0), 0.6]);
+    const Pl = kinds && kinds.plamp && kinds.plamp.list; if (Pl) for (const it of Pl) heads.push([it[0], it[1], 3.52 + (it[2] || 0), 1]);     /* merge2 round 33: the small parks' lamp posts (streets/furniture.js kind 'plamp', streets/parklamps.js): a pool and a glow each */
   } catch (e) { console.warn('[night] lamp list: ' + e.message); }
   K.lampN = heads.length; K.heads = heads;      /* light, rain 2: sky/rain.js reads the lamp heads */
   if (heads.length) {

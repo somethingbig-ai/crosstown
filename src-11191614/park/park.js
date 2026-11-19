@@ -8,7 +8,7 @@
 // Switches: ?park=0 the game without any of this; ?parkdata=test a made-up park (testdata.js); ?parknear= / ?parkfar= distances; ?parktrees=0.
 import * as THREE from 'three';
 import { makeTerrain, hook, CELL, N } from './terrain.js';
-import { breathe, disposeGroup } from './mat.js';
+import { breathe, disposeGroup, NORTH17 } from './mat.js';
 
 export async function init(game) {
   const Q = game.P; if (Q && Q.get('park') === '0') return null;
@@ -90,7 +90,13 @@ export async function start(game) {
     }
     C.fetchFailures = 0; C.retryAfter = 0; C.data = d.data; C.cm = d.cm; C.F = G.prepHeights(C.cm, C.i, C.j, C.data, park.outline, cut ? Cu.INSET : 0); T.set(C.i, C.j, C.cm);
     const wet = (C.data.areas || []).filter((a) => (a.kind === 'water' || a.kind === 'ice' || a.kind === 'building') && a.ring && a.ring.length > 2);      // no tree stands in water, on the rink or through a roof
-    C.trees = treesOn ? Tr.parse(d.trees, C.data.paths, park.index.test ? 6 : 8).filter((t) => t.x >= C.i * CELL && t.x < C.i * CELL + CELL && t.y >= C.j * CELL && t.y < C.j * CELL + CELL && T.owns(t.x, t.y) && !wet.some((a) => pipR(t.x, t.y, a.ring))) : [];
+    // handoff-14: a ring's holes are read (an island is land: its trees were dropped with the water's), and a trunk nearer than 1.2 m to a water's edge
+    // (the lidar's crown top leans out over the bank; in the stills such a trunk stood in the shallows) is moved straight back to 1.5 m from it; ?parkbank=0 = as before
+    const bank14 = !(game.P && game.P.get('parkbank') === '0') && C.j * CELL >= NORTH17      /* handoff-17: north of the line only (mat.js): at the Pond the rule moved or dropped trees, and every later tree of the chunk changed its look with its place in the list (merge's south_e: other crowns, other colours) */, inWet = (x, y) => wet.some((a) => pipR(x, y, a.ring) && !(bank14 && (a.holes || []).some((h) => h.length > 2 && pipR(x, y, h))));
+    const offBank = (t) => { if (!bank14) return true; for (const a of wet) { if (a.kind !== 'water') continue; for (const r of [a.ring, ...(a.holes || [])]) { let bd = 1.2, bx = 0, by = 0;
+      for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const p = r[i], q = r[j], dx = q[0] - p[0], dy = q[1] - p[1], u = Math.max(0, Math.min(1, ((t.x - p[0]) * dx + (t.y - p[1]) * dy) / (dx * dx + dy * dy || 1))), nx = p[0] + dx * u, ny = p[1] + dy * u, dd = Math.hypot(t.x - nx, t.y - ny); if (dd < bd) { bd = dd; bx = nx; by = ny; } }
+      if (bd < 1.2) { if (bd < 0.01) return false; const x = bx + (t.x - bx) / bd * 1.5, y = by + (t.y - by) / bd * 1.5; if (inWet(x, y)) return false; t.x = x; t.y = y; } } } return true; };
+    C.trees = treesOn ? Tr.parse(d.trees, C.data.paths, park.index.test ? 6 : 8).filter((t) => t.x >= C.i * CELL && t.x < C.i * CELL + CELL && t.y >= C.j * CELL && t.y < C.j * CELL + CELL && T.owns(t.x, t.y) && !inWet(t.x, t.y) && offBank(t)) : [];
     { const W = (C.data.structures || []).filter((q) => q.kind === 'wall' && q.line && q.line.length > 1);      /* critic r1, Nov 16: a trunk whose lidar top lay over the wall stood IN the wall (its root flare poked through, still a): moved 1.5 m off the wall line, to its own side */
       if (W.length) for (const t of C.trees) for (const q of W) for (let k = 0; k + 1 < q.line.length; k++) { const p0 = q.line[k], p1 = q.line[k + 1], dx = p1[0] - p0[0], dy = p1[1] - p0[1], L2 = dx * dx + dy * dy || 1, u = Math.max(0, Math.min(1, ((t.x - p0[0]) * dx + (t.y - p0[1]) * dy) / L2)), nx = t.x - p0[0] - dx * u, ny = t.y - p0[1] - dy * u, d = Math.hypot(nx, ny); if (d < 1.5 && d > 0.02) { t.x += nx / d * (1.5 - d); t.y += ny / d * (1.5 - d); t.mv = 1; } }
       /* look pass k2: a moved tree can land against the next wall piece or on a path: such a tree is left out (tools/treewall.py --sim2 counts them) */

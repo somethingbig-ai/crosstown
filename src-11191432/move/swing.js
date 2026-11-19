@@ -50,7 +50,7 @@ export function install(game) {
         if (!fb) for (let tau = 0.1; tau <= 2; tau += 0.05) { const ph = Math.atan(Math.max(0, N.G * tau - vz) / Math.max(v, 6)); if (z0 + vz * tau - 0.5 * N.G * tau * tau - zb - Lr * (1 - Math.cos(ph)) <= 0) { if (tau > 0.12) { pf = v * tau + Lr * Math.sin(ph); slack = true; } break; } }
         if (pf < 0) pf = Lr > rise + 1 ? Math.sqrt(Lr * Lr - rise * rise) : clamp(8 + v * 0.5, 10, 22); pf = Math.min(pf, 60);
         let sc = -Math.abs(fwd - pf) * 0.9 - Math.abs(al - 11) * 0.7 + Math.min(rise, 25) * 0.4 - (D > 85 ? (D - 85) * 2 : 0) - (fwd < 4 ? 25 : 0) - (fwd < 10 ? (10 - fwd) * 2 : 0);
-        if (V2) sc -= Math.max(0, Math.atan2(rise, d) - 0.6) * 30 + Math.max(0, Math.abs(off) - 0.9) * 20;      /* round 13: holds inside the view are preferred */ if (side && side === -S.side) sc += 14; if (fb) sc -= 60;
+        if (V2) sc -= Math.max(0, 0.42 - Math.atan2(rise, d)) * 40 + Math.max(0, Math.atan2(rise, d) - 0.6) * 30 + Math.max(0, Math.abs(off) - 0.9) * 20;      /* round 13: holds inside the view are preferred */ if (side && side === -S.side) sc += 14; if (fb) sc -= 60;
         if (sc > bs) { bs = sc; best = { x: ex, y: ey, z: ez, side, fb: !!fb, fwd, lat, gmax, pf, L: Lr, slack }; } } };
     for (const b of BEAR) tryBear(b, false);
     if (!best) { for (const b of BEAR) tryBear(b, true); for (const b of ALL) tryBear(b, true); }
@@ -90,7 +90,7 @@ export function install(game) {
     (S.dbg || (S.dbg = [])).push([+a.x.toFixed(0), +a.y.toFixed(0), +a.z.toFixed(1), Math.round(dir * 57.3), Math.round(look * 57.3), sr ? +sr.off.toFixed(1) : 99, Math.round(h.z), Math.round(a.L || 0), h.fb ? 1 : 0, Math.round(h.gmax), Math.round(vh), S.relA || 0]); if (S.dbg.length > 400) S.dbg.shift();      /* per line: x, y, z, heading, view yaw, m left of the centre line, hold z, rope, vault, floor, speed, last let-go angle */
     if (h.side) S.side = h.side; if (!h.fb) S.arm = h.side > 0 ? 'L' : h.side < 0 ? 'R' : S.arm === 'L' ? 'R' : 'L'; S.a = a; ST.attached++; if (h.fb) ST.fallback++; if (auto) ST.reanchor++; S.last = { ok: true, rise: h.z - a.z, side: h.side, fb: h.fb };
     pl.roof = null; G.mine = false; return true; };
-  const end = () => { S.a = null; S.axis = undefined; if (g.jump && S.jumpWas !== undefined) { g.jump.on = S.jumpWas; S.jumpWas = undefined; } };
+  const end = () => { S.a = null; S.tl18 = null; S.axis = undefined; if (g.jump && S.jumpWas !== undefined) { g.jump.on = S.jumpWas; S.jumpWas = undefined; } };
   const toFree = (space) => { const a = S.a, fr = F(); end(); ST.toFree++;      // grfree's fall from here: its landing rule, its parachute
     const vh = Math.hypot(a.vx, a.vy), k = !space && vh > 14 ? 14 / vh : 1;      // coming down to land he runs it out: the forward speed is not a fall
     if (fr && fr.take({ x: a.x, y: a.y, z: a.z }, { vx: a.vx * k, vy: a.vy * k, vz: a.vz })) { if (space && fr.a) { fr.a.t = Math.max(fr.a.t, 0.31); fr.spaceWant = true; ST.chutes++; } return; }
@@ -148,7 +148,7 @@ export function install(game) {
   // X held: at the end of the arc the next line is already out and takes over in the same frame (no cable-less flight); his velocity is carried into the new arc by a decaying offset (C1, BL s).
   // X up: the fling (speed x FLING, at least 6 m/s up), then round 7's free flight / landing / parachute rules. ?swingv=1 = the old pendulum.
   const V2 = !(g.P && g.P.get && g.P.get('swingv') === '1'); S.v2 = V2;
-  const N2 = { BOT: 7.5, CLR: 6.5, CAP: 37, GAIN: 4.5, GAINW: 7, VMIN: 16, DK: 1.9, DMIN: 34, DMAX: 70, BL: 0.5, TURN: 1.3, DIP: 0.1, FLING: 1.06, PRE: 0.3, CAMD: 4.2, FOV0: 62, FOV1: 72, HE: 8.5, ACC: 56 }; S.N2 = N2;
+  const N2 = { BOT: 7.5, CLR: 6.5, CAP: 37, GAIN: 4.5, GAINW: 7, VMIN: 16, DK: 1.9, DMIN: 34, DMAX: 70, BL: 0.5, TURN: 1.3, DIP: 0.1, FLING: 1.06, PRE: 0.3, CAMD: 4.2, FOV0: 58, FOV1: 66, HE: 8.5, ACC: 56 }; S.N2 = N2;
   const sm = (u) => { u = clamp(u, 0, 1); return u * u * (3 - 2 * u); };
   // round 12: the dip is two half cosines (z0 down to zb over qm, up to z1 by qe): level at both ends, so one arc hands his velocity to the next unchanged; steepest half way down and half way up
   const zArc = (a, q) => q < a.qm ? a.zb + (a.z0 - a.zb) * (1 + Math.cos(Math.PI * q / a.qm)) / 2 : a.zb + (a.z1 - a.zb) * (1 - Math.cos(Math.PI * clamp((q - a.qm) / (a.qe - a.qm), 0, 1))) / 2,
@@ -157,11 +157,11 @@ export function install(game) {
     if (sr && sr.d < 0.44) th = wrapPi(sr.ang + clamp(-(sr.off || 0) * 0.02, -0.2, 0.2));      // within 25 deg of the street: along it, drawn to its middle
     else if (wallAt(a, th, 12) || wallAt(a, th, 26)) { const s2 = street(a.x, a.y, hd); if (s2 && s2.d < 0.7) th = s2.ang; }      // a facade where he looks: stay on the street until the side street opens
     return th; };
-  const fling = (a, up) => { a.mode = 'coast'; a.t = 0; a.peak = a.z; a.rewant = S.held ? 0.12 : 0; a.vx *= N2.FLING; a.vy *= N2.FLING; if (a.vz < up) a.vz = up; a.auto = false; a.slack = false; a.taut = false; S.pre = null; S.preN = 9; };
+  const fling = (a, up) => { a.mode = 'coast'; a.t = 0; a.peak = a.z; a.rewant = S.held ? 0.12 : 0; a.vx *= N2.FLING; a.vy *= N2.FLING; if (a.vz < up) a.vz = up; a.auto = false; a.slack = false; a.taut = false; S.pre = null; S.preN = 9; S.tl18 = null; };
   const fire2 = (auto) => { if (!auto) ST.presses++; const fr = F(), fa = fr && fr.a, C = g.cam; let a = S.a; const surf = !a && !fa;
     if (!a) { if (fa) { a = { x: fa.x, y: fa.y, z: fa.z, vx: fa.vx, vy: fa.vy, vz: fa.vz }; } else { const sp = pl.speed || 0; a = { x: pl.x, y: pl.y, z: pl.roof && pl.alt > 1 ? pl.alt : Math.max(pl.alt || 0, ground(pl.x, pl.y)), vx: Math.cos(pl.h) * sp, vy: Math.sin(pl.h) * sp, vz: 0 }; } }
     const vh = Math.hypot(a.vx, a.vy), look = C && typeof C.yaw === 'number' ? C.yaw : pl.h, hd0 = vh > 4 ? Math.atan2(a.vy, a.vx) : look, mx = S.a ? S.mx : (g.input && g.input.mx) || 0;
-    let dir = heading2(a, look, mx, hd0);
+    let dir = heading2(a, look, mx, hd0); if (V2 && S.a && S.tl18 && S.tl18.t > 0) dir = S.tl18.ang;
     if (surf && pl.roof && auto) { const R = g.roads; let ne = null; try { ne = R && R.nearestEdge && R.nearestEdge(a.x, a.y, 150); } catch (e) { ne = null; } if (ne && isFinite(ne.x + ne.y) && Math.hypot(ne.x - a.x, ne.y - a.y) > 4) dir = Math.atan2(ne.y - a.y, ne.x - a.x); }
     if (edgeOut(a.x, a.y, Math.cos(dir), Math.sin(dir))) { ST.edgeNo = (ST.edgeNo || 0) + 1; S.last = { ok: false, edge: true }; if (S.a) S.a.rewant = 0.5; return false; }
     const gnd = ground(a.x, a.y), hz = a.z + N.HAND, low = surf || a.z - gnd < 2.5; let h = S.find(a.x, a.y, hz, dir, Math.max(vh, 14), 0);
@@ -186,10 +186,12 @@ export function install(game) {
   const fly2 = (dt) => { let a = S.a; const C = g.cam; a.t += dt; if (a.flash > 0) a.flash -= dt; if (a.kickT > 0) a.kickT -= dt;
     if (!S.held) { fling(a, 6); ST.releases++; return fly(dt); }      // X up: the fling
     if (edgeOut(a.x, a.y, a.vx, a.vy)) { ST.edgeDrops = (ST.edgeDrops || 0) + 1; S.pre = null; a.vz = Math.max(a.vz, 8); return toFree(a.z - ground(a.x, a.y) > 5); }      // the map's edge, a park, the river: a long high fling and the parachute rule
-    scout(a); const th = heading2(a, C && typeof C.yaw === 'number' ? C.yaw : a.hd, S.mx, a.hd); a.dir = th; S.axis = th;
+    scout(a); let th = heading2(a, C && typeof C.yaw === 'number' ? C.yaw : a.hd, S.mx, a.hd);
+    { const L = S.tl18, lk = C && typeof C.yaw === 'number' ? C.yaw : a.hd; if (L && (L.t -= dt) > 0 && Math.abs(wrapPi(L.ang - a.hd)) > 0.1 && Math.abs(wrapPi(lk - L.look)) < 0.5) th = L.ang;      // round 18: a turn once begun is flown to its end as one arc
+      else { S.tl18 = null; if (Math.abs(wrapPi(th - a.hd)) > 0.5) { S.tl18 = { ang: th, t: 2.4, look: lk }; ST.turns = (ST.turns || 0) + 1; } } } a.dir = th; S.axis = th;
     const g0 = [a.x, a.y, a.z, a.vx, a.vy, a.vz], n = Math.min(24, Math.max(1, Math.ceil(dt / N.SUB))), h = dt / n; let done = false;
-    for (let i = 0; i < n && !done; i++) { const wt = a.avoid ? a.avoid * 1.8 : clamp(wrapPi(th - a.hd) * 3, -Math.min(N2.TURN, 42 / (a.v1 * (1 - 0.45 * (a.sk || 0)))), Math.min(N2.TURN, 42 / (a.v1 * (1 - 0.45 * (a.sk || 0))))); a.w += (wt - a.w) * Math.min(1, 9 * h); a.hd = wrapPi(a.hd + a.w * h);
-      const u = clamp(a.q / a.qe, 0, 1), sp = (a.v0 + (a.v1 - a.v0) * sm(u) + N2.DIP * a.v1 * Math.sin(Math.PI * u)) * (1 - 0.45 * (a.sk = (a.sk || 0) + (sm(Math.abs(wrapPi(th - a.hd)) / 1.2) - (a.sk || 0)) * Math.min(1, 3 * h))), sl = slArc(a, a.q), dq = sp / Math.sqrt(1 + sl * sl) * h, zt = zArc(a, a.q + dq);
+    for (let i = 0; i < n && !done; i++) { const wt = a.avoid ? a.avoid * 1.8 : clamp(wrapPi(th - a.hd) * 3, -Math.min(1.5, 44 / (a.v1 * (1 - 0.25 * (a.sk || 0)))), Math.min(1.5, 44 / (a.v1 * (1 - 0.25 * (a.sk || 0))))); a.w += (wt - a.w) * Math.min(1, 9 * h); a.hd = wrapPi(a.hd + a.w * h);
+      const u = clamp(a.q / a.qe, 0, 1), sp = (a.v0 + (a.v1 - a.v0) * sm(u) + N2.DIP * a.v1 * Math.sin(Math.PI * u)) * (1 - 0.25 * (a.sk = (a.sk || 0) + (sm(Math.abs(wrapPi(th - a.hd)) / 1.2) - (a.sk || 0)) * Math.min(1, 3 * h))), sl = slArc(a, a.q), dq = sp / Math.sqrt(1 + sl * sl) * h, zt = zArc(a, a.q + dq);
       let cx = Math.cos(a.hd), cy = Math.sin(a.hd), nbx = a.bx + cx * dq, nby = a.by + cy * dq, Tn = top(nbx, nby);
       { const zw = zt + a.lift + 0.4, wl = top(nbx - cy * 2.5 + cx * 2, nby + cx * 2.5 + cy * 2) > zw, wr = top(nbx + cy * 2.5 + cx * 2, nby - cx * 2.5 + cy * 2) > zw; if (wl !== wr) { a.hd = wrapPi(a.hd + (wl ? -2.2 : 2.2) * h); a.w = 0; ST.shy = (ST.shy || 0) + 1; } }      // round 12: a facade within 2.5 m on one side: he turns away from it before it is met
       if (Tn > zt + a.lift + 0.4 || Tn <= -0.5 || !inMap(nbx, nby)) {      // a wall after all (the bend did not clear it): he slides along it, never kicks or sticks
@@ -232,29 +234,29 @@ export function install(game) {
     // into a wall he is flying along. Horizon level by default (the look's pitch has a quarter of its effect); roll only while the travel direction turns, 6 deg at most, level again within 0.4 s.
     const hdv = vh > 6 ? Math.atan2(a.vy, a.vx) : a.mode === 'swing' && typeof a.hd === 'number' ? a.hd : C.yaw;
     if (!S.cOn) { S.cOn = true; S.cHd = vh > 6 ? hdv : C.yaw; S.cHr = hdv; S.cW = 0; S.cLk = 0; S.cLK = 0.8; S.cyo = 0; S.ctx = tx0; S.cty = ty0; S.cz = tz0; S.camK = 1; S.cFov = C.fov || 58; S.roll = 0; S.cox = undefined; S.cUp = 0; S.cAy = 0; S.cD = N2.CAMD; }
-    S.cW += ((vh > 6 ? clamp(wrapPi(hdv - S.cHr) / d, -3, 3) : 0) - S.cW) * E(0.15); S.cHr = hdv; S.cHd = wrapPi(S.cHd + wrapPi(hdv - S.cHd) * E(0.22));
+    S.cW += ((vh > 6 ? clamp(wrapPi(hdv - S.cHr) / d, -3, 3) : 0) - S.cW) * E(0.15); S.cHr = hdv; { const L = a.mode === 'swing' ? S.tl18 : null, st = wrapPi((L ? L.ang : hdv) - S.cHd) * E(0.22), mxs = 1.7 * d; S.cHd = wrapPi(S.cHd + (L ? clamp(st, -mxs, mxs) : st)); }
     { const lc = Math.cos(C.yaw), ls = Math.sin(C.yaw), fac = top(tx0 + lc * 8, ty0 + ls * 8) > tz0 + 3 || top(tx0 + lc * 16, ty0 + ls * 16) > tz0 + 3; S.cLK += ((fac ? 0.2 : 0.8) - S.cLK) * E(0.3); S.cLk += (clamp(wrapPi(C.yaw - S.cHd), -S.cLK, S.cLK) * 0.55 - S.cLk) * E(0.2); }
-    const kp = E(0.07); S.ctx += (tx0 + a.vx * 0.07 - S.ctx) * kp; S.cty += (ty0 + a.vy * 0.07 - S.cty) * kp; S.cz += (tz0 - S.cz) * E(0.25);
-    { const l = Math.hypot(tx0 - S.ctx, ty0 - S.cty); if (l > 1.5) { S.ctx = tx0 + (S.ctx - tx0) * 1.5 / l; S.cty = ty0 + (S.cty - ty0) * 1.5 / l; } } S.cz = clamp(S.cz, tz0 - 4, tz0 + 4); const czs = tz0 - 1.2 * Math.tanh((tz0 - S.cz) / 1.2);      // he falls and rises in the frame, 1.2 m at most
+    const kp = E(0.07); S.ctx += (tx0 + a.vx * 0.07 - S.ctx) * kp; S.cty += (ty0 + a.vy * 0.07 - S.cty) * kp; S.cz += (tz0 - S.cz) * E(0.5);
+    { const l = Math.hypot(tx0 - S.ctx, ty0 - S.cty); if (l > 1.5) { S.ctx = tx0 + (S.ctx - tx0) * 1.5 / l; S.cty = ty0 + (S.cty - ty0) * 1.5 / l; } } S.cz = clamp(S.cz, tz0 - 4, tz0 + 4); const dz18 = (tz0 - S.cz) * 0.5, cp18 = dz18 > 0 ? 0.75 : 0.4, czs = tz0 - cp18 * Math.tanh(dz18 / cp18);      // he falls and rises in the frame, 1.2 m at most
     S.cFov += (N2.FOV0 + (N2.FOV1 - N2.FOV0) * sp - S.cFov) * E(0.45); const th2 = Math.tan(S.cFov * Math.PI / 360), pitch = clamp(0.06 + (clamp(C.pitch, -0.6, 0.9) - 0.18) * 0.25, -0.12, 0.2);
     // HIS SIZE HELD: the distance is set from his length as the camera sees it (real bones, across the view) so that he is 21 % of the frame's height at any fov and in any pose; 3.3 to 6 m
     { let Lp = 1.25; try { const rig = K.rig && K.rig.ok && K.w > 0.5 ? K.rig : null; if (rig && cam.getWorldDirection) { rig.pos('head', _h1); _h1.y += 0.15; let m = 0; cam.getWorldDirection(_gq2);
           for (const f of ['foot_L', 'foot_R']) { rig.pos(f, _h2); _h2.sub(_h1); const al = _h2.dot(_gq2); m = Math.max(m, Math.sqrt(Math.max(0, _h2.lengthSq() - al * al))); } if (m > 0.3) Lp = m; } } catch (e) { fail('size', e); }
-      S.cLp = Lp; S.cD += (clamp(Lp / (2 * 0.21 * th2), 3.3, 6) - S.cD) * E(0.35); }
-    const D = S.cD, yaw0 = wrapPi(S.cHd + S.cLk), at = (yw) => { const hd = D * Math.cos(pitch); _c.x = S.ctx - Math.cos(yw) * hd; _c.y = S.cty - Math.sin(yw) * hd; _c.z = czs + 0.5 + D * Math.sin(pitch); },
-      bad = (yw) => { at(yw); if (clearTo(tx0, ty0, tz0, _c.x, _c.y, _c.z, 10) < 1) return true; const c = Math.cos(yw), s = Math.sin(yw); return top(_c.x - s * 3, _c.y + c * 3) > _c.z + 0.3 || top(_c.x + s * 3, _c.y - c * 3) > _c.z + 0.3 || top(_c.x - c * 3, _c.y - s * 3) > _c.z + 0.3; };
+      S.cLp = Lp; S.cD += (clamp(1.62 / (2 * 0.21 * th2), 4.6, 6.6) - S.cD) * E(0.5); }
+    const D = S.cD, yaw0 = wrapPi(S.cHd + S.cLk), at = (yw) => { const hd = D; _c.x = S.ctx - Math.cos(yw) * hd; _c.y = S.cty - Math.sin(yw) * hd; _c.z = czs + 2.3 + D * Math.sin(pitch); },
+      bad = (yw) => { at(yw); if (clearTo(tx0, ty0, tz0, _c.x, _c.y, _c.z, 10) < 1) return true; const c = Math.cos(yw), s = Math.sin(yw); return top(_c.x - s * 4.5, _c.y + c * 4.5) > _c.z + 0.3 || top(_c.x + s * 4.5, _c.y - c * 4.5) > _c.z + 0.3 || top(_c.x - c * 3, _c.y - s * 3) > _c.z + 0.3; };
     // a wall (or a tree crown) within 3 m of the camera or between it and him: the camera swings round him to the open side, eased over 0.3 s; it is pulled in only if no side is open
     { let pick = 0; if (bad(yaw0)) { pick = null; const sg = S.cyo < 0 ? -1 : 1; for (const o of [0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.25, -1.25]) if (!bad(yaw0 + o * sg)) { pick = o * sg; break; } if (pick === null) pick = S.cyo; ST.camSw = (ST.camSw || 0) + 1; } S.cyo += (pick - S.cyo) * E(0.12); }
     const yaw = wrapPi(yaw0 + S.cyo), cyw = Math.cos(yaw), syw = Math.sin(yaw); at(yaw); let wx = _c.x, wy = _c.y, wz = _c.z; { const gw = ground(wx, wy); if (wz < gw + 0.7 && gw < tz0 + 1) wz = gw + 0.7; }
     const d0 = Math.hypot(wx - tx0, wy - ty0, wz - tz0) || 1, kc = clearTo(tx0, ty0, tz0, wx, wy, wz, 14); S.camK += (kc - S.camK) * Math.min(1, d * (kc < S.camK ? 6 : 1.4)); const K2 = clamp(S.camK, Math.min(1, N.CAMIN / d0), 1);
     wx = tx0 + (wx - tx0) * K2; wy = ty0 + (wy - ty0) * K2; wz = tz0 + (wz - tz0) * K2;
-    { const ox = wx - tx0, oy = wy - ty0, oz = wz - tz0, kf = E(0.09); if (S.cox === undefined) { S.cox = ox; S.coy = oy; S.coz = oz; } else { S.cox += (ox - S.cox) * kf; S.coy += (oy - S.coy) * kf; S.coz += (oz - S.coz) * kf; } wx = tx0 + S.cox; wy = ty0 + S.coy; wz = tz0 + S.coz; }      // no cuts: his place in the view is eased whatever moved the camera
+    { const ox = wx - tx0, oy = wy - ty0, oz = wz - tz0, kf = E(0.09); if (S.cox === undefined) { S.cox = ox; S.coy = oy; S.coz = oz; } else { S.cox += (ox - S.cox) * kf; S.coy += (oy - S.coy) * kf; S.coz += (oz - S.coz) * E(0.03); } wx = tx0 + S.cox; wy = ty0 + S.coy; wz = tz0 + S.coz; }      // no cuts: his place in the view is eased whatever moved the camera
     S.cDist = Math.hypot(wx - tx0, wy - ty0, wz - tz0);
     // THE HOLD SEEN: for a line's first 0.6 s the view tips up (8 deg at most) and a little sideways (6 deg) if the hook would sit outside the frame
     { let up = 0, sd = 0; if (a.mode === 'swing' && a.t < 0.6) { const el = Math.atan2(a.az - wz, Math.hypot(a.ax - wx, a.ay - wy)), vh2 = Math.atan(th2), br = wrapPi(Math.atan2(a.ay - wy, a.ax - wx) - yaw), hh = Math.atan(th2 * (cam.aspect || 16 / 9));
         up = clamp(el - (vh2 - 0.1) - 0.05, 0, 0.14); sd = Math.sign(br) * clamp(Math.abs(br) - (hh - 0.14), 0, 0.1); } S.cUp += (up - S.cUp) * E(up > S.cUp ? 0.12 : 0.4); S.cAy += (sd - S.cAy) * E(Math.abs(sd) > Math.abs(S.cAy) ? 0.12 : 0.4); }
-    const ly = yaw + S.cAy, lz = czs + 1.6 + S.cUp * 14 - (pitch - 0.06) * 10; cam.position.set(wx, wz, -wy); cam.up.set(0, 1, 0); cam.lookAt(tx0 + Math.cos(ly) * 10, lz, -(ty0 + Math.sin(ly) * 10));
-    const rt = Math.abs(S.cW) > 0.15 ? clamp(-S.cW * 0.09, -0.105, 0.105) : 0; S.roll += (rt - S.roll) * E(0.13); if (Math.abs(S.roll) > 0.002) cam.rotateZ(S.roll);
+    const ly = yaw + S.cAy, lz = czs + 0.6 + S.cUp * 10 - (pitch - 0.06) * 10; cam.position.set(wx, wz, -wy); cam.up.set(0, 1, 0); cam.lookAt(tx0 + Math.cos(ly) * 10, lz, -(ty0 + Math.sin(ly) * 10));
+    const rt = Math.abs(S.cW) > 0.15 ? clamp(-S.cW * 0.06, -0.06, 0.06) : 0; S.roll += (rt - S.roll) * E(0.13); if (Math.abs(S.roll) > 0.002) cam.rotateZ(S.roll);
     S.cF0 = C.fov; S.cPit = C.pitch; C.tx = pl.x; C.ty = pl.y; C.tz = pl.alt + 1.5; };
   const fly = (dt) => { let a = S.a; if (V2 && a.mode === 'swing') return fly2(dt); a.t += dt; if (a.kickT > 0) a.kickT -= dt; if (a.flash > 0) a.flash -= dt;
     if (a.mode === 'swing' && !S.held && !a.auto) { a.mode = 'coast'; a.t = 0; a.peak = a.z; a.rewant = 0; ST.releases++; if (a.vz < 4 && a.z - Math.max(ground(a.x, a.y), a.gA) < 4) a.vz = 4; }      // let go low: the line flicks him up enough to reach the next shot
@@ -374,8 +376,8 @@ export function install(game) {
   // round 10: the line is a 12-piece ribbon (pale edges, dark core) that sags while slack; the NEXT line flies out at S.pre during the rise; the line let go whips away from his hand toward its hook for 0.28 s; a small dark hook with a glint
   const NS = 12, _w = V3(), _e = V3(), _hd = V3(); K.oTip = V3(); K.oFrom = V3(); K.hnd = V3(); K.sag = 0; K.old = 0;
   const ribbon = (name) => { const geo = new THREE.BufferGeometry(), nv = (NS + 1) * 4; geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(nv * 3), 3)); const col = new Float32Array(nv * 3), ix = [];
-    for (let i = 0; i <= NS; i++) { col.set([0.8, 0.83, 0.87, 0.8, 0.83, 0.87, 0.05, 0.06, 0.08, 0.05, 0.06, 0.08], i * 12); if (i < NS) { const p = i * 4; ix.push(p, p + 1, p + 4, p + 4, p + 1, p + 5, p + 2, p + 3, p + 6, p + 6, p + 3, p + 7); } }
-    geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.setIndex(ix); const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })); m.frustumCulled = false; m.name = name; m.visible = false; return m; };
+    for (let i = 0; i <= NS; i++) { col.set([0.1, 0.11, 0.13, 0.1, 0.11, 0.13, 1, 0.97, 0.86, 1, 0.97, 0.86], i * 12); if (i < NS) { const p = i * 4; ix.push(p, p + 1, p + 4, p + 4, p + 1, p + 5, p + 2, p + 3, p + 6, p + 6, p + 3, p + 7); } }
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3)); geo.setIndex(ix); const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, toneMapped: false })); m.frustumCulled = false; m.name = name; m.visible = false; return m; };
   const lay = (m, A, B, sag, wave, phs) => { const cam = g.world.camera, P = m.geometry.attributes.position, fh = 2 * Math.tan(((cam && cam.fov) || 60) * Math.PI / 360); _d.subVectors(B, A); const L = Math.max(0.01, _d.length()); _d.multiplyScalar(1 / L); _w.crossVectors(_d, UP); if (_w.lengthSq() < 1e-6) _w.set(1, 0, 0); _w.normalize();
     for (let i = 0; i <= NS; i++) { const u = i / NS, k = i * 4; _e.lerpVectors(A, B, u); _e.y -= sag * 4 * u * (1 - u); if (wave) _e.addScaledVector(_w, wave * Math.sin(u * 9 + phs) * (1 - u));
       _p.copy(cam && cam.position ? cam.position : A).sub(_e); const dist = _p.length() || 1, wd = Math.max(0.03, N.LINEPX * fh * dist); _q.crossVectors(_d, _p); if (_q.lengthSq() < 1e-8) _q.set(1, 0, 0); _q.normalize(); _p.multiplyScalar(0.02 / dist);
@@ -389,8 +391,8 @@ export function install(game) {
       K.puff = new THREE.Mesh(new THREE.SphereGeometry(0.3, 8, 6), new THREE.MeshBasicMaterial({ color: 0xf1ece0, transparent: true, opacity: 0.8, depthWrite: false })); K.puff.frustumCulled = false; K.puff.visible = false; sc.add(K.puff); }
     const m = K.segs[0], o = K.segs[1], cam = g.world.camera;
     if (K.rig && K.rig.ok && K.w > 0.5) K.rig.pos('hand_' + ((pre ? pre.arm : S.arm) === 'R' ? 'R' : 'L'), _a); else hand(_a);
-    const key = sw ? a.ax * 7 + a.az : 0; if (K.cur && K.cur !== key) { K.old = 0.28; K.oTip.copy(K.tip); K.oFrom.copy(K.hnd); } K.cur = key;      // the line let go: it does not vanish
-    if (K.old > 0) { K.old -= dt; const e = 1 - clamp(K.old / 0.28, 0, 1); _hd.lerpVectors(K.oFrom, K.oTip, e * e * 0.85); _hd.y += 1.2 * e; if (K.old > 0) lay(o, _hd, K.oTip, 0, 0.3 + 0.9 * (1 - e), K.clock * 30); else o.visible = false; } else o.visible = false;
+    const key = sw ? a.ax * 7 + a.az : 0; if (K.cur && K.cur !== key) { K.old = 0.15; K.oTip.copy(K.tip); K.oFrom.copy(K.hnd); } K.cur = key;      // the line let go: it does not vanish
+    if (K.old > 0) { K.old -= dt; const e = 1 - clamp(K.old / 0.15, 0, 1); _hd.lerpVectors(K.oTip, _a, e); if (K.old > 0 && e < 0.92) lay(o, _a, _hd, 0, 0, 0); else o.visible = false; } else o.visible = false;
     if (!on) { m.visible = false; K.hook.visible = false; K.glint.visible = false; K.puff.visible = false; K.sag = 0; K.wasPre = false; return; }
     let sag = 0, struck = false;
     if (pre) { const e = clamp(pre.t / 0.25, 0, 1); _b.set(pre.x, pre.z, -pre.y); const Lp = _b.distanceTo(_a); _b.lerpVectors(_a, _b, e); K.tip.copy(_b); K.wasPre = true; sag = K.sag = Lp * e * 0.07; struck = e >= 1; }      // thrown early: flying out, then hooked but slack
@@ -409,6 +411,8 @@ export function install(game) {
     if (K.rigVis !== vis) { K.rigVis = vis; K.saved = null; try { K.rig = new K.Rig(vis, vis.name || 'player'); } catch (e) { K.rig = null; fail('rig', e); } }
     const rig = K.rig; if (!rig || !rig.ok) return; const B = rig.B, w = K.w * K.w * (3 - 2 * K.w);
     const rp = rolling ? clamp(1 - K.rollT / 0.55, 0, 1) : 0; if (rolling && o.position) o.position.y -= 0.5 * Math.sin(Math.PI * rp);
+    if (V2 && o.position && !rolling) { const on = a && a.mode === 'swing' && a.qe > 0 && a.t >= a.out, sd = on ? clamp(((a.ax - pl.x) * Math.sin(pl.h) - (a.ay - pl.y) * Math.cos(pl.h)) / 6, -1, 1) : 0, u = on ? clamp(a.q / a.qe, 0, 1) : 0;
+      K.sway = (K.sway || 0) + ((on ? sd * 0.8 * Math.sin(Math.PI * u) : 0) - (K.sway || 0)) * Math.min(1, dt * 7); o.position.x += Math.sin(pl.h) * K.sway; o.position.z += Math.cos(pl.h) * K.sway; }      // seen from behind: he swings out toward the hold through each arc
     o.updateMatrixWorld(true);
     { const s = K.saved || (K.saved = TOUCH.map(() => new THREE.Quaternion())); for (let i = 0; i < TOUCH.length; i++) { const b = B[TOUCH[i]]; if (b) s[i].copy(b.quaternion); } s.live = true; }
     _fw.set(Math.cos(pl.h), 0, -Math.sin(pl.h)); _rt.set(Math.sin(pl.h), 0, Math.cos(pl.h));
@@ -417,7 +421,8 @@ export function install(game) {
     const v = a ? Math.hypot(a.vx, a.vy, a.vz) : 0, tr = clamp(v / 30, 0.2, 1), len = rig.thigh + rig.shin, kick = Math.sin(K.clock * 3.1) * 0.04;
     const up = a && v > 1 ? clamp(a.vz / v, -1, 1) : 0, LA = (a && a.mode === 'coast' && S.pre ? S.pre.arm : S.arm) === 'R' ? 'R' : 'L', FA = LA === 'L' ? 'R' : 'L', fs = FA === 'R' ? 1 : -1;      // LA = the line arm (the hold's side), FA = the free arm, fs = +1 when the free arm is his right
     const fl = a && a.mode === 'coast' ? a.t : 9, tuck = co && !rolling, reach = false;
-    const ph = sw ? clamp(((pl.x - a.px) * Math.cos(a.dir) + (pl.y - a.py) * Math.sin(a.dir)) / Math.max(4, a.L), -1, 1) : 0;      // where he is on the arc: -1 coming down toward it, 0 under the pivot, +1 going up beyond it
+    const v2p = sw && V2 && a.qe > 0, P2 = v2p ? clamp((a.q < a.qm ? -(1 - a.q / Math.max(1, a.qm)) : (a.q - a.qm) / Math.max(1, a.qe - a.qm)) * 1.6, -1, 1) : 0; K.ph2 = (K.ph2 || 0) + (P2 - (K.ph2 || 0)) * Math.min(1, dt * 11);
+    const ph = v2p ? K.ph2 : sw ? clamp(((pl.x - a.px) * Math.cos(a.dir) + (pl.y - a.py) * Math.sin(a.dir)) / Math.max(4, a.L), -1, 1) : 0, curl = v2p ? sm((ph - 0.1) / 0.6) : 0;      // where he is on the arc: -1 coming down toward it, 0 under the pivot, +1 going up beyond it
     // round 7: four shapes a cycle. ON THE LINE the body lies along the rope: sideways toward the hold (seen from behind) and fore-aft with the arc; legs together and trailing on the way down, kicking through and apart past the bottom;
     // the line arm straight up the cable, the free arm out for balance. LET GO: a ball, knees to chest, pitched forward. Then OPEN: a stride in the air, the OTHER arm reaching up for the next line.
     if (sw) { _t.set(a.ax - pl.x, a.az - base - 1.0, -(a.ay - pl.y)).normalize(); const lat = _t.dot(_rt); _t.copy(UP).addScaledVector(_rt, clamp(lat * 1.5, -0.75, 0.75)).addScaledVector(_fw, clamp(-ph * 1.3, -0.8, 0.8)).normalize(); }
@@ -426,12 +431,13 @@ export function install(game) {
     else _t.set(0, 1, 0);
     K.lean.lerp(_t, Math.min(1, dt * 9)).normalize();
     _qq.setFromUnitVectors(UP, _d.copy(UP).lerp(K.lean, w).normalize()); rig.tilt(_qq);
+    { let tw = 0; if (V2 && a && tgt && !rolling) tw = clamp(wrapPi(Math.atan2(-(tgt.z) - pl.y, tgt.x - pl.x) - pl.h) * 1.1, -0.7, 0.7); K.twY = (K.twY || 0) + (tw - (K.twY || 0)) * Math.min(1, dt * 7); if (Math.abs(K.twY) > 0.01) { _qq.setFromAxisAngle(UP, K.twY * w); rig.tilt(_qq); } }      // the body turns toward the hold (and to the new one at the hand-over)
     if (rolling) { const th = rp * Math.PI * 2; _ax.copy(_rt).multiplyScalar(-1); _qq.setFromAxisAngle(_ax, th); rig.tilt(_qq); _ub.copy(UP).multiplyScalar(Math.cos(th)).addScaledVector(_fw, Math.sin(th)); _fb.copy(_fw).multiplyScalar(Math.cos(th)).addScaledVector(UP, -Math.sin(th)); }
     for (const sd of ['L', 'R']) { const Lf = sd === 'L', sg = Lf ? -1 : 1, lead = sd === FA; let k = 1; rig.pos('thigh_' + sd, _pp);
       if (rolling) { _d.copy(_ub).multiplyScalar(0.25).addScaledVector(_fb, 0.9); k = 0.7; }
       else if (tuck) { _d.copy(_fw).multiplyScalar(0.8).addScaledVector(DN, 0.3).addScaledVector(K.lean, 0.2).addScaledVector(_rt, sg * 0.1); k = lead ? 0.4 : 0.55; }
       else if (reach) { _d.copy(DN).addScaledVector(_fw, lead ? 0.3 : -0.7).addScaledVector(_rt, sg * 0.3); k = lead ? 0.8 : 0.97; }
-      else { const kf = clamp(ph * 2.2 + 0.25, -1, 1.2); _d.copy(K.lean).multiplyScalar(-1).addScaledVector(_fw, kf * 1.1).addScaledVector(_rt, sg * (0.05 + Math.max(0, kf) * 0.22)); k = kf > 0.2 ? (lead ? 1 : 0.72) : 0.97; }
+      else { const kf = clamp(ph * 2.2 + 0.25, -1, 1.2); _d.copy(K.lean).multiplyScalar(-1).addScaledVector(_fw, kf * 1.1).addScaledVector(_rt, sg * (0.05 + Math.max(0, kf) * 0.22)); k = v2p ? 0.97 - curl * (lead ? 0.22 : 0.5) : kf > 0.2 ? (lead ? 1 : 0.72) : 0.97; if (v2p) _d.addScaledVector(UP, curl * 0.35); }
       _d.normalize().multiplyScalar(len * k).add(_pp); _pole.copy(_fw).addScaledVector(K.lean, tuck || rolling ? 0.9 : 0.3); rig._ik(B['thigh_' + sd], B['shin_' + sd], B['foot_' + sd], _d, _pole, w); }
     const armTo = (s, rk, pole) => { rig.pos('upper_arm_' + s, _pp); _d.copy(_ax).normalize().multiplyScalar(rig.armLen * rk).add(_pp); rig.arm(s, _d, pole, w); };      // _ax = the way the arm points
     for (const s of ['L', 'R']) { const sg = s === 'L' ? -1 : 1, line = s === LA;

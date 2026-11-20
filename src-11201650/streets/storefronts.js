@@ -187,7 +187,8 @@ export function layout(C, opts = {}) {
     const ox = x + nx * 0.4, oy = y + ny * 0.4; if (inBuilding(ox, oy)) return null;
     const k = kgrid.ray(ox, oy, nx, ny, maxd); if (!k) return null; if (bgrid.ray(ox, oy, nx, ny, k[0])) return null; return k[0] + 0.4;
   };
-  const LC = new Map(), lay = (bi) => { let l = LC.get(bi); if (!l) LC.set(bi, (l = layoutOf(B[bi].style, B[bi].seed))); return l; };
+  const WST = !(typeof location !== 'undefined' && /[?&]wstyle=0(&|$)/.test(location.search)), sty = (b) => (WST && b.wstyle !== undefined ? b.wstyle : b.style);     /* uptown (handoff-u11): a record's `wstyle` = the style its own walls have in the tiles, where `style` says glass (2) over a brick or stone house: the street floor is dressed by it (was: near-black metal panels under brick). Only city-u7s.json carries the key; ?wstyle=0 = as before */
+  const LC = new Map(), lay = (bi) => { let l = LC.get(bi); if (!l) LC.set(bi, (l = layoutOf(sty(B[bi]), B[bi].seed))); return l; };
 
   // collision: how much of a corner pier's reach past its corner (ext) may be solid: none of the way a walker has today between this corner and the
   // next wall (an alley mouth, a slot between two buildings) may be closed, so 0.9 m of any such gap stays open, shared between its two sides;
@@ -210,7 +211,7 @@ export function layout(C, opts = {}) {
     let ext = b.poly; if (area2(ext) < 0) ext = ext.slice().reverse();
     let cx = 0, cy = 0; for (const p of ext) { cx += p[0]; cy += p[1]; } cx /= ext.length; cy /= ext.length;
     if (!(cx > PB[0] - 40 && cx < PB[2] + 40 && cy > PB[1] - 40 && cy < PB[3] + 40)) return;
-    const L = lay(bi), style = b.style, bid = b.id ?? bi, h = b.h;
+    const L = lay(bi), style = sty(b), bid = b.id ?? bi, h = b.h;
     if (h < 3.2) return;
     const gh = Math.min(L.gh, h - 0.05), Hh = gh - SW, sLo = Hh - 1.25, sHi = Hh - 0.35;
     if (sLo < 2.3) return;                                // a hut: leave it painted
@@ -291,7 +292,7 @@ export function layout(C, opts = {}) {
     for (const P of plazaPieces.length ? pieces.concat(plazaPieces) : pieces) {
       const e = egrid.nearest(P.x + P.nx * (P.kd + 3), P.y + P.ny * (P.kd + 3), 40); P.ave = e ? !!C.edges[e[1]].ave : false; P.res = e ? !!C.edges[e[1]].res : false;     /* uptown: a street with no shops (Central Park West, Fifth and Park Avenues uptown, the brownstone side streets): edge key res, set in the city data */
       const o = bgrid.ray(P.x + P.nx * 0.5, P.y + P.ny * 0.5, P.nx, P.ny, 90, bi);
-      if (o && o[0] > 6) { const ob = B[o[1]]; P.oppD = o[0] + 0.5; P.oppH = ob.h; P.oppC = lay(o[1]).wall; if (ob.style === 2) P.oppC = [0.08, 0.10, 0.12]; } else { P.oppD = 0; P.oppH = 0; P.oppC = [0, 0, 0]; }
+      if (o && o[0] > 6) { const ob = B[o[1]]; P.oppD = o[0] + 0.5; P.oppH = ob.h; P.oppC = lay(o[1]).wall; if (sty(ob) === 2) P.oppC = [0.08, 0.10, 0.12]; } else { P.oppD = 0; P.oppH = 0; P.oppC = [0, 0, 0]; }
     }
     // roles: a lobby in the middle of the longest front of a big building, a residential entry beside a shop on walk-ups and lofts
     let lobby = null;

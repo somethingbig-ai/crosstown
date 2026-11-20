@@ -5,6 +5,7 @@
 // logged and the game runs without the crowd.
 //   ?crowd=none   off          ?crowd=N   target count (people alive around the camera at a busy corner; default below)
 //   ?crowdnear=M  nobody of the crowd within M metres in front of a camera that stands still (default 6.5; 0 = no such zone)
+//   ?mbricks=1     lanes/motionbricks: the walks and jog are NVIDIA MotionBricks motion (crowd-mb.json + crowd-anim-mb.glb.gz); off = as before
 //   ?crowdcast=people   use the game's own people.glb bodies instead of assets/crowd/crowd.glb (also the fallback when that file is missing)
 // people/crowd-perf, Nov 12 (first load and frame rate; each with its own off switch, ?crowdperf=0 turns all of them off):
 //   ?crowdwork=0   the cast is read whole on the page as before (crowd.glb: 9 MB of glTF JSON, 44,550 animation channels, and the bake, all
@@ -62,7 +63,7 @@ async function loadCast() {
 // (cast.pending), then the clips' keys, which become real tracks the first time someone asks for them (a struck or shot person's pose).
 const SPARE = 64;      // empty columns kept in the worker's texture for clips added on the page (the guns module's Cower and Duck: 38)
 async function loadCastSplit(P, smooth, late) {
-  const metaP = fetch(A + 'crowd.json', { cache: 'no-store' }).then((r) => r.json()); metaP.catch(() => {}); const tx = P && P.get('crowdtex'), r = await fetch(A + 'crowd-mesh' + (tx === 'k' || tx === 'h' ? '-' + tx : '') + '.glb.gz');      /* ?crowdtex=k: the 25 body pictures as KTX2 (compressed on the graphics card); h: at 512 px. Off unless asked: not judged yet */
+  const MB = !!(P && P.get('mbricks') !== '0'), metaP = fetch(A + (MB ? 'crowd-mb.json' : 'crowd.json'), { cache: 'no-store' }).then((r) => r.json()); metaP.catch(() => {}); const tx = P && P.get('crowdtex'), r = await fetch(A + 'crowd-mesh' + (tx === 'k' || tx === 'h' ? '-' + tx : '') + '.glb.gz');      /* ?crowdtex=k: the 25 body pictures as KTX2 (compressed on the graphics card); h: at 512 px. Off unless asked: not judged yet */
   if (!r.ok || !self.DecompressionStream || typeof Worker === 'undefined' || !import.meta.resolve) throw new Error('no split cast');
   const meta = await metaP, clipNames = Object.keys(meta.clips), t0 = performance.now();
   const w = new Worker(new URL('./crowd/castworker.js', import.meta.url), { type: 'module' }), anims = [], clipOf = (n) => anims.find((a) => a.name === n);
@@ -71,7 +72,7 @@ async function loadCastSplit(P, smooth, late) {
     Object.defineProperty(a, 'tracks', { configurable: true, enumerable: true, get() { const t = build(); Object.defineProperty(a, 'tracks', { value: t, writable: true, configurable: true, enumerable: true }); return t; }, set(v) { Object.defineProperty(a, 'tracks', { value: v, writable: true, configurable: true, enumerable: true }); } }); } };
   const pending = new Promise((res, rej) => { w.onmessage = (ev) => { const m = ev.data; if (m.type === 'bake') { m.at = performance.now(); res(m); } else if (m.type === 'tracks') { try { tracksIn(m); } catch (e) { console.log('[crowd] clip keys not taken: ' + e.message); } w.terminate(); } else if (m.type === 'error') { rej(new Error(m.message)); w.terminate(); } }; w.onerror = (e) => { rej(new Error((e && e.message) || 'the worker did not start')); }; });
   pending.catch(() => {});
-  w.postMessage({ cmd: 'bake', url: new URL(A + 'crowd-anim.glb.gz', location.href).href, three: import.meta.resolve('three'), meta: { characters: meta.characters.map((c) => ({ name: c.name, height: c.height })), accessories: meta.accessories, clips: meta.clips }, clipNames, smooth, spare: SPARE, wait: !!late });
+  w.postMessage({ cmd: 'bake', url: new URL(A + (MB ? 'crowd-anim-mb.glb.gz' : 'crowd-anim.glb.gz'), location.href).href, three: import.meta.resolve('three'), meta: { characters: meta.characters.map((c) => ({ name: c.name, height: c.height })), accessories: meta.accessories, clips: meta.clips }, clipNames, smooth, spare: SPARE, wait: !!late });
   let gltf; try { const buf = await new Response(r.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer(); gltf = await new GLTFLoader().parseAsync(buf, A); } catch (e) { w.terminate(); throw e; }
   gltf.scene.updateMatrixWorld(true);
   const cast = castOf(meta, gltf, clipNames); for (const n of clipNames) { const real = gltf.animations.find((a) => a.name === n); if (real) real.real = true; anims.push(real || new THREE.AnimationClip(n, meta.clips[n].duration, [])); }

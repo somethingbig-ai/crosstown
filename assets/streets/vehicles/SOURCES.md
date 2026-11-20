@@ -1,6 +1,6 @@
 # streets/vehicles: sources
 
-## Third-party models: the CC0 ones (the CC-BY-4.0 / MPL-2.0 OpenX Assets models are further down and in ATTRIBUTION.md; they ARE used: `openx*.glb` and the `models2/` cars built on them)
+## Third-party models (all CC0; no CC-BY material is used)
 | File | Source | Author | Licence | Based on | What was changed |
 |---|---|---|---|---|---|
 | `real.glb`: `real_fhatch` | Gazebo Fuel, OpenRobotics/Hatchback, https://fuel.gazebosim.org/1.0/OpenRobotics/models/Hatchback | Open Robotics (Nate Koenig) | CC0 1.0 | a 2015-ish Japanese five-door supermini (Honda Fit / Jazz shape) | scaled to metres, turned to +X, one wheel split off, plain plates added; no badge in the texture |

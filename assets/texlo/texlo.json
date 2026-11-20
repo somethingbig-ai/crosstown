@@ -1,0 +1,62 @@
+{
+ "v": 1,
+ "drop": 2,
+ "files": {
+  "assets/tex/walls_nor.ktx2": {
+   "lo": "tex_walls_nor.ktx2",
+   "bytes": 4626237,
+   "loBytes": 300902,
+   "pri": 0,
+   "md5": "2ba3150a4941fb120fe962a6f712835f"
+  },
+  "assets/dressing/tex/steel_n.ktx2": {
+   "lo": "dressing_tex_steel_n.ktx2",
+   "bytes": 767153,
+   "loBytes": 56295,
+   "pri": 1,
+   "md5": "8b69926abfc4e3b6d5a125fb3fbe3ee3"
+  },
+  "assets/dressing/tex/iron_n.ktx2": {
+   "lo": "dressing_tex_iron_n.ktx2",
+   "bytes": 476799,
+   "loBytes": 33723,
+   "pri": 1,
+   "md5": "400cd2ab9d9d98c4b805594b7356b81d"
+  },
+  "assets/dressing/tex/fabric_n.ktx2": {
+   "lo": "dressing_tex_fabric_n.ktx2",
+   "bytes": 958058,
+   "loBytes": 26527,
+   "pri": 1,
+   "md5": "bc1cb08732eeed892bb60832929cec83"
+  },
+  "assets/dressing/tex/wood_n.ktx2": {
+   "lo": "dressing_tex_wood_n.ktx2",
+   "bytes": 506689,
+   "loBytes": 28769,
+   "pri": 1,
+   "md5": "3d518d391b220e4c33bac4af726e268d"
+  },
+  "assets/dressing/tex/stone_n.ktx2": {
+   "lo": "dressing_tex_stone_n.ktx2",
+   "bytes": 286057,
+   "loBytes": 22227,
+   "pri": 1,
+   "md5": "6c251b45af7a244c4dcfcd5057054ee0"
+  },
+  "assets/tex/asphalt_02_nor.ktx2": {
+   "lo": "tex_asphalt_02_nor.ktx2",
+   "bytes": 5034244,
+   "loBytes": 291188,
+   "pri": 2,
+   "md5": "468d5ee276302440fb15f178fc248023"
+  },
+  "assets/tex/concrete_pavement_nor.ktx2": {
+   "lo": "tex_concrete_pavement_nor.ktx2",
+   "bytes": 4857348,
+   "loBytes": 268731,
+   "pri": 2,
+   "md5": "b6da574501c161250f666bd91ef34071"
+  }
+ }
+}

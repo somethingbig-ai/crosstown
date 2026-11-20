@@ -28,5 +28,20 @@ panel shut lines cut in, the places of the removed emblems closed, bars added in
 credits, copyright lines and licences in the table above apply unchanged to every model in it, `ox_cab` included (same credit as `ox_corolla`).
 Further modifications since the 14:02 build of Nov 10 2026: the outer surfaces subdivided and their normals recomputed, wheel-arch liners added, lamp bowls deepened and collared, daytime LED rows replaced by a light bar, grille sections drawn across the places of removed emblems, and a roof light, blank advert frame and chequer band added to `ox_cab`; credits and licences unchanged.
 
+## The `models2/` cars built on these works (`au_` kinds; added Nov 19 2026)
+Six of the `au_` kinds in `models2/` are derived from OpenX Assets models listed above, each further modified (lanes/aucars scripts). The credits, copyright lines and licences of the table above (MPL-2.0 AND CC-BY-4.0)
+apply to them unchanged.
+
+| Our kind | Files in `models2/` | Derived from | Further modified |
+|---|---|---|---|
+| `au_suv` | `black-suv-game.glb`, `black-suv-far.glb` | `ox_q7` (Audi Q7 2015) | lengthened and raised, roof rails and running boards added, mesh reduced, wheels refinished |
+| `au_police` | `police-utility-game.glb`, `police-utility-far.glb` | `ox_q7` (Audi Q7 2015) | resized, patrol finish, light bar and equipment added, mesh reduced |
+| `au_sedan` | `black-sedan-game.glb`, `black-sedan-far.glb` | `ox_corolla` (Toyota Corolla 2014) | wheelbase and overhangs changed, lower intake redrawn |
+| `au_camry` | `camry-taxi-game.glb`, `camry-taxi-far.glb` | `ox_corolla` (Toyota Corolla 2014) | same body changes; cab finish, roof light, lettering, steel wheels, mesh reduced |
+| `au_rav4` | `rav4-taxi-game-reflectors.glb`, `rav4-taxi-far-inserts-reflectors.glb` | `ox_tucson` (Hyundai Tucson 2015) | resized, nose reshaped, arch mouldings, rack, roof light, lettering, rear lamp inserts and reflectors, mesh reduced |
+| `au_ambulance` | `ambulance-game.glb`, `ambulance-far.glb` | cab: `ox_sprinter` (Mercedes-Benz Sprinter 2006) | cab kept, patient module, bumper, lamps and livery built by us |
+
+The other `au_` kinds (`au_sanitation`, `au_engine`, `au_tiller`) are not derived from OpenX Assets.
+
 ## CC0 material (no credit required, credited anyway)
 Open Robotics, Gazebo Fuel: Hatchback, Prius Hybrid, Pickup (`real.glb`, used only with `?vreal=1`). Poly Haven: Covered Car, by MP (`covered_car/`).

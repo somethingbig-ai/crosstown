@@ -1,0 +1,20 @@
+{
+ "v": 1,
+ "files": {
+  "normal.png": {
+   "bytes": 3582083,
+   "md5": "92f968ad7546ddc6a1dbcd20bb81f5d4",
+   "loBytes": 153935
+  },
+  "orm.jpg": {
+   "bytes": 2910590,
+   "md5": "be31287e1fa859f2135406ddc4820b79",
+   "loBytes": 145787
+  },
+  "tint.jpg": {
+   "bytes": 926089,
+   "md5": "b254d926002b2a70c95e75dfed919e2a",
+   "loBytes": 30518
+  }
+ }
+}

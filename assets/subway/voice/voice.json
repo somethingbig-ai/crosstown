@@ -1,8 +1,8 @@
 {
 "file": "announcer.mp3",
 "format": "mp3 24 kHz mono 64 kbit/s",
-"secs": 161.28,
-"bytes": 1290816,
+"secs": 192.3,
+"bytes": 1539072,
 "voices": [
 "Bill pqHfZKP75CvOlQylNhV4",
 "Matilda XrExE9yKIg1WjnnlVkGX"
@@ -829,6 +829,125 @@
 "voice": "Matilda",
 "start": 159.117,
 "dur": 1.8082
+},
+"st-66-st-lincoln-center": {
+"text": "Sixty-sixth Street, Lincoln Center.",
+"who": "car",
+"voice": "Matilda",
+"start": 161.0752,
+"dur": 1.81
+},
+"st-72-st": {
+"text": "Seventy-second Street.",
+"who": "car",
+"voice": "Matilda",
+"start": 163.0352,
+"dur": 1.191
+},
+"st-79-st": {
+"text": "Seventy-ninth Street.",
+"who": "car",
+"voice": "Matilda",
+"start": 164.3762,
+"dur": 1.0832
+},
+"st-86-st": {
+"text": "Eighty-sixth Street.",
+"who": "car",
+"voice": "Matilda",
+"start": 165.6093,
+"dur": 0.9831
+},
+"st-96-st": {
+"text": "Ninety-sixth Street.",
+"who": "car",
+"voice": "Matilda",
+"start": 166.7425,
+"dur": 0.9694
+},
+"st-103-st": {
+"text": "One hundred third Street.",
+"who": "car",
+"voice": "Matilda",
+"start": 167.8619,
+"dur": 1.229
+},
+"st-cathedral-pkwy-110-st": {
+"text": "Cathedral Parkway, One hundred tenth Street.",
+"who": "car",
+"voice": "Matilda",
+"start": 169.2409,
+"dur": 2.5673
+},
+"st-116-st-columbia-university": {
+"text": "One hundred sixteenth Street, Columbia University.",
+"who": "car",
+"voice": "Matilda",
+"start": 171.9582,
+"dur": 2.6601
+},
+"st-135-st": {
+"text": "One hundred thirty-fifth Street.",
+"who": "car",
+"voice": "Matilda",
+"start": 174.7683,
+"dur": 1.5331
+},
+"st-125-st": {
+"text": "One hundred twenty-fifth Street.",
+"who": "car",
+"voice": "Matilda",
+"start": 176.4514,
+"dur": 1.4537
+},
+"st-116-st": {
+"text": "One hundred sixteenth Street.",
+"who": "car",
+"voice": "Matilda",
+"start": 178.055,
+"dur": 1.4078
+},
+"st-81-st-museum-of-natural-history": {
+"text": "Eighty-first Street, Museum of Natural History.",
+"who": "car",
+"voice": "Matilda",
+"start": 179.6128,
+"dur": 2.5837
+},
+"st-110-st": {
+"text": "One hundred tenth Street.",
+"who": "car",
+"voice": "Matilda",
+"start": 182.3465,
+"dur": 1.2146
+},
+"st-77-st": {
+"text": "Seventy-seventh Street.",
+"who": "car",
+"voice": "Matilda",
+"start": 183.7111,
+"dur": 1.2032
+},
+"st-68-st-hunter-college": {
+"text": "Sixty-eighth Street, Hunter College.",
+"who": "car",
+"voice": "Matilda",
+"start": 185.0643,
+"dur": 1.9047
+},
+"st-lexington-av-63-st": {
+"text": "Lexington Avenue, Sixty-third Street.",
+"who": "car",
+"voice": "Matilda",
+"start": 187.119,
+"dur": 2.025
+},
+"st-110-st-malcolm-x-plaza": {
+"text": "One hundred tenth Street, Malcolm X Plaza.",
+"who": "car",
+"voice": "Matilda",
+"start": 189.2941,
+"dur": 2.6512
 }
 }
 }

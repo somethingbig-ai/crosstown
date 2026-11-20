@@ -1,0 +1,6 @@
+html,body{margin:0;height:100%;background:#000;overflow:hidden;font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;color:#fff;user-select:none;-webkit-user-select:none}
+#c{position:fixed;inset:0;width:100vw;height:100vh;display:block}
+#hud{position:fixed;inset:0;pointer-events:none}
+#boot{position:fixed;inset:0;background:#0b0c0e;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;transition:opacity .6s}
+#boot .title{font-weight:800;letter-spacing:.42em;font-size:44px;padding-left:.42em}
+#boot .sub{font-size:13px;letter-spacing:.2em;text-transform:uppercase;opacity:.6}

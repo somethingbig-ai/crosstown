@@ -1,0 +1,22 @@
+{
+ "v": 1,
+ "files": {
+  "asph_col.jpg": {
+   "bytes": 1795988,
+   "md5": "9f93da84d1390a8db6b15568d36e636c",
+   "loBytes": 139283
+  },
+  "asph_nrm.jpg": {
+   "bytes": 765084,
+   "md5": "e8b55ef5a5633c6a9432a46d09a878ca",
+   "loBytes": 14549
+  }
+ },
+ "lateWithNothing": {
+  "asph_hist.webp": 271830,
+  "photo/paint11.webp": 505494,
+  "photo/soho2_l.webp": 507754,
+  "photo/soho2_r.webp": 492770,
+  "photo/street76.webp": 748718
+ }
+}

@@ -52,7 +52,7 @@ export class Kit {
   // (Walk2, Walk3, TurnL, TurnR, GetIn, GetOut) and real mocap. people.json, if present, carries ground speeds and seat data.
   async loadPeople() {
     const A = 'assets/people/'; let meta = null;
-    try { const r = await fetch(A + 'people.json', { cache: 'no-store' }); if (r.ok) meta = await r.json(); } catch (e) {}
+    try { const r = await fetch(A + (/[?&]mbricks=0(&|$)/.test(location.search) ? 'people.json' : 'people-mb.json'), { cache: 'no-store' });      /* ?mbricks=1: lanes/motionbricks, the player's walks, jog and run from NVIDIA MotionBricks */ if (r.ok) meta = await r.json(); } catch (e) {}
     const file = (meta && meta.file) || 'people.glb';
     try { const h = await fetch(A + file, { method: 'HEAD', cache: 'no-store' }); if (!h.ok) return; } catch (e) { return; }
     let gltf; try { gltf = await new GLTFLoader().loadAsync(A + file); } catch (e) { console.log('[game] people export not loaded: ' + (e && e.message)); return; }

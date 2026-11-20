@@ -1468,7 +1468,7 @@ export async function add(game, ctx) {
   if (/[?&]tao=0/.test(location.search) && world.gtao) world.gtao.enabled = false;
   if (/[?&]treesoff=1/.test(location.search)) return { group, report: { instances: 0, off: 1 } };
 
-  const TM0 = performance.now(), tm = {}; let TMl = TM0; const mark = (k) => { const n = performance.now(); tm[k] = Math.round(n - TMl); TMl = n; };   // where the load time goes (report.tm, ms)
+  let impBake = null; const TM0 = performance.now(), tm = {}; let TMl = TM0; const turn = async () => { if (!ctx.late) return; await new Promise((r) => setTimeout(r, 0)); TMl = performance.now(); };     /* lead uptown-join item 3 (Nov 19): `late` = this call is made during play (a joined area's trees, src/join/props.js): the page gets a turn between the build steps below, as streets/ground.js gives one. Without ctx.late nothing changes: no turn is taken. */ const mark = (k) => { const n = performance.now(); tm[k] = Math.round(n - TMl); TMl = n; };   // where the load time goes (report.tm, ms)
   // ---- the trees the lead placed
   const seen = new Set(), trees = [];
   for (const im of game.propMeshes || []) {
@@ -1687,8 +1687,8 @@ export async function add(game, ctx) {
     const lmGeo = leafMaterial(shared, false, null, { c: lc, n: ln, mean: [0.0788, 0.1440, 0.0433], trans: GLOW ? 1.7 : 1.1, glow: GLOW ? 2.2 : 1.0, selfK: 0.85, own: true, spec: GLOSS ? 3.0 : 0.5, sat: 0.72, shade: 1.0, fwd: 0.0, geo: true, thru: [0.92, 1.0, 0.72] }); lmGeo.roughness = GLOSS ? 0.34 : 0.62;
     const lmCut = leafMaterial(shared, false, null, { c: lc, n: ln, mean: [0.0788, 0.1440, 0.0433], trans: BACK ? 0.95 : 1.5, glow: BACK ? 0.8 : 3.5, selfK: 0.85, own: true, vis8: SUNVIS, spec: 2.6, sat: 1.0, shade: 1.0, fwd: 0.0, thru: BACK ? [0.78, 1.05, 0.34] : [1.0, 1.1, 0.55] }); lmCut.roughness = 0.42;
     const geoSpec = { c: lc, n: ln, mean: [0.0788, 0.1440, 0.0433], trans: GLOW ? 1.7 : 1.1, glow: GLOW ? 2.2 : 1.0, selfK: 0.85, own: true, spec: GLOSS ? 3.0 : 0.5, sat: 0.72, shade: 1.0, fwd: 0.0, geo: true, thru: [0.92, 1.0, 0.72] }, cutSpec = { c: lc, n: ln, mean: [0.0788, 0.1440, 0.0433], trans: BACK ? 0.95 : 1.5, glow: BACK ? 0.8 : 3.5, selfK: 0.85, own: true, vis8: SUNVIS, spec: 2.6, sat: 1.0, shade: 1.0, fwd: 0.0, thru: BACK ? [0.78, 1.05, 0.34] : [1.0, 1.1, 0.55] };
-    mark('scan_wood');
-    const bands = SB.map(mkBand); mark('scan_bands');
+    mark('scan_wood'); await turn();
+    const bands = SB.map(mkBand); mark('scan_bands'); await turn();
     for (const b of bands) { if (b.fade) { b.mat = leafMaterial(shared, false, null, Object.assign({}, b.geo ? geoSpec : cutSpec, { fade: b.fade })); b.mat.roughness = b.geo ? (GLOSS ? 0.34 : 0.62) : 0.42; }
       if (FRINGE && !b.geo) { b.fmat = leafMaterial(shared, false, null, Object.assign({}, cutSpec, { fringe: true, fade: b.fade })); b.fmat.roughness = 0.42; } }
     scan = { q, lc, bands, wgThin, proxy, bark: woodMats.length - 1, lm: TWIGS ? lmGeo : lmCut, lmGeo, lmCut };
@@ -1737,7 +1737,7 @@ export async function add(game, ctx) {
       lods: scan.bands.map((b) => ({ wg: b.wg, lg: b.lg, wcount: b.wcount, tris: b.wcount / 3 + b.ltris, mat: b.mat || (b.geo ? scan.lmGeo : scan.lmCut), fmat: b.fmat, rng: b.fade ? [b.fade[2], b.fade[1]] : null })).concat([{ wg: scan.wgThin, wcount: scan.wgThin.index.count, wstart: 0 }]),
       foot: models[0].foot, proxy: scan.proxy, imp: { R: q.radius + 0.5, y0: (q.crown0 || 1.5) - 0.5, y1: q.hi[1] + 0.5 }, trees: [], id: models.length, spray: { c: scan.lc }, leafMat: scan.lm, lodD: scan.bands.map((b) => b.d) }; m.impLg = scan.bands[scan.bands.length - 1].lg;
     models.push(m); for (const sp of ['ginkgo', 'linden', 'oak', 'pear', 'broad', 'plane']) heroScan[sp] = [m]; }
-  mark('models');
+  mark('models'); await turn();
   // ---- one tree at a time: species, model, size, colour, matrix
   const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), Q2 = new THREE.Quaternion(), E = new THREE.Euler(), P = new THREE.Vector3(), Sc = new THREE.Vector3();
   const pick = (r, table) => { let a = 0; for (const [k, w] of table) { a += w; if (r < a) return k; } return table[table.length - 1][0]; };
@@ -1800,13 +1800,13 @@ export async function add(game, ctx) {
   }
 
   if (nPkBig) console.log('[trees] uptown: ' + nPkBig + ' mature trees on Central Park\'s perimeter sidewalk (?pktrees=0 = street size)');
-  mark('pertree');
+  mark('pertree'); await turn();
   // ---- what is drawn, filled each time the camera moves:
   //   band 0 (to 16 m) and band 1 (to 50 m): real leaf and wood meshes with the scanned foot, per model;
   //   beyond: the trunk and big limbs as geometry, the crown as one camera-facing impostor quad (all models in one draw call);
   //   shadow pass: per tree within the shadow map's sharp range, the big limbs and a crown proxy of a few hundred large leaves.
-  const impMat = leafMaterial(shared, true, bakeImpostors(world.renderer, models)); impMat.alphaToCoverage = true;
-  mark('impostors');
+  const impMat = leafMaterial(shared, true, (impBake = (ctx.late && ctx.parts && ctx.parts.trees && ctx.parts.trees.impBake && ctx.parts.trees.impBake.rows === models.length && ctx.parts.trees.impBake) || bakeImpostors(world.renderer, models))     /* lead uptown-join item 3: a late call (a joined area) uses the far-tree pictures the first call baked: the models are made again from the same seeds, so the pictures are the same ones; 0.2 s in one frame and two render targets an area saved. Not late: baked as before */); impMat.alphaToCoverage = true;
+  mark('impostors'); await turn();
   // the proxy's big leaves are cut into leaf-sized pieces in the shadow pass (about half of each is let through), so the shade dapples
   const proxyDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
   proxyDepth.onBeforeCompile = (sh) => {
@@ -1907,7 +1907,7 @@ export async function add(game, ctx) {
   world.render = (t, focus) => { PROJ.value = world.camera.projectionMatrix; update(false); return render0(t, focus); };
   PROJ.value = world.camera.projectionMatrix; update(true);
 
-  mark('bands');
+  mark('bands'); await turn();
   // ---- pits and guards: static, per map tile
   const pitMat = pitMaterial(shared, soilC, soilN), pitMatHero = pitMaterial(shared, soilC, soilN, { chips: chipsC, chipsN, disp: chipsD, dirt: dirtC, dirtN });
   const sizes = [[1.5, 1.45], [2.3, 1.45], [3.0, 1.45]];
@@ -1936,7 +1936,8 @@ export async function add(game, ctx) {
   const apronG = sizes.map((s, i) => apronGeometry(s[0], s[1], 91 + i)), apronMat = apronMaterial(shared);
   /* tiles lane (helper cost 2), Nov 15: a map tile's pit / apron geometry shares the base shape's vertices, so it takes a COPY of the base shape's bounding sphere (worked out once) instead of walking every vertex again for each of the city's tiles (three did that inside InstancedMesh.computeBoundingSphere: 415 ms of the six-area load, 670 of the nine-area one). The same numbers. ?bshare=0 = worked out per tile. */
   const BSHARE = !/[?&]bshare=0/.test(location.search), bsOf = (g0, g) => { if (!BSHARE) return; if (!g0.boundingSphere) g0.computeBoundingSphere(); g.boundingSphere = g0.boundingSphere.clone(); };
-  for (const [, tile] of tiles) for (let si = 0; si < 3; si++) {
+  let pitTurn = 0;     /* lead uptown-join item 3: late = a turn every 12 pit tiles */
+  for (const [, tile] of tiles) for (let si = 0; si < 3; si++) { if (ctx.late && si === 0 && ++pitTurn % 12 === 0) await turn();
     if (tile.a[si].length) { const ag = new THREE.BufferGeometry(); for (const k in apronG[si].attributes) ag.setAttribute(k, apronG[si].attributes[k]); ag.setIndex(apronG[si].index); bsOf(apronG[si], ag);
       const ap = new Float32Array(tile.a[si].length * 4); tile.a[si].forEach((mm, i) => ap.set(mm.pit, i * 4)); ag.setAttribute('aPit', new THREE.InstancedBufferAttribute(ap, 4));
       const im = new THREE.InstancedMesh(ag, apronMat, tile.a[si].length); im.renderOrder = 6; im.onBeforeRender = (r, sc, cam, g, mat) => { g.setDrawRange(0, mat === apronMat ? Infinity : 0); }; tile.a[si].forEach((mm, i) => im.setMatrixAt(i, mm)); im.instanceMatrix.needsUpdate = true; im.computeBoundingSphere(); im.matrixAutoUpdate = false; im.receiveShadow = true; im.userData.kind = 'st_treeapron'; group.add(im); pitTiles.push(im); }
@@ -2035,5 +2036,5 @@ pitTris += ls.length * cg.index.count / 3; } }); }
   const report = { tm, instances: trees.length, hero_census: nHero, hero_dropped: nDropped, circles_moved: nCirc, models: models.length, pits: nPit, guards: nGuard, pit_ktris_city: Math.round(pitTris / 1000),
     get ktris() { return Math.round(stats.tris / 1000); }, get shadow_ktris() { return Math.round(stats.shadowTris / 1000); }, get casters() { return stats.casters; }, get bands() { return stats.shown.join('/'); },
     model_ktris: models.map((m) => m.sp[0] + m.sp.slice(-1) + ':' + m.lods.slice(0, m.nb).map((l) => l.tris).concat([m.lods[m.nb].wcount / 3 + 2, m.castTris]).map((v) => Math.round(v / 100) / 10).join('/')).join(' ') };
-  return { group, report, update, stats, trees, models, opt, leafMat, impostors };
+  return { group, report, update, stats, trees, models, opt, leafMat, impostors, impBake };
 }

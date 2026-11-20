@@ -717,7 +717,7 @@ export async function add(game, ctx) {
   if (!ctx.gNext && game.P && game.P.get('gx') === '1') { ctx.gNext = 1; return (await import('./grass_next.js')).add(game, ctx); }          // ?gx=1: the round's trial copy, so this file is never half-edited while a laptop hold reads it
   const Q = game.P, sw = Q ? Q.get('grass') : null;
   if (sw === '0' || (!DEFAULT_ON && !sw)) return { report: { off: 1 } };
-  const world = game.world, city = ctx.set ? ctx.city : (game.city || ctx.city), shared = world.shared, A = ctx.A + 'grass/';     /* tiles lane: built once per map area (streets.js PER_SET): ctx.city is then that area's slice, ctx.set its name and box */
+  const world = game.world, city = ctx.set ? ctx.city : (game.city || ctx.city), shared = ctx.shared || world.shared     /* lead, uptown-join (Nov 19): the uniforms handed in (streets.js hands world.shared, as before; src/join.js hands a copy with the joined areas own ground light picture) */, A = ctx.A + 'grass/';     /* tiles lane: built once per map area (streets.js PER_SET): ctx.city is then that area's slice, ctx.set its name and box */
   const group = new THREE.Group(); group.name = 'streets_grass' + (ctx.set ? ':' + ctx.set.name : '');
   const AN = Q && Q.has('gan') ? +Q.get('gan') : 8;          // ?gan=N: anisotropy of the lawn scans (cost tests)
   const L = new THREE.TextureLoader(), maxAniso = world.renderer.capabilities.getMaxAnisotropy();

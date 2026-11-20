@@ -1,6 +1,8 @@
 // facade.js: the building material. One MeshStandardMaterial whose shader draws, from the wall's metre UVs and a per-building
 // style/seed, the masonry, the windows (recessed, with rooms behind the glass), storefronts with signs, cornices and roofs.
 // Lighting uses the Cycles bake carried in the vertex colour: r = sky light, g = sun visibility (far field), b = bounced sunlight.
+/* merge2 round 37 (Nov 20): lit windows vary in brightness, and their blinds in warmth, room by room at night ('lit windows are blank cream rectangles, all the same brightness'). ?winvar=0 = as before */
+const WINVAR = (() => { try { return new URLSearchParams(location.search).get('winvar') === '0' ? '0.0' : '1.0'; } catch (e) { return '1.0'; } })();
 import * as THREE from 'three';
 /* facades lane, Nov 17 (gauntlet2 round 2; the critic at 5th Ave and 21st: 'big windows alternate with tiny slot windows'): the photographed fronts with mixed window widths (panels.js uPanelMix) are for low houses; on a building over PMIXH metres the next panel of its style is taken instead. ?panelmix=0 = before. */
 const PMIXH = (() => { try { const v = new URLSearchParams(location.search).get('panelmix'); return v === null ? 24 : (+v > 0 ? +v : 1e6); } catch (e) { return 24; } })();
@@ -85,7 +87,7 @@ const WIN_BODY = /* glsl */`
               vec2 bid = id, bp = wc, bh = half_;
               if (style > 3.5) { float li = step(-half_.x * 0.36, wc.x) + step(half_.x * 0.36, wc.x); bid += li * 17.0; bh.x = li == 1.0 ? half_.x * 0.36 : half_.x * 0.32; bp.x = wc.x - (li - 1.0) * half_.x * 0.68; }
               bp -= parW * 0.07; vec4 bc = blindColor(bp, bh, bid, habit, h4.y, bcol, fPx);
-              room = room * (1.0 - bc.a) + bc.rgb * bc.a * lit * (0.06 + 0.9 * uNightK.y);
+              room = room * (1.0 - bc.a) + bc.rgb * bc.a * lit * (0.06 + 0.9 * uNightK.y) * mix(vec3(1.0), mix(0.25, 1.45, fract(hash32(id + 3.7).x * 7.31 + hash32(id + 3.7).y * 3.17)) * mix(vec3(1.05, 0.88, 0.68), vec3(0.86, 0.95, 1.08), step(0.62, hash32(id + 3.7).z)), ${WINVAR} * step(0.001, uNightK.y));
               fPane = bc.rgb * bc.a * mix(vec3(1.0), gT, 0.7) * (st3.z > 0.02 ? 0.62 : 0.45) * (1.0 - (st3.z > 0.02 ? 0.0 : 0.3) * fFlat) * (1.0 - 0.08 * fFlat * (0.5 + 0.5 * sin(bp.y * 52.0)) * smoothstep(0.03, 0.008, fPx)) * (1.0 - 0.25 * fFlat * smoothstep(0.35, 0.75, vnoise(bp * vec2(1.6, 4.0) + bid)));      // glass60: on flats a shade is a mid-tone cloth with bands and blotches (lit white it read as a blank card)
               // an air conditioner in some of the old sash windows
               bool acHere = (style < 0.5 && !secondary) ? mod(bi * 7.0 + fi * 13.0 + floor(seed * 512.0) * 3.0, 11.0) < 1.5 : (secondary && hsh > 0.84);
@@ -173,7 +175,7 @@ const WIN_BODY_X6 = /* glsl */`
               if (style > 3.5) { float li = step(-half_.x * 0.36, wc.x) + step(half_.x * 0.36, wc.x); bid += li * 17.0; bh.x = li == 1.0 ? half_.x * 0.36 : half_.x * 0.32; bp.x = wc.x - (li - 1.0) * half_.x * 0.68; }
               bp -= parW * 0.07; bc = blindColor(bp, bh, bid, habit, h4.y, bcol, fPx);
               if (bc.a < 1.0) room = roomColor(wc, d, half_ * 2.0, 4.5, id, lit) * (1.0 + 1.2 * lit);
-              room = room * (1.0 - bc.a) + bc.rgb * bc.a * lit * (0.06 + 0.9 * uNightK.y);
+              room = room * (1.0 - bc.a) + bc.rgb * bc.a * lit * (0.06 + 0.9 * uNightK.y) * mix(vec3(1.0), mix(0.25, 1.45, fract(hash32(id + 3.7).x * 7.31 + hash32(id + 3.7).y * 3.17)) * mix(vec3(1.05, 0.88, 0.68), vec3(0.86, 0.95, 1.08), step(0.62, hash32(id + 3.7).z)), ${WINVAR} * step(0.001, uNightK.y));
               fPane = bc.rgb * bc.a * mix(vec3(1.0), gT, 0.7) * (st3.z > 0.02 ? 0.62 : 0.45) * (1.0 - (st3.z > 0.02 ? 0.0 : 0.3) * fFlat) * (1.0 - 0.08 * fFlat * (0.5 + 0.5 * sin(bp.y * 52.0)) * smoothstep(0.03, 0.008, fPx)) * (1.0 - 0.25 * fFlat * smoothstep(0.35, 0.75, vnoise(bp * vec2(1.6, 4.0) + bid)));      // glass60: on flats a shade is a mid-tone cloth with bands and blotches (lit white it read as a blank card)
               }
               // an air conditioner in some of the old sash windows
@@ -307,7 +309,8 @@ ${fcDefs}
           else col = wallc * 0.65;
           float fall = exp(-t * 0.35);
           float day = 0.018 + 0.07 * fall;                         // daylight falling off into the room
-          return col * (day * uNightK.x + lit * (0.03 + uNightK.y * mix(vec3(1.0, 0.74, 0.46), vec3(0.80, 0.90, 1.0), step(0.62, hs.z)))) + glow * (1.0 + 6.0 * uNightK.y);     // progress/night: uNightK = (1, 0, 0) by day
+          float lv = mix(1.0, mix(0.25, 1.45, fract(hs.x * 7.31 + hs.y * 3.17)), ${WINVAR} * step(0.001, uNightK.y));      /* merge2 round 37: lit rooms differ in brightness (0.25 to 1.45) at night; ?winvar=0 = all alike as before */
+          return col * (day * uNightK.x + lv * lit * (0.03 + uNightK.y * mix(vec3(1.0, 0.74, 0.46), vec3(0.80, 0.90, 1.0), step(0.62, hs.z)))) + glow * lv * (1.0 + 6.0 * uNightK.y);     // progress/night: uNightK = (1, 0, 0) by day
         }
 
         // what hangs just behind the glass: p = metres in the light (origin its centre), hf = its half size, px = metres a pixel.

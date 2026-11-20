@@ -99,6 +99,15 @@ export class Tiles {
     return this.root;
   }
   // a set's ground and shells: at the first load for sets within `tset` metres of the start, later when the camera comes that near
+  // lead, uptown-join (Nov 19): tile sets that are not in tiles.json, added while the game runs (a second map's areas joined at a seam: src/join.js). list = [{ dir, origin }], dir from
+  // the page (e.g. 'assets/tiles-u7k/u3c/'). Each is an OUTSIDE set: nothing is fetched here but its set.json; update() brings it in by distance like any other.
+  async addSets(list) {
+    const out = []; for (const s of list || []) { if (this.sets.some((S) => S.dir === s.dir)) continue; const r = await fetch(s.dir + 'set.json'); if (!r.ok) throw new Error(s.dir + 'set.json ' + r.status);
+      const S = Object.assign(await r.json(), { dir: s.dir }); S.origin = s.origin || S.origin || [0, 0]; if (this.sets.some((q) => q.set === S.set)) continue; const o = S.origin; S.state = 0; S.outside = true; S.lateShell = false; S.added = true; S.wbox = [S.box[0] + o[0], S.box[1] + o[1], S.box[2] + o[0], S.box[3] + o[1]];
+      for (const t of S.tiles) { const T = { id: S.set + '/' + t.id, name: t.id, set: S, url: S.dir + t.file, bytes: t.bytes, box: [t.box[0] + o[0], t.box[1] + o[1], t.box[2] + o[0], t.box[3] + o[1]], h: t.h, shell: null, full: null, state: 0, failT: 0, pin: !!(S.pin && S.pin.includes(t.id)) }; this.tiles.push(T); this.byId.set(T.id, T); }
+      this.sets.push(S); this.stats.sets++; out.push(S); }
+    this.stats.tiles = this.tiles.length; return out;
+  }
   async loadSet(S) {
     S.state = 1;
     try {

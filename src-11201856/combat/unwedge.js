@@ -20,7 +20,7 @@ import { wrapPi } from '../geo.js';
 
 export function install(game) {
   if (game.P.get('unwedge') === '0' || !game.statics || !game.roads) return null;
-  const g = game, st = g.statics, R = g.roads, BX = g.bounds.x + 6, BY = g.bounds.y + 6, BCX = g.bounds.cx || 0, BCY = g.bounds.cy || 0,     /* tiles lane: the playable box may sit off the origin */ P = (k, d) => (g.P.has(k) && isFinite(+g.P.get(k)) ? +g.P.get(k) : d);
+  const g = game, st = g.statics, R = g.roads, B_ = g.bounds,     /* lead, uptown-join (Nov 19): the box is read when used, not kept from the start: the map's edge moves when an area is joined (src/join.js) */     /* tiles lane: the playable box may sit off the origin */ P = (k, d) => (g.P.has(k) && isFinite(+g.P.get(k)) ? +g.P.get(k) : d);
   const T_BOTH = P('uwt', 3), T_ONE = P('uwone', 5), T_EDGE = P('uwedge', 0.8), T_QUEUE = P('uwq', 36), REACH0 = P('uwr', 24), T_FOOT = P('uwfoot', 1), NEAR = P('uwnear', 0.45), MOVE = 0.75, WIDE = 1.8, K3 = [0.3, 0, -0.3], LANE = g.P.get('uwlane') !== '0', _pe = { x: 0, y: 0, h: 0, def: { len: 0.7, wid: 0.7 } };
   const U = (g.unwedge = { freed: 0, edge: 0, foot: 0, tried: 0, last: null, note: '', sub: '', noteT: 0, edgeT: 0 });
   const A = { v: null, x: 0, y: 0, h: 0, age: 0, fw: 0, rv: 0, idle: 0, retry: 0 }, B = { x: 0, y: 0, h: 0, fw: 0, rv: 0 }, _o = {}, _p = {}, cand = [], from = [], relay = [];
@@ -35,7 +35,7 @@ export function install(game) {
   // may car v stand at (x, y, h)? Roadway, inside the map, clear of walls, poles, parked cars (statics), of traffic and of the game's other cars
   const clearAt = (v, x, y, h, m = 0.25, road = true, lane = false) => {
     const L = v.def.len, wd = v.def.wid, r = wd * 0.5, c = Math.cos(h), s = Math.sin(h);
-    for (const k of K3) { const cx = x + c * L * k, cy = y + s * L * k; if (Math.abs(cx - BCX) > BX - r - 0.3 || Math.abs(cy - BCY) > BY - r - 0.3) return false; if (st.resolve(cx, cy, r + m, _o) > 0) return false; if (road && !lane && st.onSidewalk(cx, cy)) return false; }
+    for (const k of K3) { const cx = x + c * L * k, cy = y + s * L * k; if (Math.abs(cx - (B_.cx || 0)) > (B_.x + 6) - r - 0.3 || Math.abs(cy - (B_.cy || 0)) > (B_.y + 6) - r - 0.3) return false; if (st.resolve(cx, cy, r + m, _o) > 0) return false; if (road && !lane && st.onSidewalk(cx, cy)) return false; }
     for (const o of g.traffic.cars) { if (Math.abs(o.x - x) > 16 || Math.abs(o.y - y) > 16) continue; if (boxHit(x, y, h, L, wd, o, m + 0.25)) return false;
       if (road && o.v > 1) { const ox = Math.cos(o.h), oy = Math.sin(o.h), ah = (x - o.x) * ox + (y - o.y) * oy, sd = Math.abs(-(x - o.x) * oy + (y - o.y) * ox); if (ah > 0 && ah < 6 + o.v * 1.2 && sd < 2.2) return false; } }      // not into the path of a car that is driving
     for (const o of g.vehicles) if (o !== v && Math.abs(o.x - x) < 16 && Math.abs(o.y - y) < 16 && boxHit(x, y, h, L, wd, o, m + 0.15)) return false;
@@ -43,9 +43,9 @@ export function install(game) {
       try { if (hitP(g.peds && g.peds.list) || hitP(g.crowd && g.crowd.on && g.crowd.sim && g.crowd.sim.agents)) return false; } catch (e) {} }
     return true;
   };
-  const inward = (x, y, h, d = 35) => Math.abs(x + Math.cos(h) * d - BCX) < BX - 4 && Math.abs(y + Math.sin(h) * d - BCY) < BY - 4;
+  const inward = (x, y, h, d = 35) => Math.abs(x + Math.cos(h) * d - (B_.cx || 0)) < (B_.x + 6) - 4 && Math.abs(y + Math.sin(h) * d - (B_.cy || 0)) < (B_.y + 6) - 4;
   // beyond the map's edge wall (telemetry 002101d0, Nov 14: a player on foot and then in an SUV OUTSIDE the south wall; every lane was across the wall, so no spot was ever found)
-  const outside = (x, y, m = 0) => Math.abs(x - BCX) > BX + m || Math.abs(y - BCY) > BY + m, inPt = (x, y, m, o) => { o.x = Math.min(BCX + BX - m, Math.max(BCX - BX + m, x)); o.y = Math.min(BCY + BY - m, Math.max(BCY - BY + m, y)); return o; };
+  const outside = (x, y, m = 0) => Math.abs(x - (B_.cx || 0)) > (B_.x + 6) + m || Math.abs(y - (B_.cy || 0)) > (B_.y + 6) + m, inPt = (x, y, m, o) => { o.x = Math.min((B_.cx || 0) + (B_.x + 6) - m, Math.max((B_.cx || 0) - (B_.x + 6) + m, x)); o.y = Math.min((B_.cy || 0) + (B_.y + 6) - m, Math.max((B_.cy || 0) - (B_.y + 6) + m, y)); return o; };
   // the nearest clear lane spot for v within REACH that the car can reach without crossing a wall; edge: pointing back into the map (either way along the lane)
   const spot1 = (v, edge, wide) => {
     cand.length = 0; const out = outside(v.x, v.y), REACH = out ? 90 : wide || REACH0, KN = out ? 40 : wide ? Math.ceil(wide / 1.5) : 10, vx0 = v.x, vy0 = v.y, B0 = out ? inPt(v.x, v.y, 2, {}) : v, bx0 = B0.x, by0 = B0.y;
@@ -81,7 +81,7 @@ export function install(game) {
   const touchingTraffic = (v) => { for (const o of g.traffic.cars) if (Math.abs(o.x - v.x) < 12 && Math.abs(o.y - v.y) < 12 && !(o.stun > 30) && boxHit(v.x, v.y, v.h, v.def.len, v.def.wid, o, 0.45)) return true; return false; };
   // 3. the player on foot after getting out: never left behind a wall or outside the map
   const footCheck = (c) => {
-    const pl = g.player, ok = (x, y) => Math.abs(x - BCX) < BX - 0.4 && Math.abs(y - BCY) < BY - 0.4 && st.raycast(c.x, c.y, x, y) >= 1;
+    const pl = g.player, ok = (x, y) => Math.abs(x - (B_.cx || 0)) < (B_.x + 6) - 0.4 && Math.abs(y - (B_.cy || 0)) < (B_.y + 6) - 0.4 && st.raycast(c.x, c.y, x, y) >= 1;
     if (ok(pl.x, pl.y) || Math.hypot(pl.x - c.x, pl.y - c.y) > 9) return; const cs = Math.cos(c.h), sn = Math.sin(c.h), L = c.def.len, w = c.def.wid / 2 + 0.7; let best = null, bd = 1e9;
     for (const sd of [1, -1]) for (const a of [0, 0.25, -0.25, 0.5, -0.5]) { const x = c.x + cs * L * a - sn * w * sd, y = c.y + sn * L * a + cs * w * sd; if (!ok(x, y) || st.resolve(x, y, 0.34, _o) > 0) continue; let hit = false; for (const o of g.traffic.cars) if (Math.hypot(o.x - x, o.y - y) < 1.4) hit = true; if (hit) continue; const d = Math.hypot(x - pl.x, y - pl.y); if (d < bd) { bd = d; best = [x, y]; } }
     for (const a of [1, -1]) { if (best) break; const x = c.x + cs * (L / 2 + 0.7) * a, y = c.y + sn * (L / 2 + 0.7) * a; if (ok(x, y) && st.resolve(x, y, 0.34, _o) === 0) best = [x, y]; }
@@ -89,7 +89,7 @@ export function install(game) {
   };
   // 4. on foot OUTSIDE the edge wall (however he got there): after a second he stands just inside it, at the nearest clear place that has open way to a road
   const footIn = () => {
-    const pl = g.player, ix = pl.x - BCX > BX ? -1 : pl.x - BCX < -BX ? 1 : 0, iy = pl.y - BCY > BY ? -1 : pl.y - BCY < -BY ? 1 : 0, q = {};
+    const pl = g.player, ix = pl.x - (B_.cx || 0) > (B_.x + 6) ? -1 : pl.x - (B_.cx || 0) < -(B_.x + 6) ? 1 : 0, iy = pl.y - (B_.cy || 0) > (B_.y + 6) ? -1 : pl.y - (B_.cy || 0) < -(B_.y + 6) ? 1 : 0, q = {};
     for (const inn of [0.9, 1.8, 3.2, 5, 8]) for (const al of [0, 1.5, -1.5, 3, -3, 5, -5, 8, -8, 12, -12, 18, -18, 26, -26, 36, -36, 50, -50]) { inPt(pl.x - iy * al, pl.y + ix * al, inn, q); const x = q.x, y = q.y;
       if (st.resolve(x, y, 0.34, _o) > 0) continue; let hit = false; for (const o of g.traffic.cars) if (Math.abs(o.x - x) < 9 && Math.abs(o.y - y) < 9 && boxHit(x, y, 0, 0.7, 0.7, o, 0.35)) { hit = true; break; } if (!hit) for (const o of g.vehicles) if (Math.abs(o.x - x) < 9 && Math.abs(o.y - y) < 9 && boxHit(x, y, 0, 0.7, 0.7, o, 0.25)) { hit = true; break; } if (!hit) for (const o of g.parked.near(x, y, 8, _pk)) if (boxHit(x, y, 0, 0.7, 0.7, o, 0.2)) { hit = true; break; } if (!hit) for (const o of g.traffic.cars) { if (!(o.v > 1) || Math.abs(o.x - x) > 40 || Math.abs(o.y - y) > 40) continue; const ox = Math.cos(o.h), oy = Math.sin(o.h), ah = (x - o.x) * ox + (y - o.y) * oy, sd = Math.abs(-(x - o.x) * oy + (y - o.y) * ox); if (ah > 0 && ah < 6 + o.v * 1.5 && sd < 1.6) { hit = true; break; } } if (hit) continue;      /* never in or against a car's body, parked cars too, nor in the path of a car that is driving */
       const ne = R.nearestEdge(x, y, 40); if (!ne || outside(ne.x, ne.y, -0.5) || st.raycast(x, y, ne.x, ne.y) < 1) continue;      // not into a building: the road must be in plain sight
@@ -109,7 +109,7 @@ export function install(game) {
       if (pl.busy) { if (pl.busy.v) car = pl.busy.kind === 'out' ? pl.busy.v : null; return; }
       if (car) { const c = car; car = null; try { footCheck(c); } catch (e) {} }
       if (outside(pl.x, pl.y, 0.05) && !(pl.alt > 2) && !(pl.alt < 0)) { if ((footOut += dt) >= T_FOOT) { footOut = footIn() ? 0 : T_FOOT - 1; } return; } footOut = 0;
-      if ((BX - Math.abs(pl.x - BCX) < 0.45 || BY - Math.abs(pl.y - BCY) < 0.45) && Math.hypot(I.mx, I.my) > 0.1 && !(pl.alt > 2) && !(pl.alt < 0)) say('END OF THE MAP', '', 0.6);
+      if (((B_.x + 6) - Math.abs(pl.x - (B_.cx || 0)) < 0.45 || (B_.y + 6) - Math.abs(pl.y - (B_.cy || 0)) < 0.45) && Math.hypot(I.mx, I.my) > 0.1 && !(pl.alt > 2) && !(pl.alt < 0)) say('END OF THE MAP', '', 0.6);
       return; }
     car = v; if (off || v.wreck || (v._ck && v._ck.pow === 0)) { A.v = null; B.v = null; return; }      /* (dead engine: on fire or wrecked, src/cars: not wedged, never moved; on foot he is looked after by 3 and 4) */
     const fwd = I.throttle > 0.3, rev = I.brake > 0.3, sp = Math.hypot(v.vx, v.vy), c = Math.cos(v.h), s = Math.sin(v.h);
@@ -122,7 +122,7 @@ export function install(game) {
       return; }
     // 1. the edge of the map
     { const L = v.def.len, r = v.def.wid * 0.5; let ox = 0, oy = 0;      // which way is out of the map, if a body circle is against the wall
-      for (const k of K3) { const cx = v.x + c * L * k, cy = v.y + s * L * k; if (BX - Math.abs(cx - BCX) < r + NEAR) ox = Math.sign(cx - BCX); if (BY - Math.abs(cy - BCY) < r + NEAR) oy = Math.sign(cy - BCY); }
+      for (const k of K3) { const cx = v.x + c * L * k, cy = v.y + s * L * k; if ((B_.x + 6) - Math.abs(cx - (B_.cx || 0)) < r + NEAR) ox = Math.sign(cx - (B_.cx || 0)); if ((B_.y + 6) - Math.abs(cy - (B_.cy || 0)) < r + NEAR) oy = Math.sign(cy - (B_.cy || 0)); }
       const out = c * ox + s * oy, push = (ox || oy) && sp < 1.5 && ((fwd && out > 0.15) || (rev && out < -0.15));
       if (push) { U.edgeT += dt; say('END OF THE MAP', '', 0.8); } else if (!(ox || oy)) U.edgeT = Math.max(0, U.edgeT - dt * 0.5);      /* taps count: the time adds up while the car stays against the edge (the player of the report tapped W a tenth of a second at a time) */
       if (U.edgeT >= T_EDGE) { U.tried++; const q = spot(v, true); if (q) { place(v, q, 'edge of the map'); U.edge++; say('END OF THE MAP', 'Turned you round', 3.2); return; } U.edgeT = Math.max(0, T_EDGE - 1); } }

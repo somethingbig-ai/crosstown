@@ -440,26 +440,33 @@ function buildMarks(C) {
   });
   const near = (nd, h) => Math.hypot(nd.p[0] - h[0], nd.p[1] - h[1]) < 3;
   const hero = (nd) => HERO_NODES.some((h) => near(nd, h));     // the two hero crossings: paint of middling age, worn where the wheels run (the shader), old bars ghosting beside the new
+  const lesser = !C.oneCross ? null : (() => { const by = new Map(), S = new Set(); for (const d of C.E) { if (d.L - (d.rb ? d.rb + 4.6 : 0) - (d.ra ? d.ra + 4.6 : 0) < 6) continue; for (const end of [0, 1]) { if (!(end ? d.rb : d.ra)) continue; const k = end ? d.e.b : d.e.a, q = at(d, end ? d.L - 0.5 : 0.5), sg = end ? -1 : 1; let l = by.get(k); if (!l) by.set(k, (l = [])); l.push({ d, end, ux: q.dx * sg, uy: q.dy * sg }); } } for (const l of by.values()) for (const p of l) for (const o of l) if (o !== p && p.ux * o.ux + p.uy * o.uy > 0.766 && (o.d.W > p.d.W || (o.d.W === p.d.W && o.d.ei < p.d.ei))) S.add(p.d.ei * 2 + p.end); return S; })();     /* lead uptown-join item 2 (Nov 19): where two streets leave one junction within 40 degrees of each other (Broadway over Columbus Avenue at W 65th St, over Amsterdam at W 71st) each painted its own crosswalk across the other's: two sets of bars at two angles. With ctx.oneCross (only join.js passes it, for a joined area; ?joincross=0) the narrower of such a pair (of equals the later one) paints no crosswalk, stop bar or arrows at that end. Without ctx.oneCross nothing changes. */
+  const runs = !C.oneCross ? null : (() => { const by = new Map(), R = new Map(), other = (k, d) => { const l = by.get(k); return l && l.length === 2 ? (l[0] === d ? l[1] : l[0]) : null; }; for (const d of C.E) for (const k of [d.e.a, d.e.b]) { let l = by.get(k); if (!l) by.set(k, (l = [])); l.push(d); }
+    for (const d of C.E) { if (R.has(d.ei)) continue; let head = d, g = 0; for (;;) { const p = head.ra ? null : other(head.e.a, head); if (!p || p === d || p.e.b !== head.e.a || p.rb || p.e.name !== head.e.name || R.has(p.ei) || g++ > 400) break; head = p; }
+      const o = (head.ra ? head.ra + 4.6 : 0) + 1, list = []; let s = 0, cur = head; for (;;) { const r = { id: head.ei, s, o, n: 1 }; R.set(cur.ei, r); list.push(r); s += cur.L; const q = cur.rb ? null : other(cur.e.b, cur); if (!q || q.e.a !== cur.e.b || q.ra || q.e.name !== cur.e.name || R.has(q.ei)) break; cur = q; } for (const r of list) r.n = list.length; } return R; })();     /* lead uptown-join item 2, the short pieces (Amsterdam Avenue by Lincoln Center is eleven pieces of 9 - 20 m between W 60th and W 62nd St, joined at points that are no junction): each piece took its own paint age and began its lane dashes again, so the lines came and went every few metres. With ctx.oneCross the pieces of one street that follow each other through such points are painted as one run: one age, the dashes in step along the whole run. Without it nothing changes. */
   for (const ed of C.E) {
     const { L, ra, rb, n, lw, hlf, W, ei } = ed, s0 = ra ? ra + 4.6 : 0, s1 = L - (rb ? rb + 4.6 : 0);
     if (s1 - s0 < 6) {     // a short link between two junctions is part of the junction: a two-way street's centre line carries through it as dashes
       if (!ed.oneway && !ed.shared) for (let s = 0.3; s + 0.6 < L - 0.3; s += 1.8) for (const o of [-0.15, 0.15]) quad(ed, s, s + 0.6, o, 0.11, 1, Math.min(1, 0.15 + 0.25 * rnd(ei, 13) + 0.75 * Math.pow(rnd(ei, Math.round(s * 10), 14), 2.2)));
       continue;
     }
-    const age = HERO_NODES.some((h) => near(city.nodes[ed.e.a], h) || near(city.nodes[ed.e.b], h)) ? 0.78 : rnd(ei, 11);                         // how long ago this street was last painted (the hero streets: years ago)
+    const RN = runs && runs.get(ei) && runs.get(ei).n > 1 ? runs.get(ei) : null;     /* lead uptown-join item 2: this piece is part of a run (see runs above); null = as before */
+    const dashRun = (put) => { let j = 0; if (!RN) { for (let s = s0 + 1; s + 3 < s1; s += 9) put(s, s + 3, j++); return; } const ph = (((RN.o - RN.s) % 9) + 9) % 9; if (!ra && ph > 6.3) put(0, Math.min(ph - 6, s1), j++); for (let s = ra ? s0 + 1 : ph; rb ? s + 3 < s1 : s < s1 - 0.3; s += 9) put(s, Math.min(s + 3, s1), j++); };
+    const age = HERO_NODES.some((h) => near(city.nodes[ed.e.a], h) || near(city.nodes[ed.e.b], h)) ? 0.78 : rnd(RN ? RN.id : ei, 11);                         // how long ago this street was last painted (the hero streets: years ago)
     const lined = !ed.shared;                        // a shared street has one unmarked lane
     if (!lined) { /* no lane lines */ } else if (!ed.oneway && n % 2 === 1) {
       solid(ed, s0, s1, -0.15, 0.12, 1, age * 0.8); solid(ed, s0, s1, 0.15, 0.12, 1, age * 0.8 + 0.1);
       const sl = Math.floor(n / 2), lws = hlf / Math.max(1, sl);
-      for (let k = 1; k < sl; k++) for (const sg of [-1, 1]) { let s = s0 + 1, j = 0; while (s + 3 < s1) { quad(ed, s, s + 3, sg * k * lws, 0.13, 0, Math.min(1, age * 0.7 + 0.5 * rnd(ei, k * sg, j++))); s += 9; } }
+      for (let k = 1; k < sl; k++) for (const sg of [-1, 1]) dashRun((a, b, j) => quad(ed, a, b, sg * k * lws, 0.13, 0, Math.min(1, age * 0.7 + 0.5 * rnd(ei, k * sg, j))));
     } else for (let k = 1; k < n; k++) {
       const off = -hlf + k * lw;
       if (!ed.oneway && k === n / 2) { solid(ed, s0, s1, off - 0.15, 0.12, 1, age * 0.8); solid(ed, s0, s1, off + 0.15, 0.12, 1, age * 0.8 + 0.1); }
-      else { let s = s0 + 1, j = 0; while (s + 3 < s1) { quad(ed, s, s + 3, off, 0.13, 0, Math.min(1, age * 0.7 + 0.5 * rnd(ei, k, j++))); s += 9; } }
+      else dashRun((a, b, j) => quad(ed, a, b, off, 0.13, 0, Math.min(1, age * 0.7 + 0.5 * rnd(ei, k, j))));
     }
-    if (lined && n > 1 && rnd(ei, 12) < 0.6) { solid(ed, s0, s1, -hlf, 0.1, 0, 0.55 + 0.45 * age); solid(ed, s0, s1, hlf, 0.1, 0, 0.5 + 0.5 * age); }
+    if (lined && n > 1 && rnd(RN ? RN.id : ei, 12) < 0.6) { solid(ed, s0, s1, -hlf, 0.1, 0, 0.55 + 0.45 * age); solid(ed, s0, s1, hlf, 0.1, 0, 0.5 + 0.5 * age); }
     for (const end of [0, 1]) {
       const r_ = end ? rb : ra; if (!r_) continue;
+      if (lesser && lesser.has(ei * 2 + end)) continue;     /* lead uptown-join item 2 */
       const ndE = city.nodes[end ? ed.e.b : ed.e.a], isH = hero(ndE), jw = isH ? 0.45 : rnd(end ? ed.e.b : ed.e.a, 13), base = end ? L - r_ - 3.6 : r_ - 1.0;       // crosswalks of one junction age together
       const phX = end === 1 && ed.e.name === 'West 22nd Street' && near(ndE, [-281.1, -427.3]);      // the photographed crossing (buildHistory)
       let k = -W / 2 + 0.5, j = 0;
@@ -1711,7 +1718,7 @@ const FS_GRASS = /* glsl */`
 export async function add(game, ctx) {
   if (!ctx.gNext && game.P && game.P.get('gnext')) { ctx.gNext = 1; return (await import('./ground_next.js')).add(game, ctx); }     // ?gnext=1: the version under test (drawn cleanly once before it becomes this file)
   if (!ctx.gNext && game.P && game.P.get('gexp')) { ctx.gNext = 1; return (await import('./ground_exp.js')).add(game, ctx); }     // ?gexp=1: an experiment not yet judged (never the default; reads photo/photos_exp.json)
-  const world = game.world, city0 = ctx.city || game.city, hasWater = !!waterOf(game.city) && !(game.P && game.P.get('water') === '0'), city = hasWater ? { ...city0, blocks: cutBlocks(game.city, city0.blocks) } : city0     /* tiles lane: where the city lists water, the sidewalk blocks that reach over it are drawn without it (the data's blocks are not changed) */, shared = world.shared, renderer = world.renderer, set = ctx.set || null;     /* tiles lane: ctx.set = { name, play, region } when the layer is built for one map area */
+  const world = game.world, city0 = ctx.city || game.city, hasWater = !!waterOf(game.city) && !(game.P && game.P.get('water') === '0'), city = hasWater ? { ...city0, blocks: cutBlocks(game.city, city0.blocks) } : city0     /* tiles lane: where the city lists water, the sidewalk blocks that reach over it are drawn without it (the data's blocks are not changed) */, shared = ctx.shared || world.shared     /* lead, uptown-join (Nov 19): the uniforms handed in (streets.js hands world.shared, as before; src/join.js hands a copy with the joined areas own ground light picture) */, renderer = world.renderer, set = ctx.set || null;     /* tiles lane: ctx.set = { name, play, region } when the layer is built for one map area */
   const group = new THREE.Group(); group.name = 'streets_ground' + (set ? ':' + set.name : '');
   const L = new THREE.TextureLoader();
   // tiles lane: built once per map area, the areas share one copy of every picture (a second area that loaded its own sent them all to the
@@ -1760,7 +1767,7 @@ export async function add(game, ctx) {
   let tTurn = performance.now(); const lateSteps = [], turn = () => { if (!ctx.late) return null; lateSteps.push(Math.round(performance.now() - tTurn)); return new Promise((r) => setTimeout(() => { tTurn = performance.now(); r(); }, 0)); };     /* lateSteps: ms of each step, in the result (for measuring) */
   const pvOn = !(game.P && game.P.get('pavedfix') === '0'), pv = pvOn ? pvPlan(game.city, city.blocks, set) : null;     /* streets handoff-paved: ?pavedfix=0 = the sidewalk as before */
   if (pvOn && set && !(game.P && game.P.get('pavedfix') === 'layer')) { try { pvModel(game, (await import('../sets.js')).setsOf(game.city)); } catch (e) { console.log('[ground] model sidewalk not cut to its area: ' + (e && e.message)); } }     /* ?pavedfix=layer = this layer only, the areas' models as before */
-  const C = readCity(city, pv, game.city); await turn(); const nShared = markShared(C, sharedWays); const hist = buildHistory(C); await turn();
+  const C = readCity(city, pv, game.city); if (ctx.oneCross) C.oneCross = true;     /* lead uptown-join item 2: see buildMarks */ await turn(); const nShared = markShared(C, sharedWays); const hist = buildHistory(C); await turn();
   const pbx = set ? set.play : [-city.meta.px, -city.meta.py, city.meta.px, city.meta.py], fx = (pbx[2] - pbx[0]) / 2 + 60, fy = (pbx[3] - pbx[1]) / 2 + 60, fcx = (pbx[0] + pbx[2]) / 2, fcy = (pbx[1] + pbx[3]) / 2;
   const field = ctx.late ? await renderField(renderer, C, fx, fy, plazas, fcx, fcy, turn) : renderField(renderer, C, fx, fy, plazas, fcx, fcy); field.box = [fcx, fcy, fx, fy]; await turn();     /* late: the field in three steps (lateSteps has one entry more for each) */
   if (!world.__asph) { const q = game.P && game.P.get('asph'), v = (q || '').split(',').map(Number), d = ASPH_DEF, n = (i) => (q && q !== '0' && isFinite(v[i]) && v[i] > 0 ? v[i] : d[i]); world.__asph = { value: q === '0' ? new THREE.Vector4(1, 1, 1, 1) : new THREE.Vector4(n(0), n(1), n(2), n(3)) }; }     /* handoff-road: ?asph=0 = the road as before; ?asph=day,graze,slab,night = try other numbers; one object for every map area */
